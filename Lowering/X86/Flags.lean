@@ -244,6 +244,66 @@ theorem sbb_ne64 (a b : BitVec 64) (c : Bool) :
       (BitVec.usubOverflow b a || BitVec.usubOverflow (b - a) (BitVec.ofNat 64 c.toNat)) :=
   sbb_ne a b c (by cases c <;> rfl)
 
+/-- The high half of an unsigned product, as the model computes it in integers and as a
+product at twice the width. -/
+theorem mulhi_eq {n : Nat} (a b : BitVec n) :
+    BitVec.ofInt n ((BitVec.unsigned a * BitVec.unsigned b) >>> n) =
+      ((a.setWidth (2 * n) * b.setWidth (2 * n)) >>> n).setWidth n := by
+  have hab : a.toNat * b.toNat < 2 ^ (2 * n) := by
+    rw [Nat.two_mul, Nat.pow_add]; exact Nat.mul_lt_mul'' a.isLt b.isLt
+  have hle : 2 ^ n ≤ 2 ^ (2 * n) := Nat.pow_le_pow_right (by decide) (by omega)
+  have hl : (BitVec.unsigned a * BitVec.unsigned b) >>> n =
+      (((a.toNat * b.toNat) >>> n : Nat) : Int) := by
+    simp only [BitVec.unsigned]
+    rw [← Int.natCast_mul, Int.shiftRight_eq_div_pow, Nat.shiftRight_eq_div_pow,
+      Int.natCast_ediv, Int.natCast_pow]
+  apply BitVec.eq_of_toNat_eq
+  rw [hl, BitVec.ofInt_natCast]
+  simp only [BitVec.toNat_ofNat, BitVec.toNat_setWidth, BitVec.toNat_ushiftRight,
+    BitVec.toNat_mul]
+  rw [Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le a.isLt hle),
+    Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le b.isLt hle), Nat.mod_eq_of_lt hab]
+
+/-- An unsigned product overflows exactly when its high half is not zero. -/
+theorem umul_ne {n : Nat} (a b : BitVec n) :
+    (BitVec.unsigned (a * b) != BitVec.unsigned a * BitVec.unsigned b) =
+      (((a.setWidth (2 * n) * b.setWidth (2 * n)) >>> n).setWidth n != 0#n) := by
+  have hab : a.toNat * b.toNat < 2 ^ (2 * n) := by
+    rw [Nat.two_mul, Nat.pow_add]; exact Nat.mul_lt_mul'' a.isLt b.isLt
+  have hle : 2 ^ n ≤ 2 ^ (2 * n) := Nat.pow_le_pow_right (by decide) (by omega)
+  have hpos : 0 < 2 ^ n := Nat.pos_of_ne_zero (by simp)
+  have hdiv : a.toNat * b.toNat / 2 ^ n < 2 ^ n := by
+    rw [Nat.div_lt_iff_lt_mul hpos, ← Nat.pow_add, ← Nat.two_mul]; exact hab
+  have hhi : (((a.setWidth (2 * n) * b.setWidth (2 * n)) >>> n).setWidth n).toNat =
+      a.toNat * b.toNat / 2 ^ n := by
+    simp only [BitVec.toNat_setWidth, BitVec.toNat_ushiftRight, BitVec.toNat_mul]
+    rw [Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le a.isLt hle),
+      Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le b.isLt hle), Nat.mod_eq_of_lt hab,
+      Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt hdiv]
+  have hv : (a * b).toNat = a.toNat * b.toNat % 2 ^ n := BitVec.toNat_mul a b
+  by_cases h : a.toNat * b.toNat < 2 ^ n
+  · have h0 : a.toNat * b.toNat / 2 ^ n = 0 := Nat.div_eq_of_lt h
+    have e1 : ((a.setWidth (2 * n) * b.setWidth (2 * n)) >>> n).setWidth n = 0#n :=
+      BitVec.eq_of_toNat_eq (by rw [hhi, h0]; simp)
+    have e2 : BitVec.unsigned (a * b) = BitVec.unsigned a * BitVec.unsigned b := by
+      simp only [BitVec.unsigned, hv, Nat.mod_eq_of_lt h]
+      exact Int.natCast_mul _ _
+    simp [e1, e2]
+  · have h1 : 0 < a.toNat * b.toNat / 2 ^ n := Nat.div_pos (Nat.le_of_not_lt h) hpos
+    have e1 : ((a.setWidth (2 * n) * b.setWidth (2 * n)) >>> n).setWidth n ≠ 0#n := fun e => by
+      have := congrArg BitVec.toNat e
+      rw [hhi] at this
+      simp at this
+      omega
+    have hm := Nat.mod_lt (a.toNat * b.toNat) hpos
+    have e2 : BitVec.unsigned (a * b) ≠ BitVec.unsigned a * BitVec.unsigned b := by
+      simp only [BitVec.unsigned, hv]
+      rw [← Int.natCast_mul]
+      intro e
+      have := Int.natCast_inj.1 e
+      omega
+    rw [bne_iff_ne.2 e2, bne_iff_ne.2 e1]
+
 theorem cpop_eq {w : Nat} (x : BitVec w) : x.cpop_ = x.cpop := by
   have key : ∀ pos acc, x.cpopNatRec_ pos acc = x.cpopNatRec pos acc := by
     intro pos

@@ -218,7 +218,25 @@
       "braid.set"(%bb13_16) {reg = "rdi"} : (i64) -> ()
       "braid.br"()[^bb17] : () -> ()
     ^bb17:  // 0x401037
-      "braid.trap"() {reason = "mul"} : () -> ()
+      %bb17_0 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb17_8 = "braid.get"() {reg = "rdi"} : () -> i64
+      %bb17_16 = "braid.mul"(%bb17_0, %bb17_8) : (i64, i64) -> i64
+      %bb17_17 = "braid.mulhu"(%bb17_0, %bb17_8) : (i64, i64) -> i64
+      %bb17_18 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb17_19 = "braid.ne"(%bb17_17, %bb17_18) : (i64, i64) -> i64
+      "braid.setf"(%bb17_19) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb17_19) {flag = "of"} : (i64) -> ()
+      %bb17_40 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb17_40) {flag = "sf"} : (i64) -> ()
+      %bb17_41 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb17_41) {flag = "zf"} : (i64) -> ()
+      %bb17_42 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb17_42) {flag = "af"} : (i64) -> ()
+      %bb17_43 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb17_43) {flag = "pf"} : (i64) -> ()
+      "braid.set"(%bb17_16) {reg = "rax"} : (i64) -> ()
+      "braid.set"(%bb17_17) {reg = "rdx"} : (i64) -> ()
+      "braid.br"()[^bb1a] : () -> ()
     ^bb1a:  // 0x40103a
       %bb1a_0 = "braid.get"() {reg = "rax"} : () -> i64
       "braid.set"(%bb1a_0) {reg = "rcx"} : (i64) -> ()

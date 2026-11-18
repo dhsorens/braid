@@ -360,6 +360,20 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
       writeRM p 24 (match dst with | some d => d | none => src1) v ++
       [.havoc 40, .setf 0 40, .setf 5 40, .havoc 41, .setf 4 41, .havoc 42, .setf 3 42,
         .havoc 43, .setf 2 43, .havoc 44, .setf 1 44])
+  | .mul src =>
+    let flags : List Op :=
+      [.const 18 0, .bin 19 .ne 17 18, .setf 0 19, .setf 5 19, .havoc 40, .setf 4 40,
+        .havoc 41, .setf 3 41, .havoc 42, .setf 2 42, .havoc 43, .setf 1 43]
+    match w with
+    | .W64 =>
+      fin (readReg 0 (.low .rax w) ++ readRM p 8 src ++
+        [.bin 16 .mul 0 8, .bin 17 .mulhu 0 8] ++ flags ++
+        writeReg 24 (.low .rax w) 16 ++ writeReg 32 (.low .rdx w) 17)
+    | .W32 =>
+      fin (readReg 0 (.low .rax w) ++ readRM p 8 src ++
+        [.bin 16 .mul 0 8, .un 20 (.zext 32) 16, .const 21 32, .bin 17 .lshr 16 21] ++ flags ++
+        writeReg 24 (.low .rax w) 20 ++ writeReg 32 (.low .rdx w) 17)
+    | _ => none
   | .bswap dst =>
     match w with
     | .W64 => fin (readReg 0 dst ++ [.un 8 .bswap 0] ++ writeReg 16 dst 8)
