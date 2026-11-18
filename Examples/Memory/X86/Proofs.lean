@@ -206,4 +206,145 @@ theorem max2_correct [Layout] (m : MachineState) (r : Word) (hpc : m.pc = 0x4010
   · rw [← hr.reg .rax]
     exact Atoms.reg_of_holds (r := 0) (v := umax _ _) hq (by braid_at)
 
+/-- A memory atom of a postcondition, read off the machine. -/
+private theorem hasBytes_of_holds {as : Atoms} {R : SProp} {σ : State} {m : MachineState}
+    {a v : Word} {n : Nat} {w : Bool} (hr : Rel m σ) (h : (Atoms.interp as).holds R σ)
+    (hat : as.At (.mem a n v w)) : HasBytes m a n v := by
+  intro x hx
+  have hc := Atoms.mem_of_holds h hat hx
+  rw [hr.data.mem] at hc
+  obtain ⟨b, hb, hc⟩ := memOf_eq_some hc
+  rw [hb]
+  simpa using (congrArg Cell.val hc).symm
+
+/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
+round the address space. -/
+private theorem disj_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
+    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
+    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
+  Atom.disj_mem_mem fun x hx => by bv_omega
+
+/-- **`swap` on the machine.** A machine of the model that runs the executable of this image,
+is at the entry of `swap`, has the words `x` and `y` in memory where `rdi` and `rsi` point,
+and has the return address `r` in the eight bytes at the stack pointer, the three words
+apart from one another, reaches `r` on every run, with `y` where `rdi` points and `x` where
+`rsi` points. -/
+theorem swap_correct [Layout] (m : MachineState) (x y r : Word) (hpc : m.pc = 0x401000)
+    (hx : HasBytes m (m.data.regs.get64 .rdi) 8 x)
+    (hy : HasBytes m (m.data.regs.get64 .rsi) 8 y)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r)
+    (hpq : 8 ≤ (m.data.regs.get64 .rdi - m.data.regs.get64 .rsi).toNat ∧
+      8 ≤ (m.data.regs.get64 .rsi - m.data.regs.get64 .rdi).toNat)
+    (hps : 8 ≤ (m.data.regs.get64 .rdi - m.data.regs.get64 .rsp).toNat ∧
+      8 ≤ (m.data.regs.get64 .rsp - m.data.regs.get64 .rdi).toNat)
+    (hqs : 8 ≤ (m.data.regs.get64 .rsi - m.data.regs.get64 .rsp).toNat ∧
+      8 ≤ (m.data.regs.get64 .rsp - m.data.regs.get64 .rsi).toNat) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧
+        HasBytes m' (m.data.regs.get64 .rdi) 8 y ∧
+        HasBytes m' (m.data.regs.get64 .rsi) 8 x) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound swap_holds
+    (swap_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi) x y (m.data.regs.get64 .rax)
+      (m.data.regs.get64 .rcx) (m.data.regs.get64 .rsp) r)
+    (by simp [Atom.IsPointsTo])
+    (by
+      braid_disj
+      repeat' constructor
+      all_goals first | decide | exact disj_apart (by assumption))
+    (by simp [Atom.sat_reg, Atom.sat_pc, sat_mem_abs, regOf, hpc, hret, hx, hy]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · exact hasBytes_of_holds hr hq (by braid_at)
+  · exact hasBytes_of_holds hr hq (by braid_at)
+
+/-- **`max3` on the machine.** A machine of the model that runs the executable of this image,
+is at the entry of `max3`, has the return address `r` in the eight bytes at the stack
+pointer, and has memory in the sixteen bytes below them, reaches `r` on every run, with the
+largest of `rdi`, `rsi` and `rdx` in `rax`, and `rbx` as it was. -/
+theorem max3_correct [Layout] (m : MachineState) (r m0 m1 : Word) (hpc : m.pc = 0x401040)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r)
+    (hs0 : HasBytes m (m.data.regs.get64 .rsp - 8#64) 8 m0)
+    (hs1 : HasBytes m (m.data.regs.get64 .rsp - 16#64) 8 m1) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧
+        m'.data.regs.get64 .rax =
+          umax (umax (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi))
+            (m.data.regs.get64 .rdx) ∧
+        m'.data.regs.get64 .rbx = m.data.regs.get64 .rbx) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound
+    (fun p hp => (List.mem_append.1 hp).elim (max2_holds p) (max3_holds p))
+    (max3_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi) (m.data.regs.get64 .rdx)
+      (m.data.regs.get64 .rax) (m.data.regs.get64 .rbx) (m.data.regs.get64 .rsp) r m0 m1
+      m.data.status.cf m.data.status.pf m.data.status.af m.data.status.zf m.data.status.sf
+      m.data.status.of)
+    (by simp [Atom.IsPointsTo])
+    (by
+      braid_disj
+      repeat' constructor
+      all_goals first | decide | exact disj_apart (by bv_omega))
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret, hs0, hs1]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) (v := umax (umax _ _) _) hq (by braid_at)
+  · rw [← hr.reg .rbx]
+    exact Atoms.reg_of_holds (r := 1) hq (by braid_at)
+
+/-- A word that starts at or beyond the end of an array, and ends before the array starts,
+does not reach into it. -/
+private theorem sep_array {s p : Word} {l : Nat} (h : l ≤ (s - p).toNat ∧ 8 ≤ (p - s).toNat)
+    (x : Word) (hx : (x - s).toNat < 8) : ¬ (x - p).toNat < l := by
+  bv_omega
+
+/-- **`sum_array` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `sum_array`, has the words `xs` in memory where `rdi` points, with
+their number in `rsi`, and has the return address `r` in the eight bytes at the stack
+pointer, apart from the array, reaches `r` on every run, with the sum of the words in
+`rax`. -/
+theorem sum_array_correct [Layout] (m : MachineState) (xs : List Word) (r : Word)
+    (hpc : m.pc = 0x401010)
+    (hn : m.data.regs.get64 .rsi = BitVec.ofNat 64 xs.length)
+    (hmem : ∀ (i : Nat) (hi : i < xs.length),
+      HasBytes m (m.data.regs.get64 .rdi + BitVec.ofNat 64 (8 * i)) 8 xs[i])
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r)
+    (hsep : 8 * xs.length ≤ (m.data.regs.get64 .rsp - m.data.regs.get64 .rdi).toNat ∧
+      8 ≤ (m.data.regs.get64 .rdi - m.data.regs.get64 .rsp).toNat) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧ m'.data.regs.get64 .rax = wsum xs 0#64) m := by
+  have hl : xs.length < 2 ^ 61 := by
+    have : (m.data.regs.get64 .rsp - m.data.regs.get64 .rdi).toNat < 2 ^ 64 := BitVec.isLt _
+    omega
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound_flat sum_array_holds
+    (sum_array_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rax) (m.data.regs.get64 .rcx)
+      (m.data.regs.get64 .rsp) r xs m.data.status.cf m.data.status.pf m.data.status.af
+      m.data.status.zf m.data.status.sf m.data.status.of hl)
+    (flat := [.pc 0x401010#64, .reg rax (m.data.regs.get64 .rax),
+      .reg rcx (m.data.regs.get64 .rcx), .reg rdi (m.data.regs.get64 .rdi),
+      .reg rsi (BitVec.ofNat 64 xs.length)] ++ wordsAtoms (m.data.regs.get64 .rdi) xs ++
+      [.reg rsp (m.data.regs.get64 .rsp), .mem (m.data.regs.get64 .rsp) 8 r true,
+      .flag Flags.cf m.data.status.cf, .flag Flags.pf m.data.status.pf,
+      .flag Flags.af m.data.status.af, .flag Flags.zf m.data.status.zf,
+      .flag Flags.sf m.data.status.sf, .flag Flags.of m.data.status.of])
+    (by rw [wordsAt_eq_interp]
+        exact Atoms.interp_flatten [.pc 0x401010#64, .reg rax (m.data.regs.get64 .rax),
+          .reg rcx (m.data.regs.get64 .rcx), .reg rdi (m.data.regs.get64 .rdi),
+          .reg rsi (BitVec.ofNat 64 xs.length)] _ _)
+    (Atoms.forall_flat (by simp [Atom.IsPointsTo]) wordsAtoms_isPointsTo)
+    (Atoms.pairwise_flat (by braid_disj) (wordsAtoms_pairwise (by omega))
+      (by
+        braid_disj_array
+        exact disj_mem_wordsAtoms (sep_array hsep) (by omega)))
+    (Atoms.forall_flat
+      (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+        hret, hn])
+      (wordsAtoms_sat fun i hi => sat_mem_abs.2 (hmem i hi))))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) (v := wsum _ _) hq (by braid_at)
+
 end Examples.Memory.X86

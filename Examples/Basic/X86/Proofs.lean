@@ -112,4 +112,47 @@ theorem sum_to_spec (n t0 t1 t2 t3 s r : Word) (c p x z sg o : Bool) :
     simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
     bv_decide
 
+/-- **`max_u64` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `max_u64`, and has the return address `r` in the eight bytes at the
+stack pointer, reaches `r` on every run, with the larger of `rdi` and `rsi` in `rax`. -/
+theorem max_u64_correct [Layout] (m : MachineState) (r : Word) (hpc : m.pc = 0x401010)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧
+        m'.data.regs.get64 .rax = umax (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi)) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound max_u64_holds
+    (max_u64_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi) (m.data.regs.get64 .rax)
+      (m.data.regs.get64 .rsp) r m.data.status.cf m.data.status.pf m.data.status.af
+      m.data.status.zf m.data.status.sf m.data.status.of)
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) (v := umax _ _) hq (by braid_at)
+
+/-- **`sum_to` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `sum_to`, and has the return address `r` in the eight bytes at the
+stack pointer, reaches `r` on every run, with `1 + 2 + ... + n` in `rax`, where `n` is
+the number in `rdi`. -/
+theorem sum_to_correct [Layout] (m : MachineState) (r : Word) (hpc : m.pc = 0x401020)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧
+        m'.data.regs.get64 .rax = tri (m.data.regs.get64 .rdi)) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound sum_to_holds
+    (sum_to_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rax) (m.data.regs.get64 .rsi)
+      (m.data.regs.get64 .rcx) (m.data.regs.get64 .rdx) (m.data.regs.get64 .rsp) r m.data.status.cf
+      m.data.status.pf m.data.status.af m.data.status.zf m.data.status.sf m.data.status.of)
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) (v := tri _) hq (by braid_at)
+
 end Examples.Basic.X86

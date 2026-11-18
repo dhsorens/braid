@@ -4,7 +4,9 @@
   The textual forms of a module: MLIR's generic operation syntax, which `mlir-opt` and other
   MLIR tools read, and a Lean term, which a proof imports.
 
-  In the MLIR form a function is a `braid.func` operation holding one region. Each block is
+  In the MLIR form a function is a `braid_cf.func` operation holding one region. The value
+  operations are in the dialect `braid`, which `braid/mlir/braid.irdl.mlir` defines; the
+  terminators and containers are in `braid_cf`. Each block is
   labelled with its offset from the function's entry, and SSA values are named after their
   block, so a change to one instruction changes the text of its block alone.
 
@@ -81,10 +83,10 @@ def target (f : Func) (a : Word) : String :=
   if f.blocks.any (·.1 == a) then label f.entry a else extLabel a
 
 def term (f : Func) (l : String) : Term → String
-  | .jump a => s!"\"braid.br\"()[{target f a}] : () -> ()"
-  | .branch c t e => s!"\"braid.cond_br\"({val l c})[{target f t}, {target f e}] : (i64) -> ()"
-  | .jumpInd a => s!"\"braid.br_ind\"({val l a}) : (i64) -> ()"
-  | .trap r => s!"\"braid.trap\"() \{reason = {repr r}} : () -> ()"
+  | .jump a => s!"\"braid_cf.br\"()[{target f a}] : () -> ()"
+  | .branch c t e => s!"\"braid_cf.cond_br\"({val l c})[{target f t}, {target f e}] : (i64) -> ()"
+  | .jumpInd a => s!"\"braid_cf.br_ind\"({val l a}) : (i64) -> ()"
+  | .trap r => s!"\"braid_cf.trap\"() \{reason = {repr r}} : () -> ()"
 
 /-- The addresses a terminator may jump to. -/
 def targets : Term → List Word
@@ -101,8 +103,8 @@ def func (arch : Arch) (f : Func) : String :=
   let exts := ((f.blocks.flatMap fun ab => targets ab.2.term).filter fun a =>
     !f.blocks.any (·.1 == a)).eraseDups
   let extBlocks := exts.map fun a =>
-    s!"    {extLabel a}:\n      \"braid.tail\"() \{target = {a.toNat} : i64} : () -> ()\n"
-  s!"  \"braid.func\"() (\{\n      \"braid.br\"()[{target f f.entry}] : () -> ()\n" ++
+    s!"    {extLabel a}:\n      \"braid_cf.tail\"() \{target = {a.toNat} : i64} : () -> ()\n"
+  s!"  \"braid_cf.func\"() (\{\n      \"braid_cf.br\"()[{target f f.entry}] : () -> ()\n" ++
     String.join (f.blocks.map (block arch f)) ++ String.join extBlocks ++
     s!"  }) \{sym_name = {repr f.name}, entry = {f.entry.toNat} : i64} : () -> ()\n"
 
@@ -110,7 +112,7 @@ end Mlir
 
 /-- The module in MLIR's generic operation syntax. -/
 def Module.toMlir (arch : Arch) (m : Module) : String :=
-  "\"braid.module\"() ({\n" ++ String.join (m.funcs.map (Mlir.func arch)) ++
+  "\"braid_cf.module\"() ({\n" ++ String.join (m.funcs.map (Mlir.func arch)) ++
     s!"}) \{arch = {repr m.arch}} : () -> ()\n"
 
 /-! ## Position-independent text, for comparing two lowerings -/

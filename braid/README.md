@@ -88,14 +88,14 @@ A module prints in MLIR's generic operation syntax, which `mlir-opt
 `Examples/src/rust/basic.rs`, compiled for RISC-V, as far as the end of its second block:
 
 ```mlir
-"braid.module"() ({
-  "braid.func"() ({
-      "braid.br"()[^bb0] : () -> ()
+"braid_cf.module"() ({
+  "braid_cf.func"() ({
+      "braid_cf.br"()[^bb0] : () -> ()
     ^bb0:  // 0x10010
       %bb0_0 = "braid.get"() {reg = "x11"} : () -> i64
       %bb0_1 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb0_2 = "braid.eq"(%bb0_0, %bb0_1) : (i64, i64) -> i64
-      "braid.cond_br"(%bb0_2)[^bb14, ^bb4] : (i64) -> ()
+      "braid_cf.cond_br"(%bb0_2)[^bb14, ^bb4] : (i64) -> ()
     ^bb4:  // 0x10014
       %bb4_0 = "braid.get"() {reg = "x10"} : () -> i64
       %bb4_1 = "braid.get"() {reg = "x11"} : () -> i64
@@ -103,9 +103,22 @@ A module prints in MLIR's generic operation syntax, which `mlir-opt
       ...
 ```
 
+The value operations are in the dialect `braid`. The terminators and the containers
+(`func`, `module`) are in a second namespace, `braid_cf`. The split is there because
+[`mlir/braid.irdl.mlir`](mlir/braid.irdl.mlir) defines the `braid` dialect in
+[IRDL](https://mlir.llvm.org/docs/Dialects/IRDL/), and with it `mlir-opt` checks every value
+operation of a lowered module, its operands, results and attributes, instead of only parsing
+it:
+
+```sh
+mlir-opt --irdl-file=braid/mlir/braid.irdl.mlir --allow-unregistered-dialect f.mlir
+```
+
+IRDL cannot yet say that an operation is a terminator, so `braid_cf` stays unregistered.
+
 A block is labelled with its offset from the entry of its function, and an SSA value is named
 after its block, so a change to one instruction changes the text of one block. A jump out of
-the function goes to a block that holds a single `braid.tail`.
+the function goes to a block that holds a single `braid_cf.tail`.
 
 `Module.toNorm` prints the same module with addresses made relative, for comparing two
 lowerings ([`docs/Continuity.md`](../docs/Continuity.md)). `Func.toLean` prints a function as

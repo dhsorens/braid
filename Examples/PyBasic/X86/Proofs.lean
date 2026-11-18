@@ -54,4 +54,92 @@ theorem py_max_u64_spec (p a b t old s r : Word) (c pf af z sg o : Bool) :
     all_goals bv_decide
   simp only [e, BitVec.xor_self]
 
+/-! ## On the machine -/
+
+/-- A memory atom of a postcondition, read off the machine. -/
+private theorem hasBytes_of_holds {as : Atoms} {R : SProp} {σ : State} {m : MachineState}
+    {a v : Word} {n : Nat} {w : Bool} (hr : Rel m σ) (h : (Atoms.interp as).holds R σ)
+    (hat : as.At (.mem a n v w)) : HasBytes m a n v := by
+  intro x hx
+  have hc := Atoms.mem_of_holds h hat hx
+  rw [hr.data.mem] at hc
+  obtain ⟨b, hb, hc⟩ := memOf_eq_some hc
+  rw [hb]
+  simpa using (congrArg Cell.val hc).symm
+
+/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
+round the address space. -/
+private theorem disj_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
+    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
+    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
+  Atom.disj_mem_mem fun x hx => by bv_omega
+
+/-- **`py_add3` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `py_add3`, has a word of memory where `rdi` points, and has the
+return address `r` in the eight bytes at the stack pointer, apart from that word, reaches `r`
+on every run, with the sum of `rdx`, `rcx` and `r8` in the word `rdi` pointed to, and zero in
+`rax`. -/
+theorem py_add3_correct [Layout] (m : MachineState) (old r : Word) (hpc : m.pc = 0x401000)
+    (hres : HasBytes m (m.data.regs.get64 .rdi) 8 old)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r)
+    (hsep : 8 ≤ (m.data.regs.get64 .rdi - m.data.regs.get64 .rsp).toNat ∧
+      8 ≤ (m.data.regs.get64 .rsp - m.data.regs.get64 .rdi).toNat) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧ m'.data.regs.get64 .rax = 0#64 ∧
+        HasBytes m' (m.data.regs.get64 .rdi) 8
+          (m.data.regs.get64 .rdx + m.data.regs.get64 .rcx +
+            m.data.regs.get64 .r8)) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound py_add3_holds
+    (py_add3_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rdx) (m.data.regs.get64 .rcx)
+      (m.data.regs.get64 .r8) (m.data.regs.get64 .rax) old (m.data.regs.get64 .rsp) r
+      m.data.status.cf m.data.status.pf m.data.status.af m.data.status.zf m.data.status.sf
+      m.data.status.of)
+    (by simp [Atom.IsPointsTo])
+    (by
+      braid_disj
+      repeat' constructor
+      all_goals first | decide | exact disj_apart hsep)
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret, hres]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
+  · have e : m.data.regs.get64 .rdx + m.data.regs.get64 .rcx + m.data.regs.get64 .r8 =
+        m.data.regs.get64 .r8 + (m.data.regs.get64 .rcx + m.data.regs.get64 .rdx) := by ac_rfl
+    rw [e]
+    exact hasBytes_of_holds hr hq (by braid_at)
+
+/-- **`py_max_u64` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `py_max_u64`, has a word of memory where `rdi` points, and has the
+return address `r` in the eight bytes at the stack pointer, apart from that word, reaches `r`
+on every run, with the larger of `rdx` and `rcx` in the word `rdi` pointed to, and zero in `rax`. -/
+theorem py_max_u64_correct [Layout] (m : MachineState) (old r : Word) (hpc : m.pc = 0x401010)
+    (hres : HasBytes m (m.data.regs.get64 .rdi) 8 old)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r)
+    (hsep : 8 ≤ (m.data.regs.get64 .rdi - m.data.regs.get64 .rsp).toNat ∧
+      8 ≤ (m.data.regs.get64 .rsp - m.data.regs.get64 .rdi).toNat) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧ m'.data.regs.get64 .rax = 0#64 ∧
+        HasBytes m' (m.data.regs.get64 .rdi) 8
+          (umax (m.data.regs.get64 .rdx) (m.data.regs.get64 .rcx))) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound py_max_u64_holds
+    (py_max_u64_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rdx) (m.data.regs.get64 .rcx)
+    (m.data.regs.get64 .rax) old (m.data.regs.get64 .rsp) r m.data.status.cf m.data.status.pf
+      m.data.status.af m.data.status.zf m.data.status.sf m.data.status.of)
+    (by simp [Atom.IsPointsTo])
+    (by
+      braid_disj
+      repeat' constructor
+      all_goals first | decide | exact disj_apart hsep)
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret, hres]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
+  · exact hasBytes_of_holds hr hq (by braid_at)
+
 end Examples.PyBasic.X86

@@ -131,4 +131,105 @@ theorem js_add3_spec (a b d : BitVec 32) (fn code fl root lim sp0 bp0 vsi vdi r 
   apply Triple.done_split
   braid_split
 
+/-! ## On the machine -/
+
+/-- A memory atom of a postcondition, read off the machine. -/
+private theorem hasBytes_of_holds {as : Atoms} {R : SProp} {σ : State} {m : MachineState}
+    {a v : Word} {n : Nat} {w : Bool} (hr : Rel m σ) (h : (Atoms.interp as).holds R σ)
+    (hat : as.At (.mem a n v w)) : HasBytes m a n v := by
+  intro x hx
+  have hc := Atoms.mem_of_holds h hat hx
+  rw [hr.data.mem] at hc
+  obtain ⟨b, hb, hc⟩ := memOf_eq_some hc
+  rw [hb]
+  simpa using (congrArg Cell.val hc).symm
+
+/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
+round the address space. -/
+private theorem disj_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
+    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
+    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
+  Atom.disj_mem_mem fun x hx => by bv_omega
+
+/-- A memory atom apart from the sixty-four bytes around the stack pointer is disjoint from
+each word of them. -/
+private theorem disj_stack {a b sp v v' : Word} {n : Nat} {w w' : Bool}
+    (h : 64 ≤ (a - (sp - 32#64)).toNat ∧ n ≤ (sp - 32#64 - a).toNat)
+    (hb : (b - (sp - 32#64)).toNat ≤ 56) : Atom.Disj (.mem a n v w) (.mem b 8 v' w') :=
+  Atom.disj_mem_mem fun x hx => by bv_omega
+
+/-- **`js_add3` on the machine.** A machine of the model that runs the executable of this
+image and is at the entry of `js_add3` as V8 calls it: the closure in `rcx`, whose code
+object `code` is not marked for deoptimisation; the stack limit `lim`, read through the root
+register `r13`, below the frame; the return address `r` in the eight bytes at the stack
+pointer, the Smi arguments `d`, `b` and `a` in the words above them, where the sum of `a` and
+`b` does not overflow, and memory in the thirty-two bytes below; the closure's word, the
+flag byte and the limit apart from one another and from those sixty-four bytes of stack.
+On every run it reaches its return instruction, with the Smi of `a + b + d` in `rax`, the
+stack pointer and frame pointer as they were, and the return address still at the stack
+pointer. -/
+theorem js_add3_correct [Layout] (m : MachineState) (a b d : BitVec 32)
+    (code fl lim r m0 m1 m2 m3 : Word) (hpc : m.pc = 0x401000)
+    (hcode : HasBytes m (m.data.regs.get64 .rcx - 64#64) 8 code)
+    (hflag : HasBytes m (code + 15#64) 1 fl) (hfl : fl &&& 1#64 = 0#64)
+    (hlimit : HasBytes m (m.data.regs.get64 .r13 - 32#64) 8 lim)
+    (hlim : lim.ult (m.data.regs.get64 .rsp - 32#64) = true)
+    (hs0 : HasBytes m (m.data.regs.get64 .rsp - 8#64) 8 m0)
+    (hs1 : HasBytes m (m.data.regs.get64 .rsp - 16#64) 8 m1)
+    (hs2 : HasBytes m (m.data.regs.get64 .rsp - 24#64) 8 m2)
+    (hs3 : HasBytes m (m.data.regs.get64 .rsp - 32#64) 8 m3)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r)
+    (hd : HasBytes m (m.data.regs.get64 .rsp + 8#64) 8 (smi d))
+    (hb : HasBytes m (m.data.regs.get64 .rsp + 16#64) 8 (smi b))
+    (ha : HasBytes m (m.data.regs.get64 .rsp + 24#64) 8 (smi a))
+    (hov : b.saddOverflow a = false)
+    (hcf : 1 ≤ (m.data.regs.get64 .rcx - 64#64 - (code + 15#64)).toNat ∧
+      8 ≤ (code + 15#64 - (m.data.regs.get64 .rcx - 64#64)).toNat)
+    (hcl : 8 ≤ (m.data.regs.get64 .rcx - 64#64 - (m.data.regs.get64 .r13 - 32#64)).toNat ∧
+      8 ≤ (m.data.regs.get64 .r13 - 32#64 - (m.data.regs.get64 .rcx - 64#64)).toNat)
+    (hfll : 8 ≤ (code + 15#64 - (m.data.regs.get64 .r13 - 32#64)).toNat ∧
+      1 ≤ (m.data.regs.get64 .r13 - 32#64 - (code + 15#64)).toNat)
+    (hcs : 64 ≤ (m.data.regs.get64 .rcx - 64#64 - (m.data.regs.get64 .rsp - 32#64)).toNat ∧
+      8 ≤ (m.data.regs.get64 .rsp - 32#64 - (m.data.regs.get64 .rcx - 64#64)).toNat)
+    (hfs : 64 ≤ (code + 15#64 - (m.data.regs.get64 .rsp - 32#64)).toNat ∧
+      1 ≤ (m.data.regs.get64 .rsp - 32#64 - (code + 15#64)).toNat)
+    (hls : 64 ≤ (m.data.regs.get64 .r13 - 32#64 - (m.data.regs.get64 .rsp - 32#64)).toNat ∧
+      8 ≤ (m.data.regs.get64 .rsp - 32#64 - (m.data.regs.get64 .r13 - 32#64)).toNat) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = 0x401081#64 ∧
+        m'.data.regs.get64 .rax = smi (a + b + d) ∧
+        m'.data.regs.get64 .rsp = m.data.regs.get64 .rsp ∧
+        m'.data.regs.get64 .rbp = m.data.regs.get64 .rbp ∧
+        HasBytes m' (m.data.regs.get64 .rsp) 8 r) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound js_add3_holds
+    (js_add3_spec a b d (m.data.regs.get64 .rcx) code fl (m.data.regs.get64 .r13) lim
+      (m.data.regs.get64 .rsp) (m.data.regs.get64 .rbp) (m.data.regs.get64 .rsi)
+      (m.data.regs.get64 .rdi) r (m.data.regs.get64 .rax) (m.data.regs.get64 .rbx)
+      (m.data.regs.get64 .rdx) (m.data.regs.get64 .r8) m0 m1 m2 m3 m.data.status.cf m.data.status.pf
+      m.data.status.af m.data.status.zf m.data.status.sf m.data.status.of hfl hlim hov)
+    (by simp [Atom.IsPointsTo])
+    (by
+      braid_disj
+      repeat' constructor
+      all_goals try decide
+      · exact disj_apart hcf
+      · exact disj_apart hcl
+      iterate 8 exact disj_stack hcs (by bv_omega)
+      · exact disj_apart hfll
+      iterate 8 exact disj_stack hfs (by bv_omega)
+      iterate 8 exact disj_stack hls (by bv_omega)
+      all_goals exact disj_apart (by bv_omega))
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret, hcode, hflag, hlimit, hs0, hs1, hs2, hs3, hd, hb, ha]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) (v := smi _) hq (by braid_at)
+  · rw [← hr.reg .rsp]
+    exact Atoms.reg_of_holds (r := 6) hq (by braid_at)
+  · rw [← hr.reg .rbp]
+    exact Atoms.reg_of_holds (r := 7) hq (by braid_at)
+  · exact hasBytes_of_holds hr hq (by braid_at)
+
 end Examples.JsBasic.X86

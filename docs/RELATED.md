@@ -362,7 +362,7 @@ validation, [PLDI 2020 page](https://pldi20.sigplan.org/details/pldi-2020-papers
 - **CIRCT.** An LLVM project that applies MLIR to hardware design, with dialects such as `hw`,
   `comb` and `seq`. [Project site](https://circt.llvm.org/).
 - **How these relate to Braid.** Braid uses MLIR's structure and textual format, not its C++
-  implementation. A `braid` module prints as `braid.func` operations holding one region, with
+  implementation. A `braid` module prints as `braid_cf.func` operations holding one region, with
   one block per instruction, and `mlir-opt --allow-unregistered-dialect` accepts it. In xDSL's
   terms Braid is a sidekick whose side of the exchange has a formal semantics. CIRCT is the
   precedent for a dialect family whose subject is not a software language. One mismatch to

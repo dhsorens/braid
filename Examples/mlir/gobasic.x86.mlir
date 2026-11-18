@@ -1,6 +1,6 @@
-"braid.module"() ({
-  "braid.func"() ({
-      "braid.br"()[^bb0] : () -> ()
+"braid_cf.module"() ({
+  "braid_cf.func"() ({
+      "braid_cf.br"()[^bb0] : () -> ()
     ^bb0:  // 0x47a600
       %bb0_1 = "braid.get"() {reg = "rbx"} : () -> i64
       %bb0_2 = "braid.get"() {reg = "rax"} : () -> i64
@@ -10,7 +10,7 @@
       %bb0_6 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb0_0 = "braid.add"(%bb0_5, %bb0_6) : (i64, i64) -> i64
       "braid.set"(%bb0_0) {reg = "rdx"} : (i64) -> ()
-      "braid.br"()[^bb4] : () -> ()
+      "braid_cf.br"()[^bb4] : () -> ()
     ^bb4:  // 0x47a604
       %bb4_1 = "braid.get"() {reg = "rcx"} : () -> i64
       %bb4_2 = "braid.get"() {reg = "rdx"} : () -> i64
@@ -20,17 +20,17 @@
       %bb4_6 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb4_0 = "braid.add"(%bb4_5, %bb4_6) : (i64, i64) -> i64
       "braid.set"(%bb4_0) {reg = "rax"} : (i64) -> ()
-      "braid.br"()[^bb8] : () -> ()
+      "braid_cf.br"()[^bb8] : () -> ()
     ^bb8:  // 0x47a608
       %bb8_0 = "braid.get"() {reg = "rsp"} : () -> i64
       %bb8_1 = "braid.load"(%bb8_0) {bytes = 8 : i64} : (i64) -> i64
       %bb8_2 = "braid.const"() {value = 8 : i64} : () -> i64
       %bb8_3 = "braid.add"(%bb8_0, %bb8_2) : (i64, i64) -> i64
       "braid.set"(%bb8_3) {reg = "rsp"} : (i64) -> ()
-      "braid.br_ind"(%bb8_1) : (i64) -> ()
+      "braid_cf.br_ind"(%bb8_1) : (i64) -> ()
   }) {sym_name = "main.Add3", entry = 4695552 : i64} : () -> ()
-  "braid.func"() ({
-      "braid.br"()[^bb0] : () -> ()
+  "braid_cf.func"() ({
+      "braid_cf.br"()[^bb0] : () -> ()
     ^bb0:  // 0x47a620
       %bb0_0 = "braid.get"() {reg = "rbx"} : () -> i64
       %bb0_8 = "braid.get"() {reg = "rax"} : () -> i64
@@ -57,40 +57,40 @@
       %bb0_39 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
       %bb0_40 = "braid.and"(%bb0_16, %bb0_39) : (i64, i64) -> i64
       "braid.setf"(%bb0_40) {flag = "sf"} : (i64) -> ()
-      "braid.br"()[^bb3] : () -> ()
+      "braid_cf.br"()[^bb3] : () -> ()
     ^bb3:  // 0x47a623
       %bb3_1 = "braid.getf"() {flag = "cf"} : () -> i64
       %bb3_2 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb3_0 = "braid.eq"(%bb3_1, %bb3_2) : (i64, i64) -> i64
-      "braid.cond_br"(%bb3_0)[^bb6, ^bb5] : (i64) -> ()
+      "braid_cf.cond_br"(%bb3_0)[^bb6, ^bb5] : (i64) -> ()
     ^bb5:  // 0x47a625
       %bb5_0 = "braid.get"() {reg = "rsp"} : () -> i64
       %bb5_1 = "braid.load"(%bb5_0) {bytes = 8 : i64} : (i64) -> i64
       %bb5_2 = "braid.const"() {value = 8 : i64} : () -> i64
       %bb5_3 = "braid.add"(%bb5_0, %bb5_2) : (i64, i64) -> i64
       "braid.set"(%bb5_3) {reg = "rsp"} : (i64) -> ()
-      "braid.br_ind"(%bb5_1) : (i64) -> ()
+      "braid_cf.br_ind"(%bb5_1) : (i64) -> ()
     ^bb6:  // 0x47a626
       %bb6_0 = "braid.get"() {reg = "rbx"} : () -> i64
       "braid.set"(%bb6_0) {reg = "rax"} : (i64) -> ()
-      "braid.br"()[^bb9] : () -> ()
+      "braid_cf.br"()[^bb9] : () -> ()
     ^bb9:  // 0x47a629
       %bb9_0 = "braid.get"() {reg = "rsp"} : () -> i64
       %bb9_1 = "braid.load"(%bb9_0) {bytes = 8 : i64} : (i64) -> i64
       %bb9_2 = "braid.const"() {value = 8 : i64} : () -> i64
       %bb9_3 = "braid.add"(%bb9_0, %bb9_2) : (i64, i64) -> i64
       "braid.set"(%bb9_3) {reg = "rsp"} : (i64) -> ()
-      "braid.br_ind"(%bb9_1) : (i64) -> ()
+      "braid_cf.br_ind"(%bb9_1) : (i64) -> ()
   }) {sym_name = "main.MaxU64", entry = 4695584 : i64} : () -> ()
-  "braid.func"() ({
-      "braid.br"()[^bb0] : () -> ()
+  "braid_cf.func"() ({
+      "braid_cf.br"()[^bb0] : () -> ()
     ^bb0:  // 0x47a640
       %bb0_0 = "braid.get"() {reg = "rax"} : () -> i64
       %bb0_9 = "braid.get"() {reg = "rsp"} : () -> i64
       %bb0_10 = "braid.const"() {value = 8 : i64} : () -> i64
       %bb0_8 = "braid.add"(%bb0_9, %bb0_10) : (i64, i64) -> i64
       "braid.store"(%bb0_8, %bb0_0) {bytes = 8 : i64} : (i64, i64) -> ()
-      "braid.br"()[^bb5] : () -> ()
+      "braid_cf.br"()[^bb5] : () -> ()
     ^bb5:  // 0x47a645
       %bb5_1 = "braid.get"() {reg = "rcx"} : () -> i64
       %bb5_0 = "braid.zext"(%bb5_1) {bits = 32 : i64} : (i64) -> i64
@@ -115,7 +115,7 @@
       %bb5_40 = "braid.and"(%bb5_16, %bb5_39) : (i64, i64) -> i64
       "braid.setf"(%bb5_40) {flag = "sf"} : (i64) -> ()
       "braid.set"(%bb5_16) {reg = "rcx"} : (i64) -> ()
-      "braid.br"()[^bb7] : () -> ()
+      "braid_cf.br"()[^bb7] : () -> ()
     ^bb7:  // 0x47a647
       %bb7_1 = "braid.get"() {reg = "rdx"} : () -> i64
       %bb7_0 = "braid.zext"(%bb7_1) {bits = 32 : i64} : (i64) -> i64
@@ -140,9 +140,9 @@
       %bb7_40 = "braid.and"(%bb7_16, %bb7_39) : (i64, i64) -> i64
       "braid.setf"(%bb7_40) {flag = "sf"} : (i64) -> ()
       "braid.set"(%bb7_16) {reg = "rdx"} : (i64) -> ()
-      "braid.br"()[^bb9] : () -> ()
+      "braid_cf.br"()[^bb9] : () -> ()
     ^bb9:  // 0x47a649
-      "braid.br"()[^bb12] : () -> ()
+      "braid_cf.br"()[^bb12] : () -> ()
     ^bbb:  // 0x47a64b
       %bbb_2 = "braid.get"() {reg = "rax"} : () -> i64
       %bbb_3 = "braid.get"() {reg = "rcx"} : () -> i64
@@ -177,7 +177,7 @@
       %bbb_40 = "braid.and"(%bbb_16, %bbb_39) : (i64, i64) -> i64
       "braid.setf"(%bbb_40) {flag = "sf"} : (i64) -> ()
       "braid.set"(%bbb_16) {reg = "rdx"} : (i64) -> ()
-      "braid.br"()[^bbf] : () -> ()
+      "braid_cf.br"()[^bbf] : () -> ()
     ^bbf:  // 0x47a64f
       %bbf_0 = "braid.get"() {reg = "rcx"} : () -> i64
       %bbf_8 = "braid.const"() {value = 1 : i64} : () -> i64
@@ -200,7 +200,7 @@
       %bbf_40 = "braid.and"(%bbf_16, %bbf_39) : (i64, i64) -> i64
       "braid.setf"(%bbf_40) {flag = "sf"} : (i64) -> ()
       "braid.set"(%bbf_16) {reg = "rcx"} : (i64) -> ()
-      "braid.br"()[^bb12] : () -> ()
+      "braid_cf.br"()[^bb12] : () -> ()
     ^bb12:  // 0x47a652
       %bb12_0 = "braid.get"() {reg = "rbx"} : () -> i64
       %bb12_8 = "braid.get"() {reg = "rcx"} : () -> i64
@@ -227,7 +227,7 @@
       %bb12_39 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
       %bb12_40 = "braid.and"(%bb12_16, %bb12_39) : (i64, i64) -> i64
       "braid.setf"(%bb12_40) {flag = "sf"} : (i64) -> ()
-      "braid.br"()[^bb15] : () -> ()
+      "braid_cf.br"()[^bb15] : () -> ()
     ^bb15:  // 0x47a655
       %bb15_1 = "braid.getf"() {flag = "sf"} : () -> i64
       %bb15_2 = "braid.getf"() {flag = "of"} : () -> i64
@@ -236,17 +236,17 @@
       %bb15_5 = "braid.or"(%bb15_3, %bb15_4) : (i64, i64) -> i64
       %bb15_6 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb15_0 = "braid.eq"(%bb15_5, %bb15_6) : (i64, i64) -> i64
-      "braid.cond_br"(%bb15_0)[^bbb, ^bb17] : (i64) -> ()
+      "braid_cf.cond_br"(%bb15_0)[^bbb, ^bb17] : (i64) -> ()
     ^bb17:  // 0x47a657
       %bb17_0 = "braid.get"() {reg = "rdx"} : () -> i64
       "braid.set"(%bb17_0) {reg = "rax"} : (i64) -> ()
-      "braid.br"()[^bb1a] : () -> ()
+      "braid_cf.br"()[^bb1a] : () -> ()
     ^bb1a:  // 0x47a65a
       %bb1a_0 = "braid.get"() {reg = "rsp"} : () -> i64
       %bb1a_1 = "braid.load"(%bb1a_0) {bytes = 8 : i64} : (i64) -> i64
       %bb1a_2 = "braid.const"() {value = 8 : i64} : () -> i64
       %bb1a_3 = "braid.add"(%bb1a_0, %bb1a_2) : (i64, i64) -> i64
       "braid.set"(%bb1a_3) {reg = "rsp"} : (i64) -> ()
-      "braid.br_ind"(%bb1a_1) : (i64) -> ()
+      "braid_cf.br_ind"(%bb1a_1) : (i64) -> ()
   }) {sym_name = "main.SumSlice", entry = 4695616 : i64} : () -> ()
 }) {arch = "x86_64"} : () -> ()

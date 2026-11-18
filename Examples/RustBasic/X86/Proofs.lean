@@ -138,4 +138,103 @@ theorem sum_slice_spec (p t0 t1 s r : Word) (xs : List Word) (c pf af z sg o : B
       braid_forget 4
       braid_done
 
+/-! ## On the machine -/
+
+/-- **`add3` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `add3`, and has the return address `r` in the eight bytes at the
+stack pointer, reaches `r` on every run, with the sum of `rdi`, `rsi` and `rdx` in `rax`. -/
+theorem add3_correct [Layout] (m : MachineState) (r : Word) (hpc : m.pc = 0x401010)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧
+        m'.data.regs.get64 .rax = 
+          (m.data.regs.get64 .rdi) + (m.data.regs.get64 .rsi) + (m.data.regs.get64 .rdx)) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound add3_holds
+    (add3_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi) (m.data.regs.get64 .rdx)
+      (m.data.regs.get64 .rax) (m.data.regs.get64 .rsp) r m.data.status.cf m.data.status.pf
+      m.data.status.af m.data.status.zf m.data.status.sf m.data.status.of)
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
+
+/-- **`max_u64` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `max_u64`, and has the return address `r` in the eight bytes at the
+stack pointer, reaches `r` on every run, with the larger of `rdi` and `rsi` in `rax`. -/
+theorem max_u64_correct [Layout] (m : MachineState) (r : Word) (hpc : m.pc = 0x401050)
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧
+        m'.data.regs.get64 .rax = umax (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi)) m := by
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound max_u64_holds
+    (max_u64_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsi) (m.data.regs.get64 .rax)
+      (m.data.regs.get64 .rsp) r m.data.status.cf m.data.status.pf m.data.status.af
+      m.data.status.zf m.data.status.sf m.data.status.of)
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+      hret]))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) (v := umax _ _) hq (by braid_at)
+
+/-- A word that starts at or beyond the end of an array, and ends before the array starts,
+does not reach into it. -/
+private theorem sep_array {s p : Word} {l : Nat} (h : l ≤ (s - p).toNat ∧ 8 ≤ (p - s).toNat)
+    (x : Word) (hx : (x - s).toNat < 8) : ¬ (x - p).toNat < l := by
+  bv_omega
+
+/-- **`sum_slice` on the machine.** A machine of the model that runs the executable of this
+image, is at the entry of `sum_slice`, has the words `xs` in memory where `rdi` points, with
+their number in `rsi`, and has the return address `r` in the eight bytes at the stack
+pointer, apart from the array, reaches `r` on every run, with the sum of the words in
+`rax`. -/
+theorem sum_slice_correct [Layout] (m : MachineState) (xs : List Word) (r : Word)
+    (hpc : m.pc = 0x401060)
+    (hn : m.data.regs.get64 .rsi = BitVec.ofNat 64 xs.length)
+    (hmem : ∀ (i : Nat) (hi : i < xs.length),
+      HasBytes m (m.data.regs.get64 .rdi + BitVec.ofNat 64 (8 * i)) 8 xs[i])
+    (hret : HasBytes m (m.data.regs.get64 .rsp) 8 r)
+    (hsep : 8 * xs.length ≤ (m.data.regs.get64 .rsp - m.data.regs.get64 .rdi).toNat ∧
+      8 ≤ (m.data.regs.get64 .rdi - m.data.regs.get64 .rsp).toNat) :
+    Eventually (step1 exe)
+      (fun m' => m'.pc.toBitVec = r ∧ m'.data.regs.get64 .rax = wsum xs 0#64) m := by
+  have hl : xs.length < 2 ^ 61 := by
+    have : (m.data.regs.get64 .rsp - m.data.regs.get64 .rdi).toNat < 2 ^ 64 := BitVec.isLt _
+    omega
+  refine eventually_weaken _ _ _ _ ?_ (machine_sound_flat sum_slice_holds
+    (sum_slice_spec (m.data.regs.get64 .rdi) (m.data.regs.get64 .rax) (m.data.regs.get64 .rcx)
+      (m.data.regs.get64 .rsp) r xs m.data.status.cf m.data.status.pf m.data.status.af
+      m.data.status.zf m.data.status.sf m.data.status.of hl)
+    (flat := [.pc 0x401060#64, .reg rax (m.data.regs.get64 .rax),
+      .reg rcx (m.data.regs.get64 .rcx), .reg rdi (m.data.regs.get64 .rdi),
+      .reg rsi (BitVec.ofNat 64 xs.length)] ++ wordsAtoms (m.data.regs.get64 .rdi) xs ++
+      [.reg rsp (m.data.regs.get64 .rsp), .mem (m.data.regs.get64 .rsp) 8 r true,
+      .flag Flags.cf m.data.status.cf, .flag Flags.pf m.data.status.pf,
+      .flag Flags.af m.data.status.af, .flag Flags.zf m.data.status.zf,
+      .flag Flags.sf m.data.status.sf, .flag Flags.of m.data.status.of])
+    (by rw [wordsAt_eq_interp]
+        exact Atoms.interp_flatten [.pc 0x401060#64, .reg rax (m.data.regs.get64 .rax),
+          .reg rcx (m.data.regs.get64 .rcx), .reg rdi (m.data.regs.get64 .rdi),
+          .reg rsi (BitVec.ofNat 64 xs.length)] _ _)
+    (Atoms.forall_flat (by simp [Atom.IsPointsTo]) wordsAtoms_isPointsTo)
+    (Atoms.pairwise_flat (by braid_disj) (wordsAtoms_pairwise (by omega))
+      (by
+        braid_disj_array
+        exact disj_mem_wordsAtoms (sep_array hsep) (by omega)))
+    (Atoms.forall_flat
+      (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
+        hret, hn])
+      (wordsAtoms_sat fun i hi => sat_mem_abs.2 (hmem i hi))))
+  rintro m' ⟨σ', hr, hq⟩
+  refine ⟨?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.reg .rax]
+    exact Atoms.reg_of_holds (r := 0) (v := wsum _ _) hq (by braid_at)
+
 end Examples.RustBasic.X86
