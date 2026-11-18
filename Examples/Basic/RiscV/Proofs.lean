@@ -93,4 +93,22 @@ theorem sum_to_spec (n t1 t2 t3 r : Word) :
     simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
     bv_decide
 
+/-- **`sum_to` on the machine.** A machine that holds the code of `sum_to` and is at its
+entry runs to the return address with `1 + 2 + ... + n` in `a0`, where `n` is what `a0`
+held. -/
+theorem sum_to_correct (s : MachineState) (hcode : ∀ p ∈ sum_to_code, s.code p.1 = some p.2)
+    (hpc : s.pc = 0x10018#64) :
+    ∃ n s', stepN n s = some s' ∧ s'.pc = s.getReg .x1 &&& ~~~1#64 ∧
+      s'.getReg .x10 =
+        BitVec.ofNat 64 ((s.getReg .x10).toNat * ((s.getReg .x10).toNat + 1) / 2) := by
+  obtain ⟨n, s', σ', hn, hr, hq⟩ := machine_sound sum_to_lowered
+    (sum_to_spec (s.getReg .x10) (s.getReg .x11) (s.getReg .x12) (s.getReg .x13)
+      (s.getReg .x1)) hcode
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, abs, regOfNat, hpc])
+  refine ⟨n, s', hn, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.getReg (r := .x10) (by decide)]
+    exact Atoms.reg_of_holds (r := 10) (v := tri _) hq (by braid_at)
+
 end Examples.Basic.RiscV
