@@ -75,6 +75,7 @@ macro "braid_norm" loc:(Lean.Parser.Tactic.location)? : tactic =>
     trunc32_zext, BitVec.reduceSetWidth, sub_lit, BitVec.add_assoc, BitVec.reduceAdd,
     BitVec.reduceAnd, BitVec.reduceOr, BitVec.reduceXOr, BitVec.reduceNot,
     BitVec.reduceSub, BitVec.reduceNeg, BitVec.reduceMul, BitVec.add_zero, BitVec.zero_add,
+    BitVec.zero_or, BitVec.or_zero, BitVec.xor_zero, BitVec.zero_xor,
     ne_eq, ofBool_eq_zero, ofBool_bne_zero, Bool.not_eq_false, beq_iff_eq, bne_iff_ne, beq_eq_false_iff_ne, bne_eq_false_iff_eq, BitVec.reduceEq, BitVec.reduceNe,
     BitVec.reduceULT, BitVec.reduceULE, BitVec.reduceSLT, BitVec.reduceSLE, reduceCtorEq,
     not_true_eq_false, not_false_eq_true, Decidable.not_not] $[$loc]?)

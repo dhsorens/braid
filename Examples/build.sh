@@ -101,6 +101,30 @@ lower_swift() {
   lower_ll "$name" "$module" "$@"
 }
 
+# A Go source: name, source, module, functions. Go has its own back ends and linker, and its
+# RISC-V back end emits compressed instructions, which the RISC-V model does not have, so Go
+# is lowered for AArch64 and x86-64 only. The binary holds the whole Go runtime; only the
+# functions named are lowered.
+lower_go() {
+  name=$1; src=$2; module=$3; shift 3
+  fns=""; for f in "$@"; do fns="$fns --fn $f"; done
+  for isa in $ISAS; do
+    case $isa in arm) goarch=arm64 ;; x86) goarch=amd64 ;; *) continue ;; esac
+    dir=Examples/$(echo "$module" | tr . /)/$(isa_dir "$isa")
+    mkdir -p "$dir"
+    elf=Examples/bin/$name.$isa.elf
+    (cd "$(dirname "$src")" && GOOS=linux GOARCH=$goarch go build -o "$OLDPWD/$elf" "$(basename "$src")")
+    extra=""
+    if [ "$isa" = x86 ]; then
+      "$OBJDUMP" -d "$elf" > "Examples/bin/$name.x86.dis"
+      extra="--disasm Examples/bin/$name.x86.dis"
+    fi
+    # shellcheck disable=SC2086
+    "$LOWER" "$elf" $extra $fns --mlir "Examples/mlir/$name.$isa.mlir" \
+      --lean "$dir/Image.lean" --module "Examples.$module.$(isa_dir "$isa")"
+  done
+}
+
 want() { [ -z "${ONLY:-}" ] || [ "$ONLY" = "$1" ]; }
 ONLY=${1:-}
 
@@ -112,4 +136,7 @@ if want rustbasic; then
 fi
 if want swiftbasic; then
   lower_swift swiftbasic Examples/src/swift/basic.swift SwiftBasic swift_add3 swift_gcd swift_min
+fi
+if want gobasic; then
+  lower_go gobasic Examples/src/go/basic.go GoBasic main.Add3 main.MaxU64 main.SumSlice
 fi
