@@ -36,6 +36,18 @@ macro "braid_upd" : tactic =>
 theorem sub_lit (a : Word) (n : Nat) : a - BitVec.ofNat 64 n = a + -BitVec.ofNat 64 n :=
   BitVec.sub_eq_add_neg ..
 
+/-- A byte, widened to a word and cut back, is the byte. -/
+theorem trunc8_zext (b : BitVec 8) : (b.setWidth 64).setWidth 8 = b := by
+  ext i hi; simp
+
+/-- Sixteen bits, widened to a word and cut back, are themselves. -/
+theorem trunc16_zext (b : BitVec 16) : (b.setWidth 64).setWidth 16 = b := by
+  ext i hi; simp
+
+/-- Thirty-two bits, widened to a word and cut back, are themselves. -/
+theorem trunc32_zext (b : BitVec 32) : (b.setWidth 64).setWidth 32 = b := by
+  ext i hi; simp
+
 /-- Find an atom in the symbolic state, and build the state without it. -/
 macro "braid_extract" : tactic =>
   `(tactic| repeat (first | with_reducible exact Atoms.Extract.here | apply Atoms.Extract.there))
@@ -59,7 +71,8 @@ macro "braid_norm" loc:(Lean.Parser.Tactic.location)? : tactic =>
     BinOp.eval_ule, BinOp.eval_slt, BinOp.eval_sle, UnOp.eval_not, UnOp.eval_neg,
     UnOp.eval_clz, UnOp.eval_popcnt, UnOp.eval_rbit, UnOp.eval_bswap, UnOp.eval_sext,
     UnOp.eval_zext, Width.bytes, Width.bits, Nat.reduceMul, BitVec.truncate_eq_setWidth,
-    BitVec.zeroExtend_eq_setWidth, BitVec.setWidth_eq, sub_lit, BitVec.add_assoc, BitVec.reduceAdd,
+    BitVec.zeroExtend_eq_setWidth, BitVec.setWidth_eq, trunc8_zext, trunc16_zext,
+    trunc32_zext, BitVec.reduceSetWidth, sub_lit, BitVec.add_assoc, BitVec.reduceAdd,
     BitVec.reduceAnd, BitVec.reduceOr, BitVec.reduceXOr, BitVec.reduceNot,
     BitVec.reduceSub, BitVec.reduceNeg, BitVec.reduceMul, BitVec.add_zero, BitVec.zero_add,
     ne_eq, ofBool_eq_zero, ofBool_bne_zero, Bool.not_eq_false, beq_iff_eq, bne_iff_ne, beq_eq_false_iff_ne, bne_eq_false_iff_eq, BitVec.reduceEq, BitVec.reduceNe,
@@ -128,7 +141,7 @@ takes its precondition out of the symbolic state and puts its postcondition back
 macro "braid_call " t:term : tactic =>
   `(tactic| (braid_norm
              apply Triple.call (hcallee := $t)
-             case hsplit => braid_split
+             case hsplit => (braid_norm; braid_split)
              braid_norm))
 
 /-- Prove that the atoms of a precondition are pairwise disjoint. Registers, flags and the
@@ -146,7 +159,7 @@ macro "braid_disj" : tactic =>
 macro "braid_unfold " t:term : tactic =>
   `(tactic| (braid_norm
              apply Triple.unfold (heq := $t)
-             case hext => braid_extract
+             case hext => (braid_norm; braid_extract)
              braid_norm))
 
 /-- Close atoms of the symbolic state into one atom that means the same, by a lemma such
@@ -154,7 +167,7 @@ as `wordsAt_cons`. -/
 macro "braid_fold " t:term : tactic =>
   `(tactic| (braid_norm
              apply Triple.fold (heq := $t)
-             case hsplit => braid_split
+             case hsplit => (braid_norm; braid_split)
              braid_norm))
 
 /-- Forget the value of a register: `braid_forget r`. -/

@@ -69,6 +69,9 @@ fi
 if [ $# -eq 0 ] || [ "$1" = memory ]; then
   lower_c memory Examples/src/c/memory.c Memory swap sum_array max2 max3
 fi
+if [ $# -eq 0 ] || [ "$1" = bytes ]; then
+  lower_c bytes Examples/src/c/bytes.c Bytes str_len fill count_ones
+fi
 if [ $# -eq 0 ] || [ "$1" = rustbasic ]; then
   lower_rust rustbasic Examples/src/rust/basic.rs RustBasic add3 max_u64 gcd sum_slice
 fi

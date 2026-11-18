@@ -7,7 +7,7 @@
 
   ## Main definitions
 
-  * `wordsAt`: an array of 64-bit words
+  * `wordsAt`, `bytesAt`: an array of 64-bit words, and of bytes
   * `regAny`: a register holding some value
 
   ## Main results
@@ -32,6 +32,11 @@ def wordsAt (p : Word) : List Word → SProp
   | [] => iprop(emp)
   | x :: xs => iprop(memIs p 8 x ∗ wordsAt (p + 8#64) xs)
 
+/-- The bytes `bs` are in memory from `p` on, writable. -/
+def bytesAt (p : Word) : List (BitVec 8) → SProp
+  | [] => iprop(emp)
+  | b :: bs => iprop(memIs p 1 (b.zeroExtend 64) ∗ bytesAt (p + 1#64) bs)
+
 /-- Register `r` holds some value. -/
 def regAny (r : Reg) : SProp := iprop(∃ v, regIs r v)
 
@@ -41,6 +46,14 @@ theorem wordsAt_nil (p : Word) : (Atom.prop (wordsAt p [])).interp = Atoms.inter
 theorem wordsAt_cons (p x : Word) (xs : List Word) :
     (Atom.prop (wordsAt p (x :: xs))).interp =
       Atoms.interp [.mem p 8 x true, .prop (wordsAt (p + 8#64) xs)] :=
+  SProp.ext (sep_mono_right sep_emp.symm.1 |> fun h => ⟨h, sep_mono_right sep_emp.1⟩)
+
+theorem bytesAt_nil (p : Word) : (Atom.prop (bytesAt p [])).interp = Atoms.interp [] := rfl
+
+/-- A nonempty array of bytes is its first byte and the rest. -/
+theorem bytesAt_cons (p : Word) (b : BitVec 8) (bs : List (BitVec 8)) :
+    (Atom.prop (bytesAt p (b :: bs))).interp =
+      Atoms.interp [.mem p 1 (b.zeroExtend 64) true, .prop (bytesAt (p + 1#64) bs)] :=
   SProp.ext (sep_mono_right sep_emp.symm.1 |> fun h => ⟨h, sep_mono_right sep_emp.1⟩)
 
 /-- Replace an atom of the symbolic state by atoms that mean the same. -/
