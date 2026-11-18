@@ -34,4 +34,13 @@ theorem wgcd_rec (a b : Word) : wgcd a b = wgcd b (a % b) := by
   simp only [wgcd, BitVec.toNat_umod]
   rw [Nat.gcd_comm a.toNat, Nat.gcd_rec, Nat.gcd_comm]
 
+/-- The number of ones in the binary form of a number. -/
+def ones (n : Nat) : Nat := if n = 0 then 0 else n % 2 + ones (n / 2)
+decreasing_by omega
+
+theorem ones_zero : ones 0 = 0 := by rw [ones]; rfl
+
+theorem ones_pos {n : Nat} (h : n ≠ 0) : ones n = n % 2 + ones (n / 2) := by
+  rw [ones]; simp [h]
+
 end Examples

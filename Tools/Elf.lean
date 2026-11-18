@@ -10,6 +10,20 @@
   * `Elf.Image.functions`: the function symbols with their bytes
 -/
 
+module
+
+public import Braid.IR.Print
+
+public section
+
+namespace Tools
+
+/-- A name that is a Lean identifier: every other character becomes `_`. -/
+def ident (s : String) : String :=
+  String.ofList (s.toList.map fun c => if c.isAlphanum || c == '_' then c else '_')
+
+end Tools
+
 namespace Tools.Elf
 
 /-- A section: where it is loaded and its bytes in the file. -/

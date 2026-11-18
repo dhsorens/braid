@@ -53,4 +53,81 @@ theorem str_len_loop (p r : Word) : ∀ (suf : List (BitVec 8)) (i t : Word),
       braid_done
     · exact absurd (by bv_decide) hb
 
+/-- `str_len` returns the number of bytes before the first zero byte. -/
+theorem str_len_spec (p r t1 t2 : Word) (s : List (BitVec 8)) (hnz : ∀ b ∈ s, b ≠ 0#8) :
+    Triple str_len.program
+      (Atoms.interp [.pc 0x10000#64, .reg a0 p, .reg a1 t1, .reg a2 t2,
+        .prop (bytesAt p (s ++ [0#8])), .reg ra r])
+      (Atoms.interp [.pc (r &&& ~~~1#64), .reg a0 (BitVec.ofNat 64 s.length),
+        .prop (regAny a1), .prop (regAny a2), .prop (bytesAt p (s ++ [0#8])), .reg ra r]) := by
+  braid_step
+  braid_call str_len_loop p r s 0#64 t2 hnz
+  braid_done
+
+/-- The loop of `count_ones`: add the ones of `x` to the count. -/
+theorem count_ones_loop (r : Word) (k : Nat) : ∀ x c t : Word, x.toNat = k → x ≠ 0#64 →
+    Triple count_ones.program
+      (Atoms.interp [.pc 0x1003c#64, .reg a0 x, .reg a1 c, .reg a2 t, .reg ra r])
+      (Atoms.interp [.pc (r &&& ~~~1#64), .reg a0 (c + BitVec.ofNat 64 (ones x.toNat)),
+        .prop (regAny a1), .prop (regAny a2), .reg ra r]) := by
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+    intro x c t hk hx
+    have hpos : x.toNat ≠ 0 := fun h => hx (BitVec.eq_of_toNat_eq h)
+    have hstep : c + BitVec.ofNat 64 (ones x.toNat) =
+        c + (x &&& 1#64) + BitVec.ofNat 64 (ones (x >>> 1).toNat) := by
+      rw [ones_pos hpos, BitVec.add_assoc]
+      congr 1
+      have h1 : (x &&& 1#64).toNat = x.toNat % 2 := by
+        rw [BitVec.toNat_and]; exact Nat.and_two_pow_sub_one_eq_mod x.toNat 1
+      have h2 : (x >>> 1).toNat = x.toNat / 2 := by
+        rw [BitVec.toNat_ushiftRight]; exact Nat.shiftRight_eq_div_pow x.toNat 1
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_add, h1, h2]
+      simp
+    iterate 3 braid_step
+    braid_step
+    · refine (ih _ ?_ (x >>> 1) (c + (x &&& 1#64)) _ rfl hbr).cast rfl (by rw [hstep]; simp)
+      rw [← hk, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
+      omega
+    · braid_run
+      braid_forget 11
+      braid_forget 12
+      have h0 : (x >>> 1).toNat = 0 := by
+        have := congrArg BitVec.toNat hbr
+        simpa using this
+      refine Triple.done_eq ?_
+      rw [hstep, h0]
+      simp [ones_zero]
+
+/-- `count_ones` returns the number of ones in the binary form of its argument. -/
+theorem count_ones_spec (x t1 t2 r : Word) :
+    Triple count_ones.program
+      (Atoms.interp [.pc 0x10034#64, .reg a0 x, .reg a1 t1, .reg a2 t2, .reg ra r])
+      (Atoms.interp [.pc (r &&& ~~~1#64), .reg a0 (BitVec.ofNat 64 (ones x.toNat)),
+        .prop (regAny a1), .prop (regAny a2), .reg ra r]) := by
+  braid_step
+  braid_step
+  · subst hbr
+    braid_run
+    braid_forget 11
+    braid_forget 12
+    exact Triple.done_eq (by simp [ones_zero])
+  · braid_call count_ones_loop r _ x 0#64 t2 rfl hbr
+    braid_done
+
+/-- **`count_ones` on the machine.** -/
+theorem count_ones_correct (s : MachineState)
+    (hcode : ∀ p ∈ count_ones_code, s.code p.1 = some p.2) (hpc : s.pc = 0x10034#64) :
+    ∃ n s', stepN n s = some s' ∧ s'.pc = s.getReg .x1 &&& ~~~1#64 ∧
+      s'.getReg .x10 = BitVec.ofNat 64 (ones (s.getReg .x10).toNat) := by
+  obtain ⟨n, s', σ', hn, hr, hq⟩ := machine_sound count_ones_lowered
+    (count_ones_spec (s.getReg .x10) (s.getReg .x11) (s.getReg .x12) (s.getReg .x1)) hcode
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, abs, regOfNat, hpc])
+  refine ⟨n, s', hn, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.getReg (r := .x10) (by decide)]
+    exact Atoms.reg_of_holds (r := 10) hq (by braid_at)
+
 end Examples.Bytes.RiscV

@@ -32,10 +32,6 @@ def toFunc (name : String) (entry : Nat) (code : List (Braid.Word × Instr)) : B
   { name, entry := BitVec.ofNat 64 entry,
     blocks := code.map fun (a, i) => (a, Lowering.RiscV.lower a i) }
 
-/-- A name that is a Lean identifier: every other character becomes `_`. -/
-def ident (s : String) : String :=
-  String.ofList (s.toList.map fun c => if c.isAlphanum || c == '_' then c else '_')
-
 /-- The Lean definitions of a function: its instructions, its lowering, and the certificate
 that the second is the lowering of the first. -/
 def leanSource (name : String) (entry : Nat) (code : List (Braid.Word × Instr)) : String :=
