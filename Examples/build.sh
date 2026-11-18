@@ -128,6 +128,24 @@ lower_js() {
     --lean "$out/Image.lean" --module "Examples.$module.Arm" 2>/dev/null
 }
 
+# The same, for the code an x86-64 build of Node produces (NODE_X64 names it; on an Apple
+# machine it runs under Rosetta).
+lower_js_x64() {
+  name=$1; dir=$2; module=$3; shift 3
+  fns=""; for f in "$@"; do fns="$fns --fn $f"; done
+  # shellcheck disable=SC2086
+  (cd "$dir" && NODE="$NODE_X64" JS_ARCH=x64 python3 emit_s.py "$OLDPWD/Examples/bin/$name.x86.s" "$@")
+  out=Examples/$(echo "$module" | tr . /)/X86
+  mkdir -p "$out"
+  "$CLANG" --target=x86_64-unknown-linux-gnu -c "Examples/bin/$name.x86.s" -o "Examples/bin/$name.x86.o"
+  "$LLD" -flavor gnu -Ttext=0x401000 -e "$1" "Examples/bin/$name.x86.o" -o "Examples/bin/$name.x86.elf"
+  "$OBJDUMP" -d "Examples/bin/$name.x86.elf" > "Examples/bin/$name.x86.dis"
+  # shellcheck disable=SC2086
+  "$LOWER" "Examples/bin/$name.x86.elf" --disasm "Examples/bin/$name.x86.dis" $fns \
+    --mlir "Examples/mlir/$name.x86.mlir" --lean "$out/Image.lean" \
+    --module "Examples.$module.X86" 2>/dev/null
+}
+
 # A Go source: name, source, module, functions. Go has its own back ends and linker, and its
 # RISC-V back end emits compressed instructions, which the RISC-V model does not have, so Go
 # is lowered for AArch64 and x86-64 only. The binary holds the whole Go runtime; only the
@@ -169,6 +187,9 @@ if want pybasic; then
 fi
 if want jsbasic; then
   case " $ISAS " in *" arm "*) lower_js jsbasic Examples/src/js JsBasic js_add3 js_max ;; esac
+  if [ -n "${NODE_X64:-}" ]; then
+    case " $ISAS " in *" x86 "*) lower_js_x64 jsbasic Examples/src/js JsBasic js_add3 js_max ;; esac
+  fi
 fi
 if want gobasic; then
   lower_go gobasic Examples/src/go/basic.go GoBasic main.Add3 main.MaxU64 main.SumSlice

@@ -29,7 +29,7 @@ down to a theorem about the machine model alone (`<function>_correct`).
 | `swift/basic.swift` | swift_add3, swift_min, **swift_gcd** | swift_add3, swift_min, swift_gcd | swift_add3, swift_min |
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64, SumSlice |
 | `python/basic.py` | py_add3, py_max_u64, py_gcd | py_add3, py_max_u64 | py_add3, py_max_u64 |
-| `js/basic.js` | | js_add3 | |
+| `js/basic.js` | | js_add3 | js_add3 (to its return instruction) |
 
 What the examples exercise:
 
@@ -84,7 +84,7 @@ How each language reaches all three instruction sets:
 | Rust, Swift | the compiler's LLVM IR, then clang for each target, so that one back end produces the code for all three |
 | Go | Go's own back ends and linker. Its RISC-V back end emits compressed instructions, which the RISC-V model does not have, so Go is lowered for AArch64 and x86-64 |
 | Python | [Numba](https://numba.pydata.org) compiles a typed Python function through LLVM; `src/python/emit_ll.py` writes its IR, which then goes the way of Rust's and Swift's |
-| JavaScript | V8's optimising compiler, as Node prints its output (`node --print-opt-code`); `src/js/emit_s.py` writes the instruction words back as an assembly file. The code is for the machine Node runs on, so this example is AArch64 only |
+| JavaScript | V8's optimising compiler, as Node prints its output (`node --print-opt-code`); `src/js/emit_s.py` writes the bytes back as an assembly file. The code is for the machine Node runs on: AArch64 from a native Node, and x86-64 from an x86-64 build of Node (`NODE_X64`, which on an Apple machine runs under Rosetta) |
 
 ## Writing a proof
 
@@ -128,5 +128,6 @@ of a model are in [`docs/ISA.md`](../docs/ISA.md). `braid-lower --stats` on a wh
 is the broadest test: 95% of its instructions lower on AArch64, and 95% on x86-64.
 
 Every C function is verified on all three instruction sets. What is not verified, and why:
-`gcd` on x86-64, because the machine model has no `div`, and JavaScript on RISC-V and
-x86-64, because V8 emits code for the machine it runs on.
+`gcd` on x86-64, because the machine model has no `div`; the last instruction of the
+JavaScript function on x86-64, `ret 0x20`, which the model does not have either; and
+JavaScript on RISC-V, for which there was no V8 to run.

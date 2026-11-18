@@ -135,7 +135,8 @@ nearly all the others are vector instructions.
 4. **The parser.** It reads the memory form of an indirect jump or call but not the register
    form (`jmpq *%rax`), which the front end builds itself; and it does not read `int3`,
    `ud2`, `leave` or `endbr64`.
-5. **Bytes.** An encoder checked against the bytes of a binary, or a decoder, so that a
+5. **`ret` with an operand** (`ret 0x20`), which V8's code uses to pop its arguments.
+6. **Bytes.** An encoder checked against the bytes of a binary, or a decoder, so that a
    theorem need not trust a disassembler.
 
 Instructions the model lacks are contributed to Kraken, not added here.

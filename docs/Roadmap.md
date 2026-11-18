@@ -15,7 +15,7 @@ see [`ISA.md`](ISA.md).
 | x86-64 lowering | the integer core, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 60 functions with proved specifications across the three instruction sets, 9 of them down to the machine model, at least one on each |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 61 functions with proved specifications across the three instruction sets, 9 of them down to the machine model, at least one on each |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.
@@ -76,7 +76,7 @@ In rough order of what they would buy.
 
 1. **More of what compilers emit**: structs and pointers to them, recursion, jump tables,
    64-bit division, strings, and an allocator.
-2. **More languages and more of each**: C++, Zig and OCaml; JavaScript on x86-64 and with
-   heap objects; Python with arrays.
+2. **More languages and more of each**: C++, Zig and OCaml; JavaScript with heap objects;
+   Python with arrays.
 4. **Continuity over real history**: proof lines changed per source line changed, over the
    edits of a real project ([`Continuity.md`](Continuity.md)).
