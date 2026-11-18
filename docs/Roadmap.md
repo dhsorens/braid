@@ -54,10 +54,11 @@ In rough order of what they would buy.
 
 ### The dialect
 
-1. **A verified simplifier.** Blocks are lowered one instruction at a time, and a block
-   computes flags the next one overwrites. A pass that removes dead flag computations across
-   blocks, proved to preserve the semantics, would make the MLIR text shorter and the
-   symbolic state smaller.
+1. **A simplifier across blocks.** `Block.dce` removes dead operations within a block and is
+   proved to preserve the runs of a program. Blocks are lowered one instruction at a time,
+   though, and the dead work that matters is a flag one block computes and the next
+   overwrites. A pass with liveness across blocks, proved the same way, would make the MLIR
+   text shorter and the symbolic state smaller.
 2. **A registered MLIR dialect.** The text is MLIR's generic syntax, which `mlir-opt` reads
    with `--allow-unregistered-dialect`. An ODS definition, and a round trip through
    [VeIR](https://github.com/opencompl/veir), would let other MLIR tools work on lowered

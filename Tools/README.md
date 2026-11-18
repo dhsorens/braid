@@ -45,6 +45,7 @@ braid-lower <binary> [--list] [--stats] [--fn <name>]... [--mlir <file>] [--lean
 | `--mlir <file>` | write the lowered functions in MLIR's generic syntax |
 | `--lean <file>` | write the lowered functions as a Lean module |
 | `--module <Name>` | the namespace of the Lean module |
+| `--simplify` | remove dead operations (`Block.dce`) from the MLIR and position-independent text |
 | `--norm <file>` | write position-independent text, for comparing two lowerings |
 | `--disasm <file>` | x86-64 only: the output of `objdump -d` on the binary |
 

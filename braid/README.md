@@ -12,6 +12,8 @@ Braid/
     Exec.lean        the functional reading: a block as a function
     Mem.lean         loads and stores, byte by byte
     Print.lean       MLIR text, Lean terms, position-independent text
+  Pass/
+    Dce.lean         remove dead operations from a block, proved to preserve its meaning
   Logic/
     Heap.lean        heaps: registers, flags, bytes, the program counter
     Assertion.lean   assertions, as an Iris BI
@@ -21,6 +23,7 @@ Braid/
     Exec.lean        symbolic execution rules
     Data.lean        arrays, unknown registers, fold and unfold
     Sat.lean         between atoms and plain facts about a state
+    Flat.lean        arrays written out as memory atoms, for theorems about a machine
     Tactic.lean      braid_step, braid_run, braid_call, ...
 BraidTest/           small hand-written programs that exercise the logic
 ```
@@ -258,6 +261,11 @@ with no `braid` notion left in its statement. The walkthrough is
 - Vector registers and SIMD operations. Values are 64-bit words.
 - Types other than `i64`. A narrower value is a word whose high bits are zero or a sign.
 - Environment calls. A system call lowers to `trap`.
-- A parser for the textual form, and verified passes over the dialect.
+- A parser for the textual form.
+- Passes beyond the first. `Block.dce` removes the operations of a block whose results are
+  never used, and `Program.dce_eventually` proves that a program and its image have the same
+  runs (`braid-lower --simplify` applies it to the text it prints). It works within a block,
+  and most dead work in lowered code is a flag that the next block overwrites: removing that
+  needs liveness across blocks.
 - Automatic extraction of a recursive Lean function from a loop. `Block.exec` is the
   function of a block; the function of a loop is still written by hand, as `wgcd` is above.
