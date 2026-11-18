@@ -59,10 +59,13 @@ In rough order of what they would buy.
    though, and the dead work that matters is a flag one block computes and the next
    overwrites. A pass with liveness across blocks, proved the same way, would make the MLIR
    text shorter and the symbolic state smaller.
-2. **A registered MLIR dialect.** The text is MLIR's generic syntax, which `mlir-opt` reads
-   with `--allow-unregistered-dialect`. An ODS definition, and a round trip through
-   [VeIR](https://github.com/opencompl/veir), would let other MLIR tools work on lowered
-   code.
+2. **A dialect VeIR knows.** The value operations are defined in IRDL
+   (`braid/mlir/braid.irdl.mlir`), so `mlir-opt` checks them, and every example module goes
+   through [VeIR](https://github.com/opencompl/veir)'s `veir-opt` and back
+   (`Examples/check-mlir.sh`). What is missing is the dialect inside VeIR: its operations
+   registered there, with the terminators marked as such, so that VeIR's verifier and its
+   pass infrastructure work on lowered code, and so that a pass written in VeIR can be
+   proved against the semantics here.
 
 ### The interface to binaries
 

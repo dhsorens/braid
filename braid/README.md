@@ -116,6 +116,11 @@ mlir-opt --irdl-file=braid/mlir/braid.irdl.mlir --allow-unregistered-dialect f.m
 
 IRDL cannot yet say that an operation is a terminator, so `braid_cf` stays unregistered.
 
+[VeIR](https://github.com/opencompl/veir), the MLIR infrastructure in Lean, reads the same
+text. Every module of the example corpus parses and prints through `veir-opt`, and `mlir-opt`
+accepts what it prints. VeIR's verifier has to be off (`--disable-verifiers`), because it does
+not know which unregistered operations end a block. `Examples/check-mlir.sh` runs both checks.
+
 A block is labelled with its offset from the entry of its function, and an SSA value is named
 after its block, so a change to one instruction changes the text of one block. A jump out of
 the function goes to a block that holds a single `braid_cf.tail`.
