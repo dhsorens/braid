@@ -178,4 +178,14 @@ theorem machine_sound [Layout] {e : Executable} {blocks : List (Word × Block)}
       (fun m' => ∃ σ', Rel m' σ' ∧ (Atoms.interp post).holds iprop(True) σ') m :=
   triple_sound hcode ht (rel_abs m) (Atoms.holds_of_sat hpt hdisj hsat)
 
+/-- Forget the values of the six status flags. -/
+macro "x86_forget_flags" : tactic =>
+  `(tactic| (braid_forget_flag 0; braid_forget_flag 1; braid_forget_flag 2
+             braid_forget_flag 3; braid_forget_flag 4; braid_forget_flag 5))
+
+/-- Name the values of the six status flags, when each holds some value. -/
+macro "x86_name_flags" : tactic =>
+  `(tactic| (braid_name_flag 0; braid_name_flag 1; braid_name_flag 2
+             braid_name_flag 3; braid_name_flag 4; braid_name_flag 5))
+
 end Lowering.X86

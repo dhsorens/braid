@@ -7,6 +7,7 @@
       braid-lower prog.elf --fn name ... [--mlir out.mlir] [--lean Out.lean --module Out]
 -/
 
+import Std.Data.HashMap
 import Tools.RiscV
 import Tools.Arm
 import Tools.X86
@@ -57,7 +58,8 @@ def leanHeader (ns : String) (imports : List String) (opens : List String) : Str
   String.join (opens.map fun o => s!"open {o}\n") ++ "\n"
 
 /-- Print how many instructions were lowered, and what the others were. -/
-def printStats (funcs : List Braid.Func) (undecoded : Nat) : IO Unit := do
+def printStats (funcs : List Braid.Func) (undecoded : Nat) (unread : List String := []) :
+    IO Unit := do
   let blocks := funcs.flatMap (·.blocks)
   let traps := blocks.filterMap fun (_, b) => match b.term with
     | .trap r => some r
@@ -72,6 +74,11 @@ def printStats (funcs : List Braid.Func) (undecoded : Nat) : IO Unit := do
   let reasons := traps.eraseDups.map fun r => (traps.count r, r)
   for (n, r) in reasons.mergeSort (fun a b => a.1 ≥ b.1) do
     IO.println s!"  {n}\t{r}"
+  unless unread.isEmpty do
+    IO.println "undecoded, by mnemonic:"
+    let counts := unread.foldl (fun (m : Std.HashMap String Nat) k => m.insert k (m.getD k 0 + 1)) {}
+    for (r, n) in counts.toList.mergeSort (fun a b => a.2 ≥ b.2) do
+      IO.println s!"  {n}\t{r}"
 
 def main (args : List String) : IO UInt32 := do
   let opts ← match parseArgs args {} with
@@ -139,13 +146,18 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln s!"warning: no function named {n} in the disassembly"
     let image := X86.image chosen
     let lines := image.flatMap (·.2)
+    let mnemonic (t : String) := ((t.splitOn " ").filter (· ≠ "")).head!
     unless opts.stats do
       for (f, _) in image do
         for (a, t) in X86.unread f do
-          IO.eprintln s!"warning: {f.name}: 0x{Braid.hex a}: the model does not read `{t}`"
+          unless mnemonic t == "int3" do
+            IO.eprintln s!"warning: {f.name}: 0x{Braid.hex a}: the model does not read `{t}`"
     let funcs := image.map fun (f, ls) => X86.toFunc lines f.name f.addr ls
     if opts.stats then
-      printStats funcs (image.foldl (fun n (f, _) => n + (X86.unread f).length) 0)
+      -- `int3` fills the room between functions; it is padding, not code.
+      let unread := (image.flatMap fun (f, _) => (X86.unread f).map fun (_, t) => mnemonic t).filter
+        (· ≠ "int3")
+      printStats funcs unread.length unread
     if let some out := opts.mlir then
       IO.FS.writeFile out (Braid.Module.toMlir Lowering.X86.arch { arch := "x86_64", funcs })
     if let some out := opts.norm then
