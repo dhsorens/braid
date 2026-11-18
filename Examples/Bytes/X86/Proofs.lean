@@ -162,4 +162,80 @@ theorem fill_spec (p v t s r : Word) (bs : List (BitVec 8)) (c pf af z sg o : Bo
       braid_forget 0
       braid_done
 
+/-- The loop of `count_ones`: add the ones of `x` to the count. -/
+theorem count_ones_loop (s r : Word) (k : Nat) : ∀ (x cnt t : Word) (c pf af z sg o : Bool),
+    x.toNat = k → x ≠ 0#64 →
+    Triple count_ones.program
+      (Atoms.interp [.pc 0x401050#64, .reg rdi x, .reg rax cnt, .reg rcx t, .reg rsp s,
+        .mem s 8 r true,
+        .flag Flags.cf c, .flag Flags.pf pf, .flag Flags.af af, .flag Flags.zf z,
+        .flag Flags.sf sg, .flag Flags.of o])
+      (Atoms.interp [.pc r, .prop (regAny rdi), .reg rax (cnt + BitVec.ofNat 64 (ones x.toNat)),
+        .prop (regAny rcx), .reg rsp (s + 8#64), .mem s 8 r true,
+        .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
+        .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)]) := by
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+    intro x cnt t c pf af z sg o hk hx
+    have hpos : x.toNat ≠ 0 := fun h => hx (BitVec.eq_of_toNat_eq h)
+    have hstep : cnt + BitVec.ofNat 64 (ones x.toNat) =
+        (x &&& 1#64) + cnt + BitVec.ofNat 64 (ones (x >>> 1).toNat) := by
+      rw [ones_pos hpos, BitVec.add_comm (x &&& 1#64) cnt, BitVec.add_assoc]
+      congr 1
+      have h1 : (x &&& 1#64).toNat = x.toNat % 2 := by
+        rw [BitVec.toNat_and]; exact Nat.and_two_pow_sub_one_eq_mod x.toNat 1
+      have h2 : (x >>> 1).toNat = x.toNat / 2 := by
+        rw [BitVec.toNat_ushiftRight]; exact Nat.shiftRight_eq_div_pow x.toNat 1
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_add, h1, h2]
+      simp
+    have e1 : x >>> 1#64 = x >>> 1 := rfl
+    have e2 : BitVec.setWidth 64 (BitVec.setWidth 32 x) &&& 1#64 = x &&& 1#64 := by bv_decide
+    iterate 4 braid_step
+    simp only [e1, e2]
+    braid_step
+    · have hne : x >>> 1 ≠ 0#64 := by simpa using hbr
+      braid_call ih _ (by
+        rw [← hk, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]; omega)
+        (x >>> 1) _ _ _ _ _ _ _ _ rfl hne
+      rw [hstep]
+      braid_done
+    · have h0 : (x >>> 1).toNat = 0 := by
+        have := congrArg BitVec.toNat (show x >>> 1 = 0#64 by simpa using hbr)
+        simpa using this
+      braid_run
+      braid_forget 5
+      braid_forget 2
+      x86_forget_flags
+      refine Triple.done_eq ?_
+      rw [hstep, h0]
+      simp [ones_zero]
+
+/-- `count_ones` returns the number of ones in the binary form of its argument. -/
+theorem count_ones_spec (x t0 t2 s r : Word) (c pf af z sg o : Bool) :
+    Triple count_ones.program
+      (Atoms.interp [.pc 0x401040#64, .reg rdi x, .reg rax t0, .reg rcx t2, .reg rsp s,
+        .mem s 8 r true,
+        .flag Flags.cf c, .flag Flags.pf pf, .flag Flags.af af, .flag Flags.zf z,
+        .flag Flags.sf sg, .flag Flags.of o])
+      (Atoms.interp [.pc r, .prop (regAny rdi), .reg rax (BitVec.ofNat 64 (ones x.toNat)),
+        .prop (regAny rcx), .reg rsp (s + 8#64), .mem s 8 r true,
+        .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
+        .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)]) := by
+  iterate 2 braid_step
+  braid_step
+  · have hx : x = 0#64 := by simpa using hbr
+    subst hx
+    braid_run
+    braid_forget 5
+    braid_forget 2
+    x86_forget_flags
+    simp only [BitVec.xor_self]
+    exact Triple.done_eq (by simp [ones_zero])
+  · have hx : x ≠ 0#64 := by simpa using hbr
+    braid_step
+    simp only [BitVec.xor_self]
+    braid_call count_ones_loop s r _ x 0#64 t2 _ _ _ _ _ _ rfl hx
+    braid_done
+
 end Examples.Bytes.X86

@@ -24,7 +24,7 @@ down to a theorem about the machine model alone (`<function>_correct`).
 | --- | --- | --- | --- |
 | `c/basic.c` | **add3**, **max_u64**, sum_to | **add3**, max_u64, sum_to | **add3**, max_u64, sum_to |
 | `c/memory.c` | swap, max2, max3, sum_array | swap, max2, max3, sum_array | swap, **max2**, max3, sum_array |
-| `c/bytes.c` | str_len, fill, **count_ones** | str_len, fill, count_ones | str_len, fill |
+| `c/bytes.c` | str_len, fill, **count_ones** | str_len, fill, count_ones | str_len, fill, count_ones |
 | `rust/basic.rs` | **gcd** | add3, max_u64, **gcd**, sum_slice | add3, max_u64, sum_slice |
 | `swift/basic.swift` | swift_add3, swift_min, **swift_gcd** | swift_add3, swift_min, swift_gcd | swift_add3, swift_min |
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64 |
@@ -127,6 +127,6 @@ ones still open are in [`docs/Roadmap.md`](../docs/Roadmap.md); the ones that ar
 of a model are in [`docs/ISA.md`](../docs/ISA.md). `braid-lower --stats` on a whole Go binary
 is the broadest test: 95% of its instructions lower on AArch64, and 95% on x86-64.
 
-What is not verified, and why: `gcd` on x86-64, because the machine model has no `div`;
-`count_ones` on x86-64, which is lowered and tested but not yet proved; and JavaScript on
-RISC-V and x86-64, because V8 emits code for the machine it runs on.
+Every C function is verified on all three instruction sets. What is not verified, and why:
+`gcd` on x86-64, because the machine model has no `div`; Go's `SumSlice` on x86-64; and
+JavaScript on RISC-V and x86-64, because V8 emits code for the machine it runs on.

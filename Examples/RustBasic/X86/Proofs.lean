@@ -97,4 +97,45 @@ theorem sum_slice_loop (p e s r : Word) : ∀ (xs : List Word) (x i acc : Word)
       have : e - (8#64 + i) ≠ 0#64 := by rw [← he]; bv_omega
       exact this (by simpa using hbr)
 
+/-- `sum_slice` returns the sum of the words of a slice, given as a pointer and a length. -/
+theorem sum_slice_spec (p t0 t1 s r : Word) (xs : List Word) (c pf af z sg o : Bool)
+    (hl : xs.length < 2 ^ 61) :
+    Triple sum_slice.program
+      (Atoms.interp [.pc 0x401060#64, .reg rax t0, .reg rcx t1, .reg rdi p,
+        .reg rsi (BitVec.ofNat 64 xs.length), .prop (wordsAt p xs), .reg rsp s,
+        .mem s 8 r true,
+        .flag Flags.cf c, .flag Flags.pf pf, .flag Flags.af af, .flag Flags.zf z,
+        .flag Flags.sf sg, .flag Flags.of o])
+      (Atoms.interp [.pc r, .reg rax (wsum xs 0#64), .prop (regAny rcx), .reg rdi p,
+        .prop (regAny rsi), .prop (wordsAt p xs), .reg rsp (s + 8#64), .mem s 8 r true,
+        .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
+        .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)]) := by
+  cases xs with
+  | nil =>
+    simp only [List.length_nil]
+    braid_run
+    braid_forget 2
+    braid_forget 4
+    x86_forget_flags
+    simp only [wsum, List.foldl_nil, BitVec.xor_self]
+    braid_done
+  | cons x xs =>
+    simp only [List.length_cons] at hl ⊢
+    braid_step
+    braid_step
+    · exfalso
+      have : BitVec.ofNat 64 (xs.length + 1) ≠ 0#64 := by bv_omega
+      exact this (by simpa using hbr)
+    · iterate 4 braid_step
+      simp only [BitVec.xor_self]
+      have he : 0#64 + BitVec.ofNat 64 (8 * (xs.length + 1)) =
+          BitVec.ofNat 64 (xs.length + 1) <<< 3#64 := by
+        apply BitVec.eq_of_toNat_eq
+        simp [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq]
+        omega
+      braid_call sum_slice_loop p _ s r xs x 0#64 0#64 _ _ _ _ _ _ he (by simp; omega)
+      braid_forget 2
+      braid_forget 4
+      braid_done
+
 end Examples.RustBasic.X86
