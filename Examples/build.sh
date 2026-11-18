@@ -9,8 +9,9 @@
 #   Examples/mlir/<name>.<isa>.mlir           the lowered code, as MLIR text
 #   Examples/<Module>/<ISA>/Image.lean        the lowered code, as a Lean module
 #
-# Needs clang with the RISC-V, AArch64 and x86-64 targets, a RISC-V linker, lld, and rustc and
-# swiftc for the Rust and Swift examples. See Examples/README.md.
+# Needs clang with the RISC-V, AArch64 and x86-64 targets, a RISC-V linker, lld, rustc, swiftc
+# and go for the Rust, Swift and Go examples, and a Python with Numba (PYTHON) for the Python
+# examples. See Examples/README.md.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -101,6 +102,14 @@ lower_swift() {
   lower_ll "$name" "$module" "$@"
 }
 
+# A Python source, compiled by Numba: name, directory, module, functions. `emit_ll.py` in the
+# directory writes the LLVM IR Numba produces. PYTHON names an interpreter that has Numba.
+lower_python() {
+  name=$1; dir=$2; module=$3; shift 3
+  (cd "$dir" && "${PYTHON:-python3}" emit_ll.py "$OLDPWD/Examples/bin/$name.ll")
+  lower_ll "$name" "$module" "$@"
+}
+
 # A Go source: name, source, module, functions. Go has its own back ends and linker, and its
 # RISC-V back end emits compressed instructions, which the RISC-V model does not have, so Go
 # is lowered for AArch64 and x86-64 only. The binary holds the whole Go runtime; only the
@@ -136,6 +145,9 @@ if want rustbasic; then
 fi
 if want swiftbasic; then
   lower_swift swiftbasic Examples/src/swift/basic.swift SwiftBasic swift_add3 swift_gcd swift_min
+fi
+if want pybasic; then
+  lower_python pybasic Examples/src/python PyBasic py_add3 py_max_u64 py_gcd
 fi
 if want gobasic; then
   lower_go gobasic Examples/src/go/basic.go GoBasic main.Add3 main.MaxU64 main.SumSlice
