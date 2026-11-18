@@ -35,6 +35,7 @@ def BinOp.name : BinOp → String
   | .and => "and" | .or => "or" | .xor => "xor" | .shl => "shl" | .lshr => "lshr"
   | .ashr => "ashr" | .rotr => "rotr" | .eq => "eq" | .ne => "ne" | .ult => "ult"
   | .ule => "ule" | .slt => "slt" | .sle => "sle"
+  | .lanes n op => s!"lanes{n}.{op.name}"
 
 /-! ## MLIR -/
 
@@ -58,6 +59,8 @@ def op (arch : Arch) (l : String) : Op → String
   | .un d (.zext n) a =>
     s!"{val l d} = \"braid.zext\"({val l a}) \{bits = {n} : i64} : (i64) -> i64"
   | .un d o a => s!"{val l d} = \"braid.{o.name}\"({val l a}) : (i64) -> i64"
+  | .bin d (.lanes n o) a b =>
+    s!"{val l d} = \"braid.lanes\"({val l a}, {val l b}) \{op = \"{o.name}\", bits = {n} : i64} : (i64, i64) -> i64"
   | .bin d o a b => s!"{val l d} = \"braid.{o.name}\"({val l a}, {val l b}) : (i64, i64) -> i64"
   | .select d c a b =>
     s!"{val l d} = \"braid.select\"({val l c}, {val l a}, {val l b}) : (i64, i64, i64) -> i64"
@@ -171,10 +174,14 @@ def unop : UnOp → String
   | .zext n => s!"(.zext {n})"
   | o => s!".{o.name}"
 
+def binop : BinOp → String
+  | .lanes n o => s!"(.lanes {n} {binop o})"
+  | o => s!".{o.name}"
+
 def op : Op → String
   | .const d v => s!".const {d} {word v}"
   | .un d o a => s!".un {d} {unop o} {a}"
-  | .bin d o a b => s!".bin {d} .{o.name} {a} {b}"
+  | .bin d o a b => s!".bin {d} {binop o} {a} {b}"
   | .select d c a b => s!".select {d} {c} {a} {b}"
   | .get d r => s!".get {d} {r}"
   | .set r a => s!".set {r} {a}"

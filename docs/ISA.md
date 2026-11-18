@@ -103,11 +103,39 @@ How the lowering sees it:
   masks and shifts, as the model's `Reg64s.get` and `Reg64s.set` have it.
 - Memory is a partial map from addresses to bytes: exactly `braid` memory, with every byte
   writable.
-- A flag the model leaves undefined is a `havoc`.
+- A flag the model leaves undefined is a `havoc`. So is the auxiliary carry flag, which no
+  condition code reads.
+- The model's programs are found again by address each time the machine steps. The lowering
+  keeps a binary's code as lines (address, size, label, instruction), and
+  `Lowering/X86/Layout.lean` proves that the model's executable of well-formed lines has, at
+  each line's address, exactly that line.
 
 Because programs are assembly, a theorem about x86-64 code is about the instructions the
 disassembler printed. Checking them against the bytes of the binary is later work
 ([`Trust.md`](Trust.md)).
 
-The model has no `div`, `idiv`, `xchg`, `cdq`/`cqo`, `leave`, `bt` or `endbr64`. Compiled code
-uses the first few often. Instructions it lacks are contributed to Kraken, not added here.
+The lowering covers the moves, `lea`, the stack, the conditional moves and sets, addition,
+subtraction, comparison, the bitwise operations, shifts by an immediate, `imul`, and every
+jump, call and return. It does not yet cover `adc`, `sbb`, `mul`, shifts by `cl`, the double
+shifts and rotates, the string instructions, a 32-bit address size, or the vector
+instructions. On a complete Go binary (113,547 instructions, padding left out), 94% of the
+instructions lower to something other than `trap`; of the rest, two thirds are instructions
+the model's parser does not read (moves through `xmm` registers, `lock`-prefixed and atomic
+instructions, bit tests) and the others are vector instructions, shifts by `cl`, `mul` and
+`sbb`.
+
+### What we would like from it
+
+1. **Division.** The model has no `div` or `idiv`, nor `cdq`/`cqo` to set one up. Every `%`
+   and `/` on a value that is not a constant compiles to them: `gcd` in the Rust and Swift
+   examples is verified on RISC-V and stops at `divq` on x86-64.
+2. **`xchg`, `xadd`, `cmpxchg` and the `lock` prefix**, which a Go or Rust runtime uses for
+   every atomic.
+3. **Bit tests and scans** (`bt`, `bts`, `bsf`, `bsr`, `popcnt`, `tzcnt`).
+4. **The parser.** It reads the memory form of an indirect jump or call but not the register
+   form (`jmpq *%rax`), which the front end builds itself; and it does not read `int3`,
+   `ud2`, `leave` or `endbr64`.
+5. **Bytes.** An encoder checked against the bytes of a binary, or a decoder, so that a
+   theorem need not trust a disassembler.
+
+Instructions the model lacks are contributed to Kraken, not added here.

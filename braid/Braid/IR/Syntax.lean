@@ -90,6 +90,10 @@ inductive BinOp where
   /-- Rotate right, by the amount modulo 64. -/
   | rotr
   | eq | ne | ult | ule | slt | sle
+  /-- The operation on each lane of `n` bits, for vector code: the words are cut into lanes
+  from the low end, the operation is applied to each pair of lanes, and each result is cut
+  back to `n` bits. -/
+  | lanes (n : Nat) (op : BinOp)
   deriving DecidableEq, Repr, Inhabited
 
 /-- An operation of the dialect. `dst` is the SSA value the operation defines. -/

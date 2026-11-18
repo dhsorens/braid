@@ -63,9 +63,10 @@ statement.
 | | RISC-V | AArch64 | x86-64 |
 | --- | --- | --- | --- |
 | Model | riscv-zkvm `Rv64` | arm64-semantics | Kraken `X64` |
-| Lowering proved sound | all of RV64IM in the model | the integer core | see [`Lowering/README.md`](Lowering/README.md) |
-| Decompiler front end | ELF | ELF | ELF and `objdump` text |
-| Verified examples | C, Rust, Swift | C, Rust, Swift, Go | see [`Examples/README.md`](Examples/README.md) |
+| Lowering proved sound | all of RV64IM in the model | the integer core | the integer core, without multi-word arithmetic |
+| Share of a Go binary lowered | (Go emits compressed code) | 95% | 94% |
+| Decompiler front end | ELF | ELF | ELF with `objdump`'s disassembly |
+| Verified examples | C, Rust, Swift | C, Go | C, Rust, Swift, Go |
 
 [`docs/Roadmap.md`](docs/Roadmap.md) says what exists, what does not, and what is next.
 
@@ -105,6 +106,7 @@ braid-lower prog.elf --list                       # the functions of a binary
 braid-lower prog.elf --stats                      # how much of it the lowering covers
 braid-lower prog.elf --fn gcd --mlir gcd.mlir     # MLIR text
 braid-lower prog.elf --fn gcd --lean Gcd.lean --module Gcd   # a Lean module
+braid-lower prog.elf --disasm prog.dis --fn gcd --lean Gcd.lean   # x86-64: with objdump -d
 ```
 
 **The proof library.** A project that proves things about lowered code requires this

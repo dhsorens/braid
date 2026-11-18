@@ -57,6 +57,7 @@ is a named list of blocks, and prints as one MLIR region.
 | `udiv` `urem` `sdiv` `srem` | division; a zero divisor gives zero (quotient) or the dividend (remainder) |
 | `shl` `lshr` `ashr` `rotr` | shifts and rotation; a shift of 64 or more gives zero, or the sign |
 | `eq` `ne` `ult` `ule` `slt` `sle` | comparisons, giving `1` or `0` |
+| `lanes n op` | `op` on each lane of `n` bits of the two words, for vector code |
 | `not` `neg` `clz` `popcnt` `rbit` `bswap` | one-operand operations |
 | `sext` `zext` | sign- or zero-extend the low `bits` bits |
 | `select` | one of two values, by a condition |

@@ -153,6 +153,11 @@ def BinOp.eval : BinOp → Word → Word → Word
   | .ule, a, b => ofBool (a.ule b)
   | .slt, a, b => ofBool (a.slt b)
   | .sle, a, b => ofBool (a.sle b)
+  | .lanes n op, a, b =>
+    (List.range (64 / n)).foldl (fun acc i =>
+      acc ||| ((op.eval ((a >>> (n * i)).truncate n |>.zeroExtend 64)
+        ((b >>> (n * i)).truncate n |>.zeroExtend 64)).truncate n |>.zeroExtend 64) <<< (n * i))
+      0#64
 
 /-! One equation for each operation, so that `simp` evaluates an operation it knows and
 leaves an unknown one alone. -/
@@ -180,6 +185,11 @@ leaves an unknown one alone. -/
 @[simp] theorem BinOp.eval_ule (a b : Word) : BinOp.ule.eval a b = ofBool (a.ule b) := rfl
 @[simp] theorem BinOp.eval_slt (a b : Word) : BinOp.slt.eval a b = ofBool (a.slt b) := rfl
 @[simp] theorem BinOp.eval_sle (a b : Word) : BinOp.sle.eval a b = ofBool (a.sle b) := rfl
+theorem BinOp.eval_lanes (n : Nat) (op : BinOp) (a b : Word) :
+    (BinOp.lanes n op).eval a b = (List.range (64 / n)).foldl (fun acc i =>
+      acc ||| ((op.eval ((a >>> (n * i)).truncate n |>.zeroExtend 64)
+        ((b >>> (n * i)).truncate n |>.zeroExtend 64)).truncate n |>.zeroExtend 64) <<< (n * i))
+      0#64 := rfl
 @[simp] theorem UnOp.eval_not (a : Word) : UnOp.not.eval a = ~~~a := rfl
 @[simp] theorem UnOp.eval_neg (a : Word) : UnOp.neg.eval a = -a := rfl
 @[simp] theorem UnOp.eval_clz (a : Word) : UnOp.clz.eval a = a.clz := rfl

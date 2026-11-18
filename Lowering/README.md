@@ -1,0 +1,144 @@
+# The lowerings
+
+Each instruction set is lowered into the `braid` dialect, one block for each instruction, and
+each lowering is proved sound against the model of its instruction set. This directory is the
+verified core between the three models and the logic.
+
+```mermaid
+flowchart LR
+  subgraph models["machine models (trusted, pinned)"]
+    RV["riscv-zkvm<br/>RV64IM"]
+    ARM["arm64-semantics<br/>AArch64"]
+    X86["Kraken<br/>x86-64"]
+  end
+  subgraph lower["Lowering/ (proved)"]
+    LRV["RiscV/"]
+    LARM["Arm/"]
+    LX86["X86/"]
+  end
+  RV --> LRV
+  ARM --> LARM
+  X86 --> LX86
+  LRV --> B["braid<br/>dialect and logic"]
+  LARM --> B
+  LX86 --> B
+```
+
+## The shape of a lowering
+
+Every instruction set has the same four things, with the same names
+([`STYLE.md`](../STYLE.md)).
+
+| Name | What it is |
+| --- | --- |
+| `lower` | the block of one instruction, at its address |
+| `Rel` | a machine state and a `braid` state that describe the same machine |
+| `lower_sound` | if the block runs without fault and establishes a postcondition, the machine takes its step into a related state that satisfies it |
+| `triple_sound`, `machine_sound` | a triple of the logic about lowered code, as a statement about the machine |
+
+A block reads and writes the machine through the operations of the dialect only: `get` and
+`set` for registers, `getf` and `setf` for flags, `load` and `store` for memory. Whatever the
+instruction set does that the dialect has no word for is spelled out in those operations: a
+sub-register is a mask and a shift, a flag is an expression in the operands, an alignment rule
+is a `guard`. An instruction outside the lowering is a `trap`, whose precondition is `False`:
+a proof cannot pass through it, so leaving an instruction out never makes a theorem wrong.
+
+Soundness goes one way. A run of the lowered code is a run of the machine; where a lowering is
+stricter than its model, a proof gets stuck and does not go wrong
+([`docs/Trust.md`](../docs/Trust.md)).
+
+## RISC-V (`RiscV/`)
+
+The model is riscv-zkvm's `Rv64`, which is tied to the Sail RISC-V model.
+
+| File | What is in it |
+| --- | --- |
+| `Lower.lean` | `lower`, `lowerCode` |
+| `Mem.lean` | the model's doubleword memory, byte by byte |
+| `Sound.lean` | `Rel`, `lower_sound`, `lowerCode_sound` |
+| `Logic.lean` | register names, `triple_sound`, `machine_sound` |
+
+Covered: every instruction the model has (RV64IM as far as the model goes), with `ECALL`,
+`EBREAK` and the accelerator instructions lowered to `trap`. The top theorem turns
+`Braid.Eventually` into a number of steps of the model's `stepN`.
+
+## AArch64 (`Arm/`)
+
+The model is the trusted package of arm64-semantics. It fetches and decodes bytes itself, so
+the lowering is stated on instruction words.
+
+| File | What is in it |
+| --- | --- |
+| `Lower.lean` | `lower`, `lowerProgram` |
+| `Mem.lean` | permissions and bytes of the model's memory |
+| `Sound.lean` | `Rel`, `lower_sound`, `lowerProgram_sound` |
+| `Logic.lean` | register and flag names, `lowerWords`, `triple_sound`, `machine_sound` |
+
+Covered: the integer core, which is data processing with immediates and registers, shifted
+and extended operands, moves, bit fields, conditional selects and compares, multiplication
+and division, loads and stores in every addressing mode, pairs, and branches. Not yet
+covered: `RBIT`, `CLZ`, `CLS`, atomics and exclusives, CRC, system registers and calls,
+floating point and SIMD. On a whole Go binary, 95% of 118,148 instructions lower to something
+other than `trap`.
+
+## x86-64 (`X86/`)
+
+The model is Kraken's x64 semantics. Its programs are assembly: instructions with sizes, laid
+out from a start address. Its semantics is a set of outcomes all of which must satisfy the
+postcondition, the same style as the dialect's, so the top theorem carries `Braid.Eventually`
+to the model's own `Eventually` with no step count in between.
+
+| File | What is in it |
+| --- | --- |
+| `Lower.lean` | `lower`, `lowerProgram`, and the pieces a block is made of |
+| `Mem.lean` | the model's byte map as `braid` memory: loads and stores |
+| `Flags.lean` | the model's integer-valued flag conditions, as overflow predicates |
+| `Rel.lean` | `Rel`, and what each piece of a block does to related states |
+| `Ops.lean`, `Shift.lean` | each instruction, lowered soundly |
+| `Sound.lean` | control flow, `lower_sound`, `lowerProgram_sound` |
+| `Layout.lean` | the lines of a binary as an executable of the model |
+| `Logic.lean` | register and flag names, `triple_sound`, `machine_sound` |
+
+How the machine appears in `braid`:
+
+- `rax` to `r15` are registers 0 to 15. `cf`, `pf`, `af`, `zf`, `sf`, `of` are flags 0 to 5,
+  and the direction flag is flag 6.
+- A value narrower than 64 bits is held zero-extended. Reading `eax` is a `get` and a `zext`;
+  writing it clears the upper half, and writing `ax` or `al` keeps the other bits.
+- A flag the model leaves undefined is a `havoc`. So is the auxiliary carry flag, always: no
+  condition code reads it, and leaving it unknown keeps every arithmetic block shorter.
+- `push`, `pop`, `call` and `ret` are the stack-pointer arithmetic and the load or store they
+  stand for. A return address is a word in memory like any other.
+
+Covered: `mov`, `movzx`, `movsx`, `lea`, `push`, `pop`, `setcc`, `cmovcc`, `add`, `sub`,
+`cmp`, `inc`, `dec`, `neg`, `not`, `test`, `and`, `or`, `xor`, the shifts `shl`, `shr`, `sar`
+by an immediate, `imul` with two or three operands, `jcc`, `jmp`, `call`, `ret` (direct,
+through a register, and through memory), `nop`, `cld` and `std`, at every operand width.
+
+Not yet covered, and lowered to `trap`: `adc`, `sbb`, `adcx`, `adox`, `mul`, `mulx`,
+one-operand `imul`, shifts by `cl`, `shld`, `shrd`, the rotates, `bswap`, the string
+instructions, a 32-bit address size, and the vector instructions. The model itself has no
+`div`, `idiv`, `xchg`, `cqo`, bit tests or atomics ([`docs/ISA.md`](../docs/ISA.md)). On a
+whole Go binary, 94% of 113,547 instructions lower to something other than `trap`.
+
+### Code as lines
+
+Because the model's program is a list of directives found again by address, a binary's code is
+kept as a list of `Line`s: an address, a size, a label, and an instruction. `exeOf` is the
+model's executable of a list of lines. `wf` says the lines follow one another, each with room,
+and `decide` checks it. For well-formed lines, `lowerProgram_exeOf` says the block of the
+executable at a line is the lowering of that line, and `holds_exeOf` gives the hypothesis
+`machine_sound` asks for. The decompiler writes the lines and these certificates
+([`Tools/README.md`](../Tools/README.md)).
+
+## Reading a proof
+
+The three soundness proofs are written the same way. A lemma for each piece of a block
+(reading an operand, computing an address, writing a result, setting the flags) relates the
+`braid` operations to the model's function for the same thing. An instruction is then those
+lemmas in order, and what is left is arithmetic on bit-vectors: that the flag the block
+computes is the flag the model defines. `bv_decide` closes those goals
+([`docs/Trust.md`](../docs/Trust.md)).
+
+Adding an instruction is three steps: give it a case in `lower`, prove its case of
+`lower_sound`, and run the examples and `braid-lower --stats` to see what it bought.

@@ -63,4 +63,11 @@ theorem sumProg_loop (ra : Word) (k : Nat) : ∀ n acc : Word, n.toNat = k →
       · have e : BitVec.ofNat 64 (k + 1) = n := by rw [← hn]; simp
         simp [tri, e, BitVec.add_assoc]
 
+/-- A lane-wise addition wraps within each lane and does not carry into the next. -/
+example : (BinOp.lanes 32 .add).eval 0x00000001ffffffff#64 0x0000000100000001#64 =
+    0x0000000200000000#64 := by decide
+
+/-- A lane-wise operation on 64-bit lanes is the operation itself. -/
+example : (BinOp.lanes 64 .xor).eval 0xff00#64 0x0ff0#64 = 0xf0f0#64 := by decide
+
 end BraidTest

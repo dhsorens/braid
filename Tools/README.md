@@ -69,6 +69,17 @@ For each function the module holds three declarations:
 | `<f> : Braid.Func` | the lowered function |
 | `<f>_lowered` | a theorem: the blocks of `<f>` are the lowering of the instructions |
 
+On x86-64 the machine model's program is one executable for the whole image, so the module
+also holds the image:
+
+| Declaration | What it is |
+| --- | --- |
+| `<f>_code` | the lines of the function: address, size, label and instruction |
+| `image`, `image_wf` | the lines of every function lowered, and the certificate that they follow one another |
+| `exe` | the model's executable of the image |
+| `<f> : Braid.Func`, `<f>_lowered` | as above |
+| `<f>_holds` | a theorem: the blocks of `<f>` are blocks of the lowering of `exe`, which is what `machine_sound` asks for |
+
 The module imports the lowering of its instruction set, so a proof that imports it has the
 logic, the lowering's soundness theorem and the function in scope.
 
@@ -85,7 +96,15 @@ uses.
 **x86-64.** Kraken's programs are assembly. `braid-lower` reads the disassembly `objdump -d`
 prints (`--disasm`), parses each instruction with Kraken's own parser, and lays the
 instructions out at the addresses and sizes of the binary. An instruction the parser does not
-know becomes data: it keeps its place, and execution that reaches it is not defined.
+know becomes data: it keeps its place, and execution that reaches it is not defined. A
+relative jump or call is given its target as an address, so that it may leave the functions
+lowered; a conditional jump names a label, which must be among them.
+
+```sh
+$ objdump -d prog.elf > prog.dis
+$ braid-lower prog.elf --disasm prog.dis --fn max2 --fn max3 \
+    --mlir prog.mlir --lean Image.lean --module Image
+```
 
 ### Coverage
 
@@ -100,7 +119,9 @@ undecoded:    0
 trap:         0
 ```
 
-A `trap` line names an instruction the model has and the lowering does not cover yet.
+A `trap` line names an instruction the model has and the lowering does not cover yet. On
+x86-64 the instructions the model's parser does not read are listed by mnemonic, and the
+`int3` bytes between functions are left out of the count.
 
 ## braid-difftest
 
