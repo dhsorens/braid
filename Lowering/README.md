@@ -95,6 +95,8 @@ to the model's own `Eventually` with no step count in between.
 | `Flags.lean` | the model's integer-valued flag conditions, as overflow predicates |
 | `Rel.lean` | `Rel`, and what each piece of a block does to related states |
 | `Ops.lean`, `Shift.lean`, `ShiftCl.lean`, `DShift.lean`, `Rotate.lean`, `Carry.lean`, `Mul.lean` | each instruction, lowered soundly |
+| `Vec.lean` | a vector as its 64-bit words: registers, wide loads and stores, packed addition |
+| `Avx.lean` | each vector instruction, lowered soundly |
 | `Sound.lean` | control flow, `lower_sound`, `lowerProgram_sound` |
 | `Layout.lean` | the lines of a binary as an executable of the model |
 | `Logic.lean` | register and flag names, `triple_sound`, `machine_sound` |
@@ -103,6 +105,14 @@ How the machine appears in `braid`:
 
 - `rax` to `r15` are registers 0 to 15. `cf`, `pf`, `af`, `zf`, `sf`, `of` are flags 0 to 5,
   and the direction flag is flag 6.
+- A 512-bit vector register is eight registers, a word in each: word `j` of `zmm k`, counted
+  from the low end, is register `32 + 8 * k + j`, printed `zmm<k>.<j>` and named
+  `Regs.zmm k j`. `xmm k` is the low two words and `ymm k` the low four. `Rel` says each of
+  the 256 registers holds its word of the model's register.
+- A vector in memory is loaded and stored a word at a time, low word first. A write of a
+  vector register by a VEX or EVEX instruction clears the words above its width, and one by
+  a legacy SSE instruction keeps them, as in the model. A move that must be aligned (`movaps`,
+  `movdqa`, `vmovdqa32`, and the source of `paddd`) has a `guard` on its address.
 - A value narrower than 64 bits is held zero-extended. Reading `eax` is a `get` and a `zext`;
   writing it clears the upper half, and writing `ax` or `al` keeps the other bits.
 - A flag the model leaves undefined is a `havoc`. So is the auxiliary carry flag, always: no
@@ -119,6 +129,17 @@ bits), `bswap`, `jcc`,
 `jmp`, `call`, `ret` (direct, through a register, and through memory), `nop`, `cld` and
 `std`.
 
+Vector instructions:
+
+| Instructions | Lowered | Widths |
+| --- | --- | --- |
+| `movups`, `movdqu`, `movaps`, `movdqa` | register and memory, in both directions | 128, 256, 512 |
+| `vmovups`, `vmovdqu`, `vmovdqu32`, `vmovdqa32` | register and memory, in both directions | 128, 256, 512 |
+| `vmovq`, `vmovIn`, `vmovOut` (`movd` and `movq` with a general register or memory) | yes | every width |
+| `paddd`, `vpaddd` | `BinOp.lanes 32 .add` on each word | 128, 256, 512 |
+| `vzeroupper`, `vpsrld`, `vprord`, `vpternlogd`, `pshufd`, `pblendw`, `pshufb`, `palignr` | `trap` | |
+| `sha256rnds2`, `sha256msg1`, `sha256msg2`, `addps`, `subps` | `trap` | |
+
 Three places where a block says less than the model, each sound: the auxiliary carry flag is
 always undefined; the overflow flag of `adc`, `sbb` and `imul` is undefined, and so is the
 carry flag of `imul`.
@@ -129,10 +150,12 @@ between it and the old one.
 
 Not yet covered, and lowered to `trap`: `adcx`, `adox`, `mulx`, the rotations through carry,
 rotations and double shifts by `cl`, the widening multiplications at 8 and 16 bits, the string
-instructions, a 32-bit address size, and the vector instructions. The model itself has no
-`div`, `idiv`, `xchg`, `cqo`, bit tests or atomics ([`docs/ISA.md`](../docs/ISA.md)). On a
-whole Go binary, 95% of 113,547 instructions lower to something other than `trap`; of the
-1,346 the lowering traps, 1,343 are vector instructions and 3 are `rcr`.
+instructions, a 32-bit address size, and the vector instructions in the last two rows of the
+table above. The model itself has no
+`div`, `idiv`, `xchg`, `cqo`, bit tests or atomics ([`docs/ISA.md`](../docs/ISA.md)). Measured
+before any vector instruction was lowered, on a whole Go binary, 95% of 113,547 instructions
+lowered to something other than `trap`; of the 1,346 that trapped, 1,343 were vector
+instructions and 3 were `rcr`.
 
 ### Code as lines
 

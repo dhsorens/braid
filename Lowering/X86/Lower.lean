@@ -10,14 +10,23 @@
   narrower than 64 bits is held zero-extended in its SSA value. A flag the model leaves
   undefined is a `havoc`; so is the auxiliary carry flag, which no condition code reads.
 
-  Instructions outside the lowering (a 32-bit address size, string instructions, vector
-  instructions, and the rarer arithmetic) become a `trap`. A shift by `cl` changes the flags
+  A 512-bit vector register is eight words: word `j` of `zmm k`, counted from the low end, is
+  `braid` register `32 + 8 * k + j`. An `xmm` register is the low two words of its `zmm`
+  register and a `ymm` register the low four. A vector in memory is read and written a word at
+  a time. An instruction of the VEX or EVEX encodings clears the words of its destination
+  register above its width, and one of the legacy encodings keeps them. An aligned move is a
+  `guard` on its address.
+
+  Instructions outside the lowering (a 32-bit address size, string instructions, the vector
+  shuffles and floating point, and the rarer arithmetic) become a `trap`. A shift by `cl` changes the flags
   only if its count is not zero, which is known only when it runs: each flag is a `select`
   between its old value and its new one.
 
   ## Main definitions
 
   * `lowerOp`: the operations and terminator of one integer instruction
+  * `vecReg`: the `braid` register of a word of a vector register
+  * `lowerAvx`: the operations of one vector instruction
   * `lower`: the block of one instruction
   * `lowerProgram`: the program of an executable
   * `arch`: the names of the registers and flags
@@ -41,13 +50,33 @@ def regNum : Reg64 → Braid.Reg
   | .r8 => 8 | .r9 => 9 | .r10 => 10 | .r11 => 11
   | .r12 => 12 | .r13 => 13 | .r14 => 14 | .r15 => 15
 
-/-- How x86-64 registers and flags are named in the textual form. -/
+/-- The number of a vector register: `zmm k` is `k`. -/
+def mmNum : RegMm → Nat
+  | .mm0 => 0 | .mm1 => 1 | .mm2 => 2 | .mm3 => 3
+  | .mm4 => 4 | .mm5 => 5 | .mm6 => 6 | .mm7 => 7
+  | .mm8 => 8 | .mm9 => 9 | .mm10 => 10 | .mm11 => 11
+  | .mm12 => 12 | .mm13 => 13 | .mm14 => 14 | .mm15 => 15
+  | .mm16 => 16 | .mm17 => 17 | .mm18 => 18 | .mm19 => 19
+  | .mm20 => 20 | .mm21 => 21 | .mm22 => 22 | .mm23 => 23
+  | .mm24 => 24 | .mm25 => 25 | .mm26 => 26 | .mm27 => 27
+  | .mm28 => 28 | .mm29 => 29 | .mm30 => 30 | .mm31 => 31
+
+/-- The `braid` register of word `j` of the vector register `k`: bits `64 * j` to
+`64 * j + 63` of `zmm k`, for `j` below 8. -/
+def vecReg (k : RegMm) (j : Nat) : Nat := 32 + 8 * mmNum k + j
+
+/-- The number of words in a vector of width `w`. -/
+def vecWords : AvxWidth → Nat
+  | .W128 => 2 | .W256 => 4 | .W512 => 8
+
+/-- How x86-64 registers and flags are named in the textual form. Word `j` of `zmm k` is
+`zmm<k>.<j>`. -/
 def arch : Braid.Arch where
   name := "x86_64"
   regName
     | 0 => "rax" | 1 => "rbx" | 2 => "rcx" | 3 => "rdx"
     | 4 => "rsi" | 5 => "rdi" | 6 => "rsp" | 7 => "rbp"
-    | r => s!"r{r}"
+    | r => if 32 ≤ r ∧ r < 288 then s!"zmm{(r - 32) / 8}.{(r - 32) % 8}" else s!"r{r}"
   flagName
     | 0 => "cf" | 1 => "pf" | 2 => "af" | 3 => "zf" | 4 => "sf" | 5 => "of" | 6 => "df"
     | f => s!"f{f}"
@@ -472,6 +501,94 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
   | .nop _ | .nopalign _ _ => fin []
   | _ => none
 
+/-! ## Vector instructions -/
+
+/-- Read the registers `r` to `r + k - 1` into the values `n` to `n + k - 1`. -/
+def getRegs (n : Var) (r : Braid.Reg) (k : Nat) : List Op :=
+  (List.range k).map fun j => .get (n + j) (r + j)
+
+/-- Write the registers `r` to `r + k - 1`, register `r + j` from the value `g j`. -/
+def setRegs (r : Braid.Reg) (g : Nat → Var) (k : Nat) : List Op :=
+  (List.range k).map fun j => .set (r + j) (g j)
+
+/-- Load `k` words from the address in `a` into the values `n` to `n + k - 1`, low word
+first. Uses values from `t` to `t + 2 * k - 1` for the addresses. -/
+def loadWords (n a t : Var) (k : Nat) : List Op :=
+  (List.range k).flatMap fun j =>
+    [.const (t + 2 * j) (BitVec.ofNat 64 (8 * j)), .bin (t + 2 * j + 1) .add a (t + 2 * j),
+      .load (n + j) .w64 (t + 2 * j + 1)]
+
+/-- Store the `k` words in the values `v` to `v + k - 1` at the address in `a`, low word
+first. Uses values from `t` to `t + 2 * k - 1` for the addresses. -/
+def storeWords (a t v : Var) (k : Nat) : List Op :=
+  (List.range k).flatMap fun j =>
+    [.const (t + 2 * j) (BitVec.ofNat 64 (8 * j)), .bin (t + 2 * j + 1) .add a (t + 2 * j),
+      .store .w64 (t + 2 * j + 1) (v + j)]
+
+/-- If `al`, execution is defined only if the address in `a` is a multiple of `bytes`, a
+power of two. Uses values from `n` to `n + 3`. -/
+def alignOps (n a : Var) (bytes : Nat) : Bool → List Op
+  | true =>
+    [.const n (BitVec.ofNat 64 (bytes - 1)), .bin (n + 1) .and a n, .const (n + 2) 0,
+      .bin (n + 3) .eq (n + 1) (n + 2), .guard (n + 3)]
+  | false => []
+
+/-- Read a vector operand into the values `n` to `n + 7`, a word in each, low word first. A
+memory operand must be aligned if `al`. Uses values from `n` to `n + 39`. -/
+def readVec (n : Var) {w : AvxWidth} (al : Bool) : AvxRegOrMem w → List Op
+  | .avx r => getRegs n (vecReg r.base 0) (vecWords w)
+  | .mem a =>
+    addrOps p (n + 8) a ++ alignOps (n + 16) (n + 8) w.bytes al ++
+      loadWords n (n + 8) (n + 24) (vecWords w)
+
+/-- Write a vector operand from the words in the values `v` up. A register keeps its words
+above the width `w` if `legacy`, and has them cleared otherwise. A memory operand must be
+aligned if `al`. Uses values from `n` to `n + 31`. -/
+def writeVec (n : Var) {w : AvxWidth} (legacy al : Bool) (d : AvxRegOrMem w) (v : Var) :
+    List Op :=
+  match d with
+  | .avx r =>
+    setRegs (vecReg r.base 0) (v + ·) (vecWords w) ++
+      (if legacy then []
+      else .const n 0 :: setRegs (vecReg r.base (vecWords w)) (fun _ => n) (8 - vecWords w))
+  | .mem a =>
+    addrOps p n a ++ alignOps (n + 8) n w.bytes al ++ storeWords n (n + 16) v (vecWords w)
+
+/-- The operation `op` on each of `k` pairs of words, into the values `d` up. -/
+def binWords (d : Var) (op : BinOp) (a b : Var) (k : Nat) : List Op :=
+  (List.range k).map fun j => .bin (d + j) op (a + j) (b + j)
+
+/-- A move of a vector. -/
+def moveVec {w : AvxWidth} (legacy al : Bool) (dst src : AvxRegOrMem w) : List Op :=
+  readVec p 0 al src ++ writeVec p 40 legacy al dst 0
+
+/-- The operations of the vector instruction `i`, or `none` if it is outside the lowering.
+Every vector instruction goes on to the next one. -/
+def lowerAvx {w : AvxWidth} : AvxOperation w → Option (List Op)
+  | .movups dst src => some (moveVec p true false dst src)
+  | .movdqu dst src => some (moveVec p true false dst src)
+  | .movaps dst src => some (moveVec p true true dst src)
+  | .movdqa dst src => some (moveVec p true true dst src)
+  | .vmovups dst src => some (moveVec p false false dst src)
+  | .vmovdqu dst src => some (moveVec p false false dst src)
+  | .vmovdqu32 dst src => some (moveVec p false false dst src)
+  | .vmovdqa32 dst src => some (moveVec p false true dst src)
+  | .vmovq dst src =>
+    some ([.get 0 (vecReg src.base 0), .const 1 0] ++
+      setRegs (vecReg dst.base 0) (fun j => if j = 0 then 0 else 1) 8)
+  | .vmovIn _ dst src =>
+    some (readRM p 0 src ++ [.const 8 0] ++
+      setRegs (vecReg dst.base 0) (fun j => if j = 0 then 0 else 8) 8)
+  | .vmovOut n dst src =>
+    some ([.get 0 (vecReg src.base 0), .un 1 (.zext n.bits) 0] ++ writeRM p 8 dst 1)
+  | .paddd dst src =>
+    some (readVec p 0 true src ++ readVec p 40 false dst ++
+      binWords 80 (.lanes 32 .add) 40 0 (vecWords w) ++ writeVec p 96 true false dst 80)
+  | .vpaddd dst src1 src2 =>
+    some (readVec p 0 false src2 ++ readVec p 40 false src1 ++
+      binWords 80 (.lanes 32 .add) 40 0 (vecWords w) ++ writeVec p 96 false false dst 80)
+  | _ => none
+
 end
 
 /-- The mnemonic of an instruction, for the reason of a `trap`. -/
@@ -495,7 +612,11 @@ def lower [Labels] (p : Std.Rco Int64) : Instr → Block
     | some (ops, t) => ⟨ops, t⟩
     | none => ⟨[], .trap (opName op)⟩
   | .regular .. => ⟨[], .trap "32-bit address size"⟩
-  | .avx .. => ⟨[], .trap "vector instruction"⟩
+  | .avx .W64 _ op =>
+    match lowerAvx p op with
+    | some ops => ⟨ops, .jump p.upper.toBitVec⟩
+    | none => ⟨[], .trap "vector instruction"⟩
+  | .avx .. => ⟨[], .trap "32-bit address size"⟩
 
 /-- The block of the directives at one address: labels, which take no room, and then one
 instruction. -/

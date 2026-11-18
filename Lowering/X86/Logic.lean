@@ -7,7 +7,8 @@
 
   ## Main definitions
 
-  * `Regs`, `Flags`: the names of the registers and flags
+  * `Regs`, `Flags`: the names of the registers and flags; `Regs.zmm k j` is a word of a
+    vector register
   * `abs`: the `braid` state of a machine state
   * `HasBytes`: the machine has bytes of a word in memory
 
@@ -51,6 +52,11 @@ abbrev r13 : Braid.Reg := 13
 abbrev r14 : Braid.Reg := 14
 abbrev r15 : Braid.Reg := 15
 
+/-- Word `j` of the vector register `zmm k`: its bits `64 * j` to `64 * j + 63`, for `k`
+below 32 and `j` below 8. The register `xmm k` is `zmm k 0` and `zmm k 1`, and `ymm k` is
+`zmm k 0` to `zmm k 3`. -/
+abbrev zmm (k j : Nat) : Braid.Reg := 32 + 8 * k + j
+
 end Regs
 
 namespace Flags
@@ -93,7 +99,8 @@ theorem triple_sound [Layout] {e : Executable} {blocks : List (Word × Block)} {
 
 /-! ## Theorems about the machine alone -/
 
-/-- The value of the `braid` register `n` in machine data. -/
+/-- The value of the `braid` register `n` in machine data: a general register below 16, and
+a word of a vector register from 32 to 287. -/
 def regOf (s : MachineData) : Nat → Word
   | 0 => s.regs.get64 .rax
   | 1 => s.regs.get64 .rbx
@@ -111,10 +118,28 @@ def regOf (s : MachineData) : Nat → Word
   | 13 => s.regs.get64 .r13
   | 14 => s.regs.get64 .r14
   | 15 => s.regs.get64 .r15
-  | _ => 0#64
+  | n =>
+    if 32 ≤ n ∧ n < 288 then vecWord (s.zmms.get512 (mmOfNum ((n - 32) / 8))) ((n - 32) % 8)
+    else 0#64
 
 theorem regOf_regNum (s : MachineData) (r : Reg64) : regOf s (regNum r) = s.regs.get64 r := by
   cases r <;> rfl
+
+theorem regOf_add (s : MachineData) (n : Nat) :
+    regOf s (n + 16) =
+      if 32 ≤ n + 16 ∧ n + 16 < 288 then
+        vecWord (s.zmms.get512 (mmOfNum ((n + 16 - 32) / 8))) ((n + 16 - 32) % 8)
+      else 0#64 := rfl
+
+theorem regOf_vecReg (s : MachineData) (k : RegMm) {j : Nat} (hj : j < 8) :
+    regOf s (vecReg k j) = vecWord (s.zmms.get512 k) j := by
+  have hk := mmNum_lt k
+  have e : vecReg k j = (16 + 8 * mmNum k + j) + 16 := by simp only [vecReg]; omega
+  have hc : 32 ≤ 16 + 8 * mmNum k + j + 16 ∧ 16 + 8 * mmNum k + j + 16 < 288 := by omega
+  have e1 : (16 + 8 * mmNum k + j + 16 - 32) / 8 = mmNum k := by omega
+  have e2 : (16 + 8 * mmNum k + j + 16 - 32) % 8 = j := by omega
+  rw [e, regOf_add]
+  simp only [hc, and_self, ↓reduceIte, e1, e2, mmOfNum_mmNum]
 
 /-- The flag `n` of machine data. -/
 def flagOf (s : MachineData) : Nat → Bool
@@ -127,8 +152,8 @@ def flagOf (s : MachineData) : Nat → Bool
   | 6 => s.df
   | _ => false
 
-/-- The `braid` state of a machine state: its registers, flags and program counter, and a
-writable cell at each byte of its memory. -/
+/-- The `braid` state of a machine state: its registers, the words of its vector registers,
+its flags and program counter, and a writable cell at each byte of its memory. -/
 def abs (m : MachineState) : State where
   regs := regOf m.data
   flags := flagOf m.data
@@ -143,12 +168,19 @@ def abs (m : MachineState) : State where
 
 /-- A machine state is related to its `braid` state. -/
 theorem rel_abs (m : MachineState) : Rel m (abs m) :=
-  ⟨⟨regOf_regNum m.data, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩, rfl⟩
+  ⟨⟨regOf_regNum m.data, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    fun k _ hj => regOf_vecReg m.data k hj⟩, rfl⟩
 
 /-- A register of a related state is the machine's. -/
 theorem Rel.reg {m : MachineState} {σ : State} (h : Rel m σ) (r : Reg64) :
     σ.regs (regNum r) = m.data.regs.get64 r :=
   h.data.regs r
+
+/-- A word of a vector register of a related state is the machine's. The register is
+`Regs.zmm (mmNum k) j`. -/
+theorem Rel.vec {m : MachineState} {σ : State} (h : Rel m σ) (k : RegMm) {j : Nat} (hj : j < 8) :
+    σ.regs (Regs.zmm (mmNum k) j) = vecWord (m.data.zmms.get512 k) j :=
+  h.data.vec k j hj
 
 /-- The machine has the low `n` bytes of `v` in memory at `a`, little-endian. -/
 def HasBytes (m : MachineState) (a : Word) (n : Nat) (v : Word) : Prop :=

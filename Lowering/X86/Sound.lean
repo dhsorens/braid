@@ -10,6 +10,7 @@
   ## Main results
 
   * `lowerOp_sound`: one integer instruction
+  * `lowerAvx_sound` (in `Avx.lean`): one vector instruction
   * `lower_sound`: one instruction
   * `lowerProgram_sound`: every run of an executable
 -/
@@ -23,6 +24,7 @@ public import Lowering.X86.Carry
 public import Lowering.X86.Mul
 public import Lowering.X86.DShift
 public import Lowering.X86.Rotate
+public import Lowering.X86.Avx
 
 @[expose] public section
 
@@ -201,7 +203,17 @@ theorem lower_sound {s : MachineData} {σ : State} {Q : State → Prop} {i : Ins
         simp only [hl] at hw
         exact lowerOp_sound op h hl hw
     all_goals simp [lower, Block.wp, wpOps, Term.wp] at hw
-  | avx asz w op => simp [lower, Block.wp, wpOps, Term.wp] at hw
+  | avx asz w op =>
+    simp only [Instr.interp, Effects.All]
+    cases asz
+    case W64 =>
+      simp only [lower] at hw
+      cases hl : lowerAvx p op with
+      | none => simp [hl, Block.wp, wpOps, Term.wp] at hw
+      | some ops =>
+        simp only [hl] at hw
+        exact lowerAvx_sound op h hl hw
+    all_goals simp [lower, Block.wp, wpOps, Term.wp] at hw
 
 /-- The block of the directives at an address is the lowering of what the model runs
 there. -/

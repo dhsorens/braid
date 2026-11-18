@@ -30,8 +30,11 @@ namespace Lowering.X86
 
 open Braid (Word Var Op Term Block BinOp UnOp Env wpOps State ofBool)
 
+/-- Word `j` of a vector: its bits `64 * j` to `64 * j + 63`. -/
+def vecWord {n : Nat} (v : BitVec n) (j : Nat) : Word := v.extractLsb' (64 * j) 64
+
 /-- The machine data `s` and the `braid` state `σ` describe the same machine: the same
-registers, flags and bytes of memory. The vector registers are not part of a `braid` state. -/
+registers, flags and bytes of memory, and each vector register as its eight words. -/
 structure RelD (s : MachineData) (σ : State) : Prop where
   regs : ∀ r, σ.regs (regNum r) = s.regs.get64 r
   cf : σ.flags 0 = s.status.cf
@@ -42,6 +45,7 @@ structure RelD (s : MachineData) (σ : State) : Prop where
   of : σ.flags 5 = s.status.of
   df : σ.flags 6 = s.df
   mem : σ.mem = memOf s.dmem
+  vec : ∀ k j, j < 8 → σ.regs (vecReg k j) = vecWord (s.zmms.get512 k) j
 
 /-- The machine state `m` and the `braid` state `σ` describe the same machine, at the same
 program counter. -/
@@ -78,14 +82,25 @@ theorem get64_set64 (s : Reg64s) (r r' : Reg64) (v : BitVec 64) :
   · subst h; cases r' <;> simp [Reg64s.get64, Reg64s.set64]
   · cases r <;> cases r' <;> first | exact absurd rfl h | simp [Reg64s.get64, Reg64s.set64]
 
+theorem regNum_lt (r : Reg64) : @LT.lt Nat _ (regNum r) 16 := by
+  cases r <;> decide
+
+/-- A word of a vector register is not a general register. -/
+theorem vecReg_ne_regNum (k : RegMm) (j : Nat) (r : Reg64) : vecReg k j ≠ regNum r := fun e => by
+  have h1 := regNum_lt r
+  have h2 : @Eq Nat (regNum r) (32 + 8 * mmNum k + j) := e.symm
+  omega
+
 theorem RelD.set64 {s : MachineData} {σ : State} (h : RelD s σ) (r : Reg64) (v : Word) :
     RelD { s with regs := s.regs.set64 r v } (σ.setReg (regNum r) v) := by
-  refine ⟨fun r' => ?_, h.cf, h.pf, h.af, h.zf, h.sf, h.of, h.df, h.mem⟩
-  simp only [State.setReg, get64_set64]
-  by_cases hr : r' = r
-  · subst hr; simp
-  · have : regNum r' ≠ regNum r := fun e => hr (regNum_inj e)
-    simp [hr, this, h.regs r']
+  refine ⟨fun r' => ?_, h.cf, h.pf, h.af, h.zf, h.sf, h.of, h.df, h.mem, fun k j hj => ?_⟩
+  · simp only [State.setReg, get64_set64]
+    by_cases hr : r' = r
+    · subst hr; simp
+    · have : regNum r' ≠ regNum r := fun e => hr (regNum_inj e)
+      simp [hr, this, h.regs r']
+  · simp only [State.setReg, vecReg_ne_regNum, ↓reduceIte]
+    exact h.vec k j hj
 
 /-- A state with other flags is related to the machine with that status. -/
 theorem RelD.status {s : MachineData} {σ σ' : State} (h : RelD s σ) (st : StatusFlags)
@@ -94,11 +109,11 @@ theorem RelD.status {s : MachineData} {σ σ' : State} (h : RelD s σ) (st : Sta
     (hzf : σ'.flags 3 = st.zf) (hsf : σ'.flags 4 = st.sf) (hof : σ'.flags 5 = st.of) :
     RelD { s with status := st } σ' :=
   ⟨fun r => by rw [hregs]; exact h.regs r, hcf, hpf, haf, hzf, hsf, hof, by rw [hdf]; exact h.df,
-    by rw [hmem]; exact h.mem⟩
+    by rw [hmem]; exact h.mem, fun k j hj => by rw [hregs]; exact h.vec k j hj⟩
 
 theorem RelD.setPc {s : MachineData} {σ : State} (h : RelD s σ) (a : Word) :
     RelD s (σ.setPc a) :=
-  ⟨h.regs, h.cf, h.pf, h.af, h.zf, h.sf, h.of, h.df, h.mem⟩
+  ⟨h.regs, h.cf, h.pf, h.af, h.zf, h.sf, h.of, h.df, h.mem, h.vec⟩
 
 variable {s : MachineData} {σ : State} {ρ : Env} {Q : Env → State → Prop}
 
@@ -340,7 +355,7 @@ theorem store_sound (h : RelD s σ) {a v : Word} {w : Width} {val : w.type} {m :
   obtain ⟨hsome, hm⟩ := storeInt_of_storeN hn hs val.toInt hi
   obtain ⟨i, hi'⟩ := Option.isSome_iff_exists.1 hsome
   simp only [MachineData.store, Effects.All_require_write_access, hi']
-  exact hk _ ⟨h.regs, h.cf, h.pf, h.af, h.zf, h.sf, h.of, h.df, hm⟩
+  exact hk _ ⟨h.regs, h.cf, h.pf, h.af, h.zf, h.sf, h.of, h.df, hm, h.vec⟩
 
 theorem writeRM_sound (h : RelD s σ) {n v : Nat} {w : Width} {d : RegOrMem w} {val : w.type}
     {ret : MachineData → Effects} (hv : ρ v = val.setWidth 64) (hvn : v < n)
@@ -506,7 +521,7 @@ omit [Labels] in
 theorem RelD.setDf (h : RelD s σ) {b b' : Bool} (e : b' = b) :
     RelD { s with df := b } (σ.setFlag 6 b') := by
   subst e
-  exact ⟨h.regs, h.cf, h.pf, h.af, h.zf, h.sf, h.of, by simp [State.setFlag], h.mem⟩
+  exact ⟨h.regs, h.cf, h.pf, h.af, h.zf, h.sf, h.of, by simp [State.setFlag], h.mem, h.vec⟩
 
 omit [Labels] in
 theorem ofBool_coe (w : Width) (b : Bool) :

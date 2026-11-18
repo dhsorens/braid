@@ -31,7 +31,7 @@ def usage : String :=
   "                   [--norm <file>] [--module <Name>] [--disasm <file>]\n" ++
   "  --list           print the functions of the binary and stop\n" ++
   "  --stats          print how much of the code the lowering covers\n" ++
-  "  --simplify       remove dead operations from the MLIR and position-independent text\n" ++
+  "  --simplify       fuse blocks and remove dead work in the MLIR and position-independent text\n" ++
   "  --fn <name>      lower this function (repeatable; default: every function)\n" ++
   "  --mlir <file>    write the lowered functions in MLIR's generic syntax\n" ++
   "  --lean <file>    write the lowered functions as a Lean module\n" ++
@@ -90,7 +90,7 @@ def main (args : List String) : IO UInt32 := do
   let img ← match Elf.parse (← IO.FS.readBinFile opts.input) with
     | .ok i => pure i
     | .error e => IO.eprintln e; return 1
-  let view (fs : List Braid.Func) := if opts.simplify then fs.map Braid.Func.dce else fs
+  let view (fs : List Braid.Func) := if opts.simplify then fs.map Braid.Func.simplify else fs
   let all := img.functions
   if opts.list then
     for f in all do IO.println s!"0x{Braid.hex f.addr} {f.bytes.size} {f.name}"
