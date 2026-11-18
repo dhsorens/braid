@@ -27,7 +27,7 @@ down to a theorem about the machine model alone (`<function>_correct`).
 | `c/bytes.c` | str_len, fill, **count_ones** | str_len, fill, count_ones | str_len, fill, count_ones |
 | `rust/basic.rs` | **gcd** | add3, max_u64, **gcd**, sum_slice | add3, max_u64, sum_slice |
 | `swift/basic.swift` | swift_add3, swift_min, **swift_gcd** | swift_add3, swift_min, swift_gcd | swift_add3, swift_min |
-| `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64 |
+| `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64, SumSlice |
 | `python/basic.py` | py_add3, py_max_u64, py_gcd | py_add3, py_max_u64 | py_add3, py_max_u64 |
 | `js/basic.js` | | js_add3 | |
 
@@ -128,5 +128,5 @@ of a model are in [`docs/ISA.md`](../docs/ISA.md). `braid-lower --stats` on a wh
 is the broadest test: 95% of its instructions lower on AArch64, and 95% on x86-64.
 
 Every C function is verified on all three instruction sets. What is not verified, and why:
-`gcd` on x86-64, because the machine model has no `div`; Go's `SumSlice` on x86-64; and
-JavaScript on RISC-V and x86-64, because V8 emits code for the machine it runs on.
+`gcd` on x86-64, because the machine model has no `div`, and JavaScript on RISC-V and
+x86-64, because V8 emits code for the machine it runs on.

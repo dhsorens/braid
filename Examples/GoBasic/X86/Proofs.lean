@@ -47,4 +47,69 @@ theorem main_MaxU64_spec (a b s r : Word) (c pf af z sg o : Bool) :
     simp only [umax]
     by_cases h1 : b.ult a <;> simp_all
 
+/-- After `cmp a, b`, the condition `g` is the signed comparison. -/
+theorem cond_g (a b : Word) :
+    ((ofBool (a - b &&& 9223372036854775808#64 != 0#64) ^^^
+        ofBool ((a ^^^ b) &&& (a ^^^ a - b) &&& 9223372036854775808#64 != 0#64) |||
+      ofBool (a - b == 0#64)) == 0#64) = b.slt a := by
+  simp only [ofBool]
+  bv_decide
+
+theorem cond_g_iff (a b : Word) :
+    (ofBool (a - b &&& 9223372036854775808#64 != 0#64) ^^^
+        ofBool ((a ^^^ b) &&& (a ^^^ a - b) &&& 9223372036854775808#64 != 0#64) |||
+      ofBool (a - b == 0#64) = 0#64) ↔ b.slt a = true := by
+  rw [← cond_g a b, beq_iff_eq]
+
+/-- The loop of `main.SumSlice`, from index `i`, with `rest` still to add. -/
+theorem main_SumSlice_loop (p len s r : Word) : ∀ (rest : List Word) (i acc : Word)
+    (c pf af z sg o : Bool), i + BitVec.ofNat 64 rest.length = len → len.toNat < 2 ^ 61 →
+    i.toNat + rest.length < 2 ^ 61 →
+    Triple main_SumSlice.program
+      (Atoms.interp [.pc 0x47a652#64, .reg rax p, .reg rbx len, .reg rcx i, .reg rdx acc,
+        .prop (wordsAt (p + i * 8#64) rest), .reg rsp s, .mem s 8 r true,
+        .flag Flags.cf c, .flag Flags.pf pf, .flag Flags.af af, .flag Flags.zf z,
+        .flag Flags.sf sg, .flag Flags.of o])
+      (Atoms.interp [.pc r, .reg rax (wsum rest acc), .reg rbx len, .reg rcx len,
+        .reg rdx (wsum rest acc), .prop (wordsAt (p + i * 8#64) rest), .reg rsp (s + 8#64),
+        .mem s 8 r true,
+        .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
+        .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)]) := by
+  intro rest
+  induction rest with
+  | nil =>
+    intro i acc c pf af z sg o he hlen hi
+    have hil : i = len := by simpa using he
+    subst hil
+    braid_step
+    braid_step
+    · rw [cond_g_iff] at hbr
+      exact absurd hbr (by simp [BitVec.slt])
+    · braid_run
+      x86_forget_flags
+      simp only [wsum, List.foldl_nil]
+      braid_done
+  | cons x xs ih =>
+    intro i acc c pf af z sg o he hlen hi
+    simp only [List.length_cons] at he hi
+    braid_step
+    braid_step
+    · braid_unfold wordsAt_cons (p + i * 8#64) x xs
+      iterate 2 braid_step
+      have e : p + (i * 8#64 + 8#64) = p + (i + 1#64) * 8#64 := by bv_decide
+      rw [e]
+      braid_call ih (i + 1#64) (x + acc) _ _ _ _ _ _ (by rw [← he]; bv_omega) hlen
+        (by bv_omega)
+      rw [← e]
+      braid_fold wordsAt_cons (p + i * 8#64) x xs
+      simp only [wsum, List.foldl_cons]
+      braid_done
+    · exfalso
+      rw [cond_g_iff] at hbr
+      have : i.slt len = true := by
+        have h1 : i < len := by rw [← he]; bv_omega
+        have h2 : len < 2305843009213693952#64 := by bv_omega
+        bv_decide
+      exact hbr this
+
 end Examples.GoBasic.X86
