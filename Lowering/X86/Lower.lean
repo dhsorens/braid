@@ -11,7 +11,9 @@
   undefined is a `havoc`; so is the auxiliary carry flag, which no condition code reads.
 
   Instructions outside the lowering (a 32-bit address size, string instructions, vector
-  instructions, and the rarer arithmetic) become a `trap`.
+  instructions, and the rarer arithmetic) become a `trap`. A shift by `cl` changes the flags
+  only if its count is not zero, which is known only when it runs: each flag is a `select`
+  between its old value and its new one.
 
   ## Main definitions
 
@@ -146,6 +148,26 @@ def pzsOps (n : Var) (w : Width) (r : Var) : List Op :=
     .const (n + 4) 0, .bin (n + 5) .eq (n + 3) (n + 4), .setf 1 (n + 5),
     .bin (n + 6) .eq r (n + 4), .setf 3 (n + 6),
     .const (n + 7) (signBit w), .bin (n + 8) .and r (n + 7), .setf 4 (n + 8)]
+
+/-- The parity, zero and sign flags of the result in `r`, as the values `n + 5`, `n + 6` and
+`n + 8`, without setting them. Uses values from `n` to `n + 8`. -/
+def pzsVals (n : Var) (w : Width) (r : Var) : List Op :=
+  [.un n (.zext 8) r, .un (n + 1) .popcnt n, .const (n + 2) 1, .bin (n + 3) .and (n + 1) (n + 2),
+    .const (n + 4) 0, .bin (n + 5) .eq (n + 3) (n + 4), .bin (n + 6) .eq r (n + 4),
+    .const (n + 7) (signBit w), .bin (n + 8) .and r (n + 7)]
+
+/-- Set each status flag from its new value, or keep it if `z` is not zero: an instruction
+whose flags depend on a value known only when it runs. Uses values 60 to 71. -/
+def selFlags (z cf pf af zf sf of : Var) : List Op :=
+  [.getf 60 0, .select 61 z 60 cf, .setf 0 61, .getf 62 1, .select 63 z 62 pf, .setf 1 63,
+    .getf 64 2, .select 65 z 64 af, .setf 2 65, .getf 66 3, .select 67 z 66 zf, .setf 3 67,
+    .getf 68 4, .select 69 z 68 sf, .setf 4 69, .getf 70 5, .select 71 z 70 of, .setf 5 71]
+
+/-- The count of a shift by `cl`, masked to five bits, or six at 64 bits, in value 8, and
+whether it is zero in value 29. -/
+def clCount (w : Width) : List Op :=
+  [.get 56 (regNum .rcx), .const 57 (match w with | .W64 => 0x3f#64 | _ => 0x1f#64),
+    .bin 8 .and 56 57, .const 28 0, .bin 29 .eq 8 28]
 
 /-- A condition code, as `1` or `0` in `n`. Uses values from `n` to `n + 6`. -/
 def ccOps (n : Var) : CondCode → List Op
@@ -295,6 +317,27 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
         .setf 0 14] ++
       (if k = 1 then [.const 17 0, .setf 5 17] else [.havoc 17, .setf 5 17]) ++
       afOps 24 ++ pzsOps 32 w v ++ writeRM p 48 dst v)
+  | .shl dst .cl =>
+    let (ct, v) := cut 10 w 9
+    fin (readRM p 0 dst ++ clCount w ++ [.bin 9 .shl 0 8] ++ ct ++
+      [.const 11 (BitVec.ofNat 64 w.bits), .bin 12 .sub 11 8, .bin 13 .lshr 0 12, .const 14 1,
+        .bin 15 .and 13 14, .havoc 16, .bin 18 .ult 8 11, .select 19 18 15 16,
+        .bin 20 .xor v 0, .const 21 (signBit w), .bin 22 .and 20 21, .havoc 23,
+        .bin 26 .eq 8 14, .select 27 26 22 23, .havoc 24] ++
+      pzsVals 32 w v ++ selFlags 29 19 37 24 38 40 27 ++ writeRM p 48 dst v)
+  | .shr dst .cl =>
+    fin (readRM p 0 dst ++ clCount w ++ [.bin 9 .lshr 0 8] ++
+      [.const 11 (BitVec.ofNat 64 w.bits), .const 14 1, .bin 12 .sub 8 14, .bin 13 .lshr 0 12,
+        .bin 15 .and 13 14, .havoc 16, .bin 18 .ult 8 11, .select 19 18 15 16,
+        .const 21 (signBit w), .bin 22 .and 0 21, .havoc 23,
+        .bin 26 .eq 8 14, .select 27 26 22 23, .havoc 24] ++
+      pzsVals 32 w 9 ++ selFlags 29 19 37 24 38 40 27 ++ writeRM p 48 dst 9)
+  | .sar dst .cl =>
+    let (ct, v) := cut 10 w 9
+    fin (readRM p 0 dst ++ clCount w ++ [.un 7 (.sext w.bits) 0, .bin 9 .ashr 7 8] ++ ct ++
+      [.const 14 1, .bin 12 .sub 8 14, .bin 13 .ashr 7 12, .bin 19 .and 13 14,
+        .const 22 0, .havoc 23, .bin 26 .eq 8 14, .select 27 26 22 23, .havoc 24] ++
+      pzsVals 32 w v ++ selFlags 29 19 37 24 38 40 27 ++ writeRM p 48 dst v)
   | .imul dst src1 src2 =>
     let (c, v) := cut 17 w 16
     fin (readRM p 0 src1 ++ readOp p 8 src2 ++ [.bin 16 .mul 0 8] ++ c ++

@@ -18,6 +18,7 @@ module
 
 public import Lowering.X86.Ops
 public import Lowering.X86.Shift
+public import Lowering.X86.ShiftCl
 
 @[expose] public section
 
@@ -142,15 +143,15 @@ theorem lowerOp_sound {w : Width} (i : Operation w) : OpSound p i := by
   case imul dst src1 src2 => exact imul_sound dst src1 src2
   case shl dst c =>
     cases c with
-    | cl => intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl
+    | cl => exact shl_cl_sound dst
     | imm8 c => exact shl_sound dst c
   case shr dst c =>
     cases c with
-    | cl => intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl
+    | cl => exact shr_cl_sound dst
     | imm8 c => exact shr_sound dst c
   case sar dst c =>
     cases c with
-    | cl => intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl
+    | cl => exact sar_cl_sound dst
     | imm8 c => exact sar_sound dst c
   all_goals intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl
 

@@ -403,6 +403,99 @@ theorem wp_pzs {n r : Nat} {w : Width} {val : w.type} (hr : ρ r = val.setWidth 
   exact ⟨_, by agree, hw⟩
 
 omit [Labels] in
+/-- The parity, zero and sign flags of a result, as values. -/
+theorem wp_pzsVals {n r : Nat} {w : Width} {val : w.type} (hr : ρ r = val.setWidth 64)
+    (hrn : r < n) (hw : wpOps (pzsVals n w r) ρ σ Q) :
+    ∃ ρ', Agree n ρ ρ' ∧ (ρ' (n + 5) != 0#64) = ((val.take 8).cpop_ % 2 == BitVec.zero _) ∧
+      (ρ' (n + 6) != 0#64) = (val == BitVec.zero _) ∧ (ρ' (n + 8) != 0#64) = val.msb ∧
+      Q ρ' σ := by
+  have h0 : r ≠ n := by omega
+  have h1 : r ≠ n + 1 := by omega
+  have h2 : r ≠ n + 2 := by omega
+  have h3 : r ≠ n + 3 := by omega
+  have h4 : r ≠ n + 4 := by omega
+  have h5 : r ≠ n + 5 := by omega
+  have h6 : r ≠ n + 6 := by omega
+  have h7 : r ≠ n + 7 := by omega
+  simp only [pzsVals] at hw
+  x86_ops at hw
+  simp only [h0, h1, h2, h3, h4, h5, h6, h7, ↓reduceIte, hr] at hw
+  have e1 : (BinOp.eq.eval (BinOp.and.eval (UnOp.popcnt.eval ((UnOp.zext 8).eval
+      (BitVec.setWidth 64 val))) 1) 0 != 0#64) =
+      ((val.take 8).cpop_ % 2 == BitVec.zero _) := by
+    clear hw hr
+    simp only [cpop_eq, BitVec.take]
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+  have e2 : (BinOp.eq.eval (BitVec.setWidth 64 val) 0 != 0#64) = (val == BitVec.zero _) := by
+    clear hw hr e1
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+  have e3 : (BinOp.and.eval (BitVec.setWidth 64 val) (signBit w) != 0#64) = val.msb := by
+    clear hw hr e1 e2
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+  refine ⟨_, by agree, ?_, ?_, ?_, hw⟩
+  · simpa [Env.set_apply] using e1
+  · simpa [Env.set_apply] using e2
+  · simpa [Env.set_apply] using e3
+
+omit [Labels] in
+/-- The flags are kept: the condition of `selFlags` is not zero. -/
+theorem wp_selFlags_keep (h : RelD s σ) {z cf pf af zf sf of : Nat} (hz : ρ z ≠ 0#64)
+    (hlt : z < 60) (hw : wpOps (selFlags z cf pf af zf sf of) ρ σ Q) :
+    ∃ ρ' σ', Agree 60 ρ ρ' ∧ RelD s σ' ∧ Q ρ' σ' := by
+  have z0 : z ≠ 60 := by omega
+  have z1 : z ≠ 61 := by omega
+  have z2 : z ≠ 62 := by omega
+  have z3 : z ≠ 63 := by omega
+  have z4 : z ≠ 64 := by omega
+  have z5 : z ≠ 65 := by omega
+  have z6 : z ≠ 66 := by omega
+  have z7 : z ≠ 67 := by omega
+  have z8 : z ≠ 68 := by omega
+  have z9 : z ≠ 69 := by omega
+  have z10 : z ≠ 70 := by omega
+  simp only [selFlags] at hw
+  x86_ops at hw
+  simp only [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, ↓reduceIte, hz, ne_eq,
+    not_false_eq_true, Braid.ofBool_bne_zero] at hw
+  refine ⟨_, _, by agree, ?_, hw⟩
+  have hs : s = { s with status := s.status } := rfl
+  rw [hs]
+  exact RelD.status h s.status (by rfl) (by rfl) (by simp [State.setFlag])
+    (by simp [State.setFlag, h.cf]) (by simp [State.setFlag, h.pf])
+    (by simp [State.setFlag, h.af]) (by simp [State.setFlag, h.zf])
+    (by simp [State.setFlag, h.sf]) (by simp [State.setFlag, h.of])
+
+omit [Labels] in
+/-- The flags are set: the condition of `selFlags` is zero, and each value is the flag of
+the status `st`. -/
+theorem wp_selFlags_set (h : RelD s σ) {z cf pf af zf sf of : Nat} {st : StatusFlags}
+    (hz : ρ z = 0#64)
+    (hlt : z < 60 ∧ cf < 60 ∧ pf < 60 ∧ af < 60 ∧ zf < 60 ∧ sf < 60 ∧ of < 60)
+    (hcf : (ρ cf != 0#64) = st.cf) (hpf : (ρ pf != 0#64) = st.pf)
+    (haf : (ρ af != 0#64) = st.af) (hzf : (ρ zf != 0#64) = st.zf)
+    (hsf : (ρ sf != 0#64) = st.sf) (hof : (ρ of != 0#64) = st.of)
+    (hw : wpOps (selFlags z cf pf af zf sf of) ρ σ Q) :
+    ∃ ρ' σ', Agree 60 ρ ρ' ∧ RelD { s with status := st } σ' ∧ Q ρ' σ' := by
+  obtain ⟨hz', hc', hp', ha', hzz', hs', ho'⟩ := hlt
+  have ne : ∀ {x : Nat}, x < 60 → x ≠ 60 ∧ x ≠ 61 ∧ x ≠ 62 ∧ x ≠ 63 ∧ x ≠ 64 ∧ x ≠ 65 ∧
+      x ≠ 66 ∧ x ≠ 67 ∧ x ≠ 68 ∧ x ≠ 69 ∧ x ≠ 70 ∧ x ≠ 71 := fun hx => by omega
+  obtain ⟨a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, -⟩ := ne hz'
+  obtain ⟨b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, -⟩ := ne hc'
+  obtain ⟨c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, -⟩ := ne hp'
+  obtain ⟨d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, -⟩ := ne ha'
+  obtain ⟨e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, -⟩ := ne hzz'
+  obtain ⟨f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, -⟩ := ne hs'
+  obtain ⟨g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, -⟩ := ne ho'
+  simp only [selFlags] at hw
+  x86_ops at hw
+  simp only [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, b0, c0, c1, c2, d0, d1, d2, d3, d4,
+    e0, e1, e2, e3, e4, e5, e6, f0, f1, f2, f3, f4, f5, f6, f7, f8, g0, g1, g2, g3, g4, g5, g6,
+    g7, g8, g9, g10, ↓reduceIte, hz, ne_eq, not_true_eq_false, hcf, hpf, haf, hzf, hsf, hof] at hw
+  exact ⟨_, _, by agree, RelD.status h st (by rfl) (by rfl) (by simp [State.setFlag])
+    (by simp [State.setFlag]) (by simp [State.setFlag]) (by simp [State.setFlag])
+    (by simp [State.setFlag]) (by simp [State.setFlag]) (by simp [State.setFlag]), hw⟩
+
+omit [Labels] in
 /-- The machine has gone to `a`, and so has the block. -/
 theorem done_sound {s' : MachineData} {σ' : State} {a : Int64} {Q : State → Prop}
     (h : RelD s' σ') (hq : Q (σ'.setPc a.toBitVec)) :
