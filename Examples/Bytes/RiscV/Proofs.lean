@@ -130,4 +130,64 @@ theorem count_ones_correct (s : MachineState)
   · rw [← hr.getReg (r := .x10) (by decide)]
     exact Atoms.reg_of_holds (r := 10) hq (by braid_at)
 
+/-- The loop of `fill`: store the byte from `q` up to the end `e`. -/
+theorem fill_loop (e v r : Word) : ∀ (bs : List (BitVec 8)) (b : BitVec 8) (q : Word),
+    q + BitVec.ofNat 64 (bs.length + 1) = e → bs.length + 1 < 2 ^ 64 →
+    Triple fill.program
+      (Atoms.interp [.pc 0x10024#64, .reg a0 q, .reg a1 e, .reg a2 v,
+        .prop (bytesAt q (b :: bs)), .reg ra r])
+      (Atoms.interp [.pc (r &&& ~~~1#64), .reg a0 e, .reg a1 e, .reg a2 v,
+        .prop (bytesAt q (List.replicate (bs.length + 1) (v.truncate 8))), .reg ra r]) := by
+  intro bs
+  induction bs with
+  | nil =>
+    intro b q he hb
+    have he' : e = q + 1#64 := by simpa using he.symm
+    subst he'
+    braid_unfold bytesAt_cons q b []
+    braid_run
+    braid_fold bytesAt_cons_store q v []
+    simp only [List.length_nil, Nat.zero_add, List.replicate_one]
+    braid_done
+  | cons c cs ih =>
+    intro b q he hb
+    simp only [List.length_cons] at he hb
+    braid_unfold bytesAt_cons q b (c :: cs)
+    iterate 2 braid_step
+    braid_step
+    · braid_call ih c (q + 1#64) (by rw [← he]; bv_omega) (by omega)
+      braid_fold bytesAt_cons_store q v (List.replicate (cs.length + 1) (v.truncate 8))
+      simp only [List.length_cons, List.replicate_succ]
+      braid_done
+    · exfalso
+      have : q + 1#64 ≠ e := by rw [← he]; bv_omega
+      exact this (by simpa using hbr)
+
+/-- `fill` stores the byte `v` in each of the `n` bytes its first argument points to. -/
+theorem fill_spec (p v r : Word) (bs : List (BitVec 8)) (hl : bs.length < 2 ^ 64) :
+    Triple fill.program
+      (Atoms.interp [.pc 0x1001c#64, .reg a0 p, .reg a1 (BitVec.ofNat 64 bs.length), .reg a2 v,
+        .prop (bytesAt p bs), .reg ra r])
+      (Atoms.interp [.pc (r &&& ~~~1#64), .prop (regAny a0), .prop (regAny a1), .reg a2 v,
+        .prop (bytesAt p (List.replicate bs.length (v.truncate 8))), .reg ra r]) := by
+  cases bs with
+  | nil =>
+    simp only [List.length_nil]
+    braid_run
+    braid_forget 10
+    braid_forget 11
+    simp only [List.replicate_zero]
+    braid_done
+  | cons b bs =>
+    simp only [List.length_cons] at hl ⊢
+    braid_step
+    · exfalso
+      have : BitVec.ofNat 64 (bs.length + 1) ≠ 0#64 := by bv_omega
+      exact this (by simpa using hbr)
+    · braid_step
+      braid_call fill_loop _ v r bs b p rfl hl
+      braid_forget 10
+      braid_forget 11
+      braid_done
+
 end Examples.Bytes.RiscV

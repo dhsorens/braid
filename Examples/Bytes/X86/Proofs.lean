@@ -78,4 +78,88 @@ theorem str_len_spec (p t s r : Word) (str : List (BitVec 8)) (c pf af z sg o : 
       BitVec.ofNat 64 str.length := by bv_omega
   simp [e]
 
+/-- The loop of `fill`, at index `i`: store the byte up to index `n`. -/
+theorem fill_loop (p n v s r : Word) : ∀ (bs : List (BitVec 8)) (b : BitVec 8) (i : Word)
+    (c pf af z sg o : Bool), i + BitVec.ofNat 64 (bs.length + 1) = n →
+    i.toNat + bs.length + 1 < 2 ^ 64 →
+    Triple fill.program
+      (Atoms.interp [.pc 0x401030#64, .reg rax i, .reg rdi p, .reg rsi n, .reg rdx v,
+        .prop (bytesAt (p + i * 1#64) (b :: bs)), .reg rsp s, .mem s 8 r true,
+        .flag Flags.cf c, .flag Flags.pf pf, .flag Flags.af af, .flag Flags.zf z,
+        .flag Flags.sf sg, .flag Flags.of o])
+      (Atoms.interp [.pc r, .reg rax n, .reg rdi p, .reg rsi n, .reg rdx v,
+        .prop (bytesAt (p + i * 1#64) (List.replicate (bs.length + 1) (v.truncate 8))),
+        .reg rsp (s + 8#64), .mem s 8 r true,
+        .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
+        .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)]) := by
+  intro bs
+  induction bs with
+  | nil =>
+    intro b i c pf af z sg o he hb
+    have hn : n = i + 1#64 := by simpa using he.symm
+    subst hn
+    braid_unfold bytesAt_cons (p + i * 1#64) b []
+    iterate 3 braid_step
+    braid_step
+    · exact absurd hbr (by simp)
+    · braid_run
+      braid_fold bytesAt_cons_store (p + i * 1#64) _ []
+      x86_forget_flags
+      simp only [List.length_nil, Nat.zero_add, List.replicate_one]
+      braid_done
+  | cons d ds ih =>
+    intro b i c pf af z sg o he hb
+    simp only [List.length_cons] at he hb
+    braid_unfold bytesAt_cons (p + i * 1#64) b (d :: ds)
+    iterate 3 braid_step
+    braid_step
+    · have e1 : p + (i * 1#64 + 1#64) = p + (i + 1#64) * 1#64 := by bv_decide
+      rw [e1]
+      braid_call ih d (i + 1#64) _ _ _ _ _ _ (by rw [← he]; bv_omega) (by bv_omega)
+      rw [← e1]
+      braid_fold bytesAt_cons_store (p + i * 1#64) _
+        (List.replicate (ds.length + 1) (v.truncate 8))
+      simp only [List.length_cons, List.replicate_succ]
+      braid_done
+    · exfalso
+      have : n - (i + 1#64) ≠ 0#64 := by rw [← he]; bv_omega
+      exact this (by simpa using hbr)
+
+/-- `fill` stores the byte `v` in each of the `n` bytes its first argument points to. -/
+theorem fill_spec (p v t s r : Word) (bs : List (BitVec 8)) (c pf af z sg o : Bool)
+    (hl : bs.length < 2 ^ 64) :
+    Triple fill.program
+      (Atoms.interp [.pc 0x401020#64, .reg rax t, .reg rdi p,
+        .reg rsi (BitVec.ofNat 64 bs.length), .reg rdx v, .prop (bytesAt p bs), .reg rsp s,
+        .mem s 8 r true,
+        .flag Flags.cf c, .flag Flags.pf pf, .flag Flags.af af, .flag Flags.zf z,
+        .flag Flags.sf sg, .flag Flags.of o])
+      (Atoms.interp [.pc r, .prop (regAny rax), .reg rdi p,
+        .reg rsi (BitVec.ofNat 64 bs.length), .reg rdx v,
+        .prop (bytesAt p (List.replicate bs.length (v.truncate 8))), .reg rsp (s + 8#64),
+        .mem s 8 r true,
+        .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
+        .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)]) := by
+  cases bs with
+  | nil =>
+    simp only [List.length_nil]
+    braid_run
+    braid_forget 0
+    x86_forget_flags
+    simp only [List.replicate_zero]
+    braid_done
+  | cons b bs =>
+    simp only [List.length_cons] at hl ⊢
+    iterate 1 braid_step
+    braid_step
+    · exfalso
+      have : BitVec.ofNat 64 (bs.length + 1) ≠ 0#64 := by bv_omega
+      exact this (by simpa using hbr)
+    · iterate 2 braid_step
+      simp only [BitVec.xor_self]
+      braid_call fill_loop p (BitVec.ofNat 64 (bs.length + 1)) v s r bs b 0#64 _ _ _ _ _ _
+        (by simp) (by simp; omega)
+      braid_forget 0
+      braid_done
+
 end Examples.Bytes.X86

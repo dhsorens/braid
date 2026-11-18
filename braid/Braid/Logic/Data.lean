@@ -59,6 +59,31 @@ theorem bytesAt_cons (p : Word) (b : BitVec 8) (bs : List (BitVec 8)) :
       Atoms.interp [.mem p 1 (b.zeroExtend 64) true, .prop (bytesAt (p + 1#64) bs)] :=
   SProp.ext (sep_mono_right sep_emp.symm.1 |> fun h => ⟨h, sep_mono_right sep_emp.1⟩)
 
+/-- One byte of memory holds only the low byte of the word written to it. -/
+theorem Heap.bytes_byte (a v : Word) (w : Bool) :
+    Heap.bytes a 1 v w = Heap.bytes a 1 ((v.truncate 8).zeroExtend 64) w := by
+  funext l
+  cases l with
+  | mem x =>
+    simp only [Heap.bytes]
+    split
+    · rename_i hx
+      have e : x - a = 0#64 := by bv_omega
+      simp [e]
+    · rfl
+  | _ => rfl
+
+/-- A byte array whose first byte was just stored: the stored word's low byte, and the
+rest. -/
+theorem bytesAt_cons_store (p v : Word) (bs : List (BitVec 8)) :
+    (Atom.prop (bytesAt p (v.truncate 8 :: bs))).interp =
+      Atoms.interp [.mem p 1 v true, .prop (bytesAt (p + 1#64) bs)] := by
+  have e : memIs p 1 ((v.truncate 8).zeroExtend 64) = memIs p 1 v := by
+    funext h
+    simp only [memIs, ← Heap.bytes_byte p v true]
+  rw [bytesAt_cons]
+  simp only [Atoms.interp, Atom.interp, e]
+
 /-- Replace an atom of the symbolic state by atoms that mean the same. -/
 theorem Triple.unfold {P : Program} {as rest bs : Atoms} {a : Atom} {Q : SProp}
     (hext : as.Extract a rest) (heq : a.interp = Atoms.interp bs)
