@@ -10,6 +10,8 @@ module
 public import Examples.Basic.RiscV.Image
 public import Lowering.RiscV.Logic
 
+public section
+
 namespace Examples.Basic.RiscV
 
 open Braid Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
@@ -45,7 +47,7 @@ theorem add3_correct (s : MachineState) (hcode : ∀ p ∈ add3_code, s.code p.1
     (by simp [Atom.sat_reg, Atom.sat_pc, abs, regOfNat, hpc])
   refine ⟨n, s', hn, ?_, ?_⟩
   · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
-  · rw [← hr.getReg (r := .x10) (by decide)]; exact Atoms.reg_of_holds hq (by braid_at)
+  · rw [← hr.getReg (r := .x10) (by decide)]; exact Atoms.reg_of_holds (r := 10) hq (by braid_at)
 
 /-- **`max_u64` on the machine.** -/
 theorem max_u64_correct (s : MachineState)
@@ -59,6 +61,6 @@ theorem max_u64_correct (s : MachineState)
     (by simp [Atom.sat_reg, Atom.sat_pc, abs, regOfNat, hpc])
   refine ⟨n, s', hn, ?_, ?_⟩
   · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
-  · rw [← hr.getReg (r := .x10) (by decide)]; exact Atoms.reg_of_holds hq (by braid_at)
+  · rw [← hr.getReg (r := .x10) (by decide)]; exact Atoms.reg_of_holds (r := 10) hq (by braid_at)
 
 end Examples.Basic.RiscV

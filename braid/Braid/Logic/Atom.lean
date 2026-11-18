@@ -120,4 +120,29 @@ theorem Atoms.At.split {as : Atoms} {a : Atom} (h : At as a) :
     obtain ⟨F, e⟩ := ih
     exact ⟨iprop(b.interp ∗ F), by rw [Atoms.interp_cons, e]; exact SProp.ext sep_left_comm⟩
 
+/-- The second list is the first with one occurrence of `a` removed. -/
+inductive Atoms.Extract : Atoms → Atom → Atoms → Prop where
+  | here {a : Atom} {as : Atoms} : Extract (a :: as) a as
+  | there {a b : Atom} {as as' : Atoms} : Extract as a as' → Extract (b :: as) a (b :: as')
+
+/-- The first list is the atoms of the second, in any order, and those of the third. -/
+inductive Atoms.Split : Atoms → Atoms → Atoms → Prop where
+  | nil {as : Atoms} : Split as [] as
+  | cons {a : Atom} {as as' pre fr : Atoms} :
+      Extract as a as' → Split as' pre fr → Split as (a :: pre) fr
+
+theorem Atoms.Extract.interp {as as' : Atoms} {a : Atom} (h : Extract as a as') :
+    Atoms.interp as = iprop(a.interp ∗ Atoms.interp as') := by
+  induction h with
+  | here => rfl
+  | @there a b as as' _ ih =>
+    rw [Atoms.interp_cons, ih]; exact SProp.ext sep_left_comm
+
+/-- A list split in two is the conjunction of the two parts. -/
+theorem Atoms.Split.interp {as pre fr : Atoms} (h : Split as pre fr) :
+    Atoms.interp as = Atoms.interp (pre ++ fr) := by
+  induction h with
+  | nil => rfl
+  | cons he _ ih => rw [he.interp, ih]; rfl
+
 end Braid

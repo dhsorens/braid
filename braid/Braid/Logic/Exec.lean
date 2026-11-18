@@ -116,6 +116,19 @@ theorem store {a x : Var} {W : Width} {v : Word}
   obtain ⟨m, hm, hs'⟩ := memIs_store (by cases W <;> decide) (ρ x) ((holds_split e).1 hs)
   exact ⟨m, hm, h.run R _ ((holds_split e').2 hs')⟩
 
+/-- `load`, with the address worked out first and the size of the atom checked last. -/
+theorem load' {d a : Var} {W : Width} {addr v : Word} {n : Nat} {w : Bool} (ha : ρ a = addr)
+    (hat : as.At (.mem addr n v w)) (hn : n = W.bytes)
+    (h : OpsSpec ops (ρ.set d ((v.truncate W.bits).zeroExtend 64)) as Φ) :
+    OpsSpec (.load d W a :: ops) ρ as Φ := by
+  subst hn ha; exact load hat h
+
+/-- `store`, with the address worked out first and the size of the atom checked last. -/
+theorem store' {a x : Var} {W : Width} {addr v : Word} {n : Nat} (ha : ρ a = addr)
+    (hupd : as.Upd (.mem addr n v true) (.mem addr n (ρ x) true) as') (hn : n = W.bytes)
+    (h : OpsSpec ops ρ as' Φ) : OpsSpec (.store W a x :: ops) ρ as Φ := by
+  subst hn ha; exact store hupd h
+
 theorem havoc {d : Var} (h : ∀ v, OpsSpec ops (ρ.set d v) as Φ) :
     OpsSpec (.havoc d :: ops) ρ as Φ :=
   ⟨fun R σ hs v => (h v).run R σ hs⟩
@@ -183,9 +196,47 @@ theorem Triple.done_eq {P : Program} {as bs : Atoms} (h : as = bs) :
     Triple P (Atoms.interp as) (Atoms.interp bs) :=
   h ▸ Triple.done .rfl
 
+/-- A symbolic state that is the postcondition in another order needs no steps. -/
+theorem Triple.done_split {P : Program} {as bs : Atoms} (h : as.Split bs []) :
+    Triple P (Atoms.interp as) (Atoms.interp bs) := by
+  rw [h.interp, List.append_nil]; exact Triple.done .rfl
+
 /-- Change the symbolic states of a triple to equal ones. -/
 theorem Triple.cast {P : Program} {as as' bs bs' : Atoms} (h : Triple P (Atoms.interp as) (Atoms.interp bs))
     (ha : as' = as) (hb : bs = bs') : Triple P (Atoms.interp as') (Atoms.interp bs') :=
   ha ▸ hb ▸ h
+
+/-- **A call, or any use of a triple already proved.** Split the symbolic state into the
+precondition of the triple and a frame; afterwards the state is its postcondition and the
+same frame. -/
+theorem Triple.call {P : Program} {cur pre post fr : Atoms} {Q : SProp}
+    (hsplit : cur.Split pre fr)
+    (hcallee : Triple P (Atoms.interp pre) (Atoms.interp post))
+    (hcont : Triple P (Atoms.interp (post ++ fr)) Q) : Triple P (Atoms.interp cur) Q := by
+  rw [hsplit.interp, Atoms.interp_append]
+  rw [Atoms.interp_append] at hcont
+  exact (hcallee.frame _).seq hcont
+
+/-- The program of a list of blocks is part of the program of a longer list, when no address
+has two blocks in the longer one. -/
+theorem Program.ofList_mono {l l' : List (Word × Block)} (hsub : ∀ p ∈ l, p ∈ l')
+    (hnodup : (l'.map (·.1)).Nodup) (a : Word) (b : Block)
+    (h : Program.ofList l a = some b) : Program.ofList l' a = some b := by
+  simp only [Program.ofList, Option.map_eq_some_iff] at h ⊢
+  obtain ⟨⟨a', b'⟩, hfind, rfl⟩ := h
+  have ha : a' = a := by simpa using List.find?_some hfind
+  subst ha
+  have hmem := hsub _ (List.mem_of_find?_eq_some hfind)
+  refine ⟨(a', b'), ?_, rfl⟩
+  clear hfind hsub
+  induction l' with
+  | nil => cases hmem
+  | cons q qs ih =>
+    rw [List.map_cons, List.nodup_cons] at hnodup
+    rcases List.mem_cons.1 hmem with rfl | hq
+    · simp
+    · have hne : q.1 ≠ a' := fun e => hnodup.1 (e ▸ List.mem_map_of_mem (f := (·.1)) hq)
+      rw [List.find?_cons_of_neg (by simpa using hne)]
+      exact ih hnodup.2 hq
 
 end Braid
