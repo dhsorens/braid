@@ -16,6 +16,7 @@
 module
 
 public import Braid.Logic.Exec
+public import Braid.Logic.Sat
 
 public section
 
@@ -89,5 +90,15 @@ macro "braid_run" : tactic =>
 /-- Finish: the symbolic state is the postcondition. -/
 macro "braid_done" : tactic =>
   `(tactic| (apply Triple.done_eq; first | rfl | simp_all))
+
+/-- Prove that the atoms of a precondition are pairwise disjoint. Registers, flags and the
+program counter are decided; two memory atoms leave a goal about their addresses. -/
+macro "braid_disj" : tactic =>
+  `(tactic| (simp only [List.pairwise_cons, List.mem_cons, List.not_mem_nil, or_false,
+      forall_eq_or_imp, forall_eq, false_imp_iff, implies_true, List.Pairwise.nil, and_true,
+      Atom.disj_reg_reg, Atom.disj_flag_flag, Atom.disj_reg_flag, Atom.disj_flag_reg,
+      Atom.disj_reg_pc, Atom.disj_pc_reg, Atom.disj_flag_pc, Atom.disj_pc_flag,
+      Atom.disj_mem_reg, Atom.disj_reg_mem, Atom.disj_mem_flag, Atom.disj_flag_mem,
+      Atom.disj_mem_pc, Atom.disj_pc_mem, true_and]; try decide))
 
 end Braid
