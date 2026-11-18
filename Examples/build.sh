@@ -4,77 +4,112 @@
 #   Examples/build.sh            every example
 #   Examples/build.sh basic      one example
 #
-# Needs clang with the RISC-V target and a RISC-V linker (see Examples/README.md).
+# For each example and instruction set this writes
+#   Examples/bin/<name>.<isa>.elf             the binary (not kept in the repository)
+#   Examples/mlir/<name>.<isa>.mlir           the lowered code, as MLIR text
+#   Examples/<Module>/<ISA>/Image.lean        the lowered code, as a Lean module
+#
+# Needs clang with the RISC-V, AArch64 and x86-64 targets, a RISC-V linker, lld, and rustc and
+# swiftc for the Rust and Swift examples. See Examples/README.md.
 set -eu
 cd "$(dirname "$0")/.."
 
 CLANG=${CLANG:-/opt/homebrew/opt/llvm/bin/clang}
+OBJDUMP=${OBJDUMP:-/opt/homebrew/opt/llvm/bin/llvm-objdump}
 RV_LD=${RV_LD:-/opt/homebrew/opt/riscv64-elf-binutils/bin/riscv64-elf-ld}
+LLD=${LLD:-$(ls "$(rustc --print sysroot)"/lib/rustlib/*/bin/rust-lld | head -1)}
 LOWER=.lake/build/bin/braid-lower
 CFLAGS="-O1 -fno-vectorize -ffreestanding -nostdlib -fno-builtin"
+ISAS=${ISAS:-"rv arm x86"}
 
 mkdir -p Examples/bin Examples/mlir
 
-# Link a RISC-V object and lower it: name, module, functions.
-lower_rv() {
-  name=$1; module=$2; shift 2
+target() {
+  case $1 in
+    rv) echo "--target=riscv64-unknown-elf -march=rv64im -mabi=lp64" ;;
+    arm) echo "--target=aarch64-unknown-linux-gnu -mgeneral-regs-only" ;;
+    x86) echo "--target=x86_64-unknown-linux-gnu -mgeneral-regs-only" ;;
+  esac
+}
+
+isa_dir() {
+  case $1 in rv) echo RiscV ;; arm) echo Arm ;; x86) echo X86 ;; esac
+}
+
+# Link an object and lower it: isa, name, module, functions.
+link_and_lower() {
+  isa=$1; name=$2; module=$3; shift 3
   fns=""; for f in "$@"; do fns="$fns --fn $f"; done
-  dir=Examples/$(echo "$module" | tr . /)
-  mkdir -p "$dir/RiscV"
-  "$RV_LD" -Ttext=0x10000 --no-relax -e "$1" "Examples/bin/$name.rv.o" -o "Examples/bin/$name.rv.elf"
+  dir=Examples/$(echo "$module" | tr . /)/$(isa_dir "$isa")
+  mkdir -p "$dir"
+  obj=Examples/bin/$name.$isa.o
+  elf=Examples/bin/$name.$isa.elf
+  extra=""
+  case $isa in
+    rv) "$RV_LD" -Ttext=0x10000 --no-relax -e "$1" "$obj" -o "$elf" ;;
+    arm) "$LLD" -flavor gnu -Ttext=0x10000 -e "$1" "$obj" -o "$elf" ;;
+    x86)
+      "$LLD" -flavor gnu -Ttext=0x401000 -e "$1" "$obj" -o "$elf"
+      "$OBJDUMP" -d "$elf" > "Examples/bin/$name.x86.dis"
+      extra="--disasm Examples/bin/$name.x86.dis" ;;
+  esac
   # shellcheck disable=SC2086
-  "$LOWER" "Examples/bin/$name.rv.elf" $fns --mlir "Examples/mlir/$name.rv.mlir" \
-    --lean "$dir/RiscV/Image.lean" --module "Examples.$module.RiscV"
+  "$LOWER" "$elf" $extra $fns --mlir "Examples/mlir/$name.$isa.mlir" \
+    --lean "$dir/Image.lean" --module "Examples.$module.$(isa_dir "$isa")"
 }
 
 # A C source: name, source, module, functions.
 lower_c() {
   name=$1; src=$2; module=$3; shift 3
-  "$CLANG" --target=riscv64-unknown-elf -march=rv64im -mabi=lp64 $CFLAGS -c "$src" \
-    -o "Examples/bin/$name.rv.o"
-  lower_rv "$name" "$module" "$@"
+  for isa in $ISAS; do
+    # shellcheck disable=SC2046
+    "$CLANG" $(target "$isa") $CFLAGS -c "$src" -o "Examples/bin/$name.$isa.o"
+    link_and_lower "$isa" "$name" "$module" "$@"
+  done
 }
 
-# A Rust source: name, source, module, functions. Rust goes through LLVM IR, so that one
-# compiler back end (clang's) produces the code for every instruction set.
+# LLVM IR from another compiler: name, module, functions. The IR is in Examples/bin/<name>.ll.
+# What ties it to the host is removed, and clang compiles it for each instruction set, so that
+# one back end produces the code for all three.
+lower_ll() {
+  name=$1; module=$2; shift 2
+  sed -E 's/"target-features"="[^"]*"//g; s/"target-cpu"="[^"]*"//g;
+          /^target datalayout/d; /^target triple/d; s/"probe-stack"="[^"]*"//g;
+          s/"frame-pointer"="[^"]*"//g; s/ swiftcc / /g; /^!llvm.linker.options/d;
+          s/, section "[^"]*"//g' "Examples/bin/$name.ll" > "Examples/bin/$name.clean.ll"
+  for isa in $ISAS; do
+    # shellcheck disable=SC2046
+    "$CLANG" $(target "$isa") -O1 -fno-vectorize -Wno-override-module \
+      -c "Examples/bin/$name.clean.ll" -o "Examples/bin/$name.$isa.o"
+    link_and_lower "$isa" "$name" "$module" "$@"
+  done
+}
+
+# A Rust source: name, source, module, functions.
 lower_rust() {
   name=$1; src=$2; module=$3; shift 3
   rustc --edition 2021 --target riscv64imac-unknown-none-elf -C opt-level=1 -C panic=abort \
     --crate-type=staticlib --emit=llvm-ir -o "Examples/bin/$name.ll" "$src" 2>/dev/null
-  sed -E 's/"target-features"="[^"]*"/"target-features"="+m"/; s/"target-cpu"="[^"]*"//' \
-    "Examples/bin/$name.ll" > "Examples/bin/$name.rv.ll"
-  "$CLANG" --target=riscv64-unknown-elf -march=rv64im -mabi=lp64 -O1 -Wno-override-module \
-    -c "Examples/bin/$name.rv.ll" -o "Examples/bin/$name.rv.o"
-  lower_rv "$name" "$module" "$@"
+  lower_ll "$name" "$module" "$@"
 }
 
-# A Swift source: name, source, module, functions. As for Rust, through LLVM IR. The Swift
-# calling convention and Apple's linker metadata are removed: the exported functions use the
-# C convention.
+# A Swift source: name, source, module, functions. The exported functions use the C calling
+# convention; the Swift convention on the internal copies is dropped.
 lower_swift() {
   name=$1; src=$2; module=$3; shift 3
   swiftc -O -parse-as-library -emit-ir "$src" -o "Examples/bin/$name.ll" 2>/dev/null
-  sed -E 's/"target-features"="[^"]*"/"target-features"="+m"/g; s/"target-cpu"="[^"]*"//g;
-          /^target datalayout/d; /^target triple/d; s/"probe-stack"="[^"]*"//g;
-          s/"frame-pointer"="[^"]*"//g; s/ swiftcc / /g; /^!llvm.linker.options/d;
-          s/, section "[^"]*"//g' "Examples/bin/$name.ll" > "Examples/bin/$name.rv.ll"
-  "$CLANG" --target=riscv64-unknown-elf -march=rv64im -mabi=lp64 -O1 -Wno-override-module \
-    -c "Examples/bin/$name.rv.ll" -o "Examples/bin/$name.rv.o"
-  lower_rv "$name" "$module" "$@"
+  lower_ll "$name" "$module" "$@"
 }
 
-if [ $# -eq 0 ] || [ "$1" = basic ]; then
-  lower_c basic Examples/src/c/basic.c Basic add3 max_u64 sum_to
-fi
-if [ $# -eq 0 ] || [ "$1" = memory ]; then
-  lower_c memory Examples/src/c/memory.c Memory swap sum_array max2 max3
-fi
-if [ $# -eq 0 ] || [ "$1" = bytes ]; then
-  lower_c bytes Examples/src/c/bytes.c Bytes str_len fill count_ones
-fi
-if [ $# -eq 0 ] || [ "$1" = rustbasic ]; then
+want() { [ -z "${ONLY:-}" ] || [ "$ONLY" = "$1" ]; }
+ONLY=${1:-}
+
+if want basic; then lower_c basic Examples/src/c/basic.c Basic add3 max_u64 sum_to; fi
+if want memory; then lower_c memory Examples/src/c/memory.c Memory swap sum_array max2 max3; fi
+if want bytes; then lower_c bytes Examples/src/c/bytes.c Bytes str_len fill count_ones; fi
+if want rustbasic; then
   lower_rust rustbasic Examples/src/rust/basic.rs RustBasic add3 max_u64 gcd sum_slice
 fi
-if [ $# -eq 0 ] || [ "$1" = swiftbasic ]; then
+if want swiftbasic; then
   lower_swift swiftbasic Examples/src/swift/basic.swift SwiftBasic swift_add3 swift_gcd swift_min
 fi
