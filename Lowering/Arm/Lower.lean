@@ -12,13 +12,15 @@
   `64 + 2 * k` and its bits 64 to 127 in register `65 + 2 * k`. A vector instruction works
   on the two halves one after the other, and an operation on lanes is `BinOp.lanes` on each
   half. Covered: loads and stores of vector registers, moves between general and vector
-  registers, the bitwise operations and the addition and subtraction of lanes, and the
-  constants of `MOVI`.
+  registers and lanes, the bitwise operations and the addition and subtraction of lanes,
+  and the constants of `MOVI` and `FMOV`.
 
   Whenever the model would not simply run the instruction (a permission fault, a stack
-  pointer that is not aligned, a supervisor call, a breakpoint), the block faults. Floating
-  point and the rest of SIMD, atomics and exclusives, system registers and system calls,
-  `CRC32`, and `RBIT`, `CLZ` and `CLS` are outside the lowering and become a `trap`.
+  pointer that is not aligned, a supervisor call, a breakpoint), the block faults. The model
+  runs one thread, so a load-acquire, a store-release and an atomic read-modify-write are a
+  load, a store, and the two with the operation between. Floating-point arithmetic and the
+  rest of SIMD, compare-and-swap and store-exclusives, system registers and system calls,
+  and `CRC32` are outside the lowering and become a `trap`.
 
   The SSA values of a block are numbered by the group of operations that defines them, so
   the numbers are neither dense nor in order of definition.
@@ -373,8 +375,9 @@ def dp3Ops (w : RegWidth) (op : DataProc3Op) (rn rm ra : Arm64.Reg) : List Op :=
   | .SMULH => [rget 0 rn, rget 1 rm, .bin res .mulhs 0 1] ++ fin 8
   | .UMULH => [rget 0 rn, rget 1 rm, .bin res .mulhu 0 1] ++ fin 8
 
-/-- A byte reversal of the register read at width `w` into `0`, into `9`. `none` for the
-operations outside the lowering: `RBIT`, `CLZ`, `CLS`. -/
+/-- A byte or bit reversal, or a count of leading zeros or sign bits, of the register read at
+width `w` into `0`, into `9`. The sign bits that follow the top bit are the leading zeros of
+the value xored with itself shifted right by one, less one. -/
 def dp1Ops (w : RegWidth) (op : DataProc1Op) : Option (List Op) :=
   let rev16 : List Op :=
     [.const 1 0xff00ff00ff00ff00#64, .bin 2 .and 0 1, .const 3 8, .bin 4 .lshr 2 3,
@@ -385,7 +388,15 @@ def dp1Ops (w : RegWidth) (op : DataProc1Op) : Option (List Op) :=
   | .REV32, .W64 => some [.un 1 .bswap 0, .const 2 32, .bin 9 .rotr 1 2]
   | .REV32, .W32 => some [.un 1 .bswap 0, .const 2 32, .bin 9 .lshr 1 2]
   | .REV16, _ => some rev16
-  | _, _ => none
+  | .CLZ, .W64 => some [.un 9 .clz 0]
+  | .CLZ, .W32 => some [.un 1 .clz 0, .const 2 32, .bin 9 .sub 1 2]
+  | .RBIT, .W64 => some [.un 9 .rbit 0]
+  | .RBIT, .W32 => some [.un 1 .rbit 0, .const 2 32, .bin 9 .lshr 1 2]
+  | .CLS, .W64 =>
+    some [.const 1 1, .bin 2 .ashr 0 1, .bin 3 .xor 0 2, .un 4 .clz 3, .bin 9 .sub 4 1]
+  | .CLS, .W32 =>
+    some [.un 5 (.sext 32) 0, .const 1 1, .bin 2 .ashr 5 1, .bin 3 .xor 5 2, .un 4 .clz 3,
+      .const 6 33, .bin 9 .sub 4 6]
 
 /-- The two operands of an `EXTR` put together, into `9`. -/
 def extrOps (w : RegWidth) (rn rm : Arm64.Reg) (lsb : Nat) : List Op :=
@@ -488,6 +499,57 @@ def ccmpOps (w : RegWidth) (isSub : Bool) (nzcv : BitVec 4) : List Op :=
       .const 23 (ofBool (nzcv.getLsbD 1)), .const 24 (ofBool (nzcv.getLsbD 0)),
       .select 25 0 10 21, .select 26 0 11 22, .select 27 0 12 23, .select 28 0 13 24,
       .setf 0 25, .setf 1 26, .setf 2 27, .setf 3 28]
+
+/-- The address in `a` is aligned to the size of an access, or the block faults. Uses `t` to
+`t + 3`. -/
+def alignOps (a t : Var) : MemWidth → List Op
+  | .B8 => []
+  | .H16 =>
+    [.const t 1, .bin (t + 1) .and a t, .const (t + 2) 0, .bin (t + 3) .eq (t + 1) (t + 2),
+      .guard (t + 3)]
+  | .W32 =>
+    [.const t 3, .bin (t + 1) .and a t, .const (t + 2) 0, .bin (t + 3) .eq (t + 1) (t + 2),
+      .guard (t + 3)]
+  | .X64 =>
+    [.const t 7, .bin (t + 1) .and a t, .const (t + 2) 0, .bin (t + 3) .eq (t + 1) (t + 2),
+      .guard (t + 3)]
+
+/-- A load from an aligned address held in a register, zero-extended: `LDAR`, `LDAPR`,
+`LDXR`. The machine model runs one thread, so each is a plain load. -/
+def lowerLdar (pc : Word) (sz : MemWidth) (rn rt : Arm64.Reg) : Block :=
+  ⟨baseOps 0 rn ++ alignOps 0 5 sz ++ [.load 30 (memW sz) 0] ++ rset rt 30, .jump (pc + 4)⟩
+
+/-- A store to an aligned address held in a register: `STLR`. -/
+def lowerStlr (pc : Word) (sz : MemWidth) (rn rt : Arm64.Reg) : Block :=
+  ⟨rget 0 rt :: (baseOps 1 rn ++ alignOps 1 6 sz ++ [.store (memW sz) 1 0]), .jump (pc + 4)⟩
+
+/-- The new value of an atomic read-modify-write of size `sz`, into `40`: the operation on
+the loaded value in `30` and the low bits of the register in `0`, cut to the size. A signed
+maximum or minimum compares the two sign-extended. -/
+def atomicOps (op : Arm64.AtomicOp) (sz : MemWidth) : List Op :=
+  let n := 8 * sz.bytes
+  .un 31 (.zext n) 0 ::
+    match op with
+    | .ADD => [.bin 32 .add 30 31, .un 40 (.zext n) 32]
+    | .CLR => [.un 32 .not 31, .bin 40 .and 30 32]
+    | .EOR => [.bin 40 .xor 30 31]
+    | .SET => [.bin 40 .or 30 31]
+    | .SWP => [.un 40 (.zext n) 31]
+    | .UMAX => [.bin 32 .ult 30 31, .select 40 32 31 30]
+    | .UMIN => [.bin 32 .ult 31 30, .select 40 32 31 30]
+    | .SMAX =>
+      [.un 33 (.sext n) 30, .un 34 (.sext n) 31, .bin 32 .slt 33 34, .select 40 32 31 30]
+    | .SMIN =>
+      [.un 33 (.sext n) 30, .un 34 (.sext n) 31, .bin 32 .slt 34 33, .select 40 32 31 30]
+
+/-- An atomic read-modify-write at an aligned address held in a register: `LDADD`, `LDCLR`,
+`LDEOR`, `LDSET`, the maxima and minima, and `SWP`. The machine model runs one thread, so it
+is a load, the operation, and a store; `rt` gets the loaded value. -/
+def lowerAtomic (pc : Word) (op : Arm64.AtomicOp) (sz : MemWidth) (rs rn rt : Arm64.Reg) :
+    Block :=
+  ⟨rget 0 rs :: (baseOps 1 rn ++ alignOps 1 6 sz ++ [.load 30 (memW sz) 1] ++ atomicOps op sz ++
+      [.store (memW sz) 1 40] ++ rset rt 30),
+    .jump (pc + 4)⟩
 
 /-! ## Vector registers -/
 
@@ -695,6 +757,59 @@ def notOps (q u : Bool) (size : BitVec 2) (opcode : BitVec 5) (rn rd : Arm64.VRe
       (if q then [.get 2 (vregHi rn), .un 3 .not 2] else [.const 3 0#64]) ++ vset rd 1 3)
   else none
 
+/-- The size in bits of the lanes that the `imm5` field of a `simdInsDup` instruction names:
+the position of its lowest set bit says 8, 16, 32 or 64. -/
+def laneSize (imm5 : BitVec 5) : Nat :=
+  if imm5.extractLsb' 0 1 = 1#1 then 8
+  else if imm5.extractLsb' 0 2 = 2#2 then 16
+  else if imm5.extractLsb' 0 3 = 4#3 then 32
+  else 64
+
+/-- The position in a vector register of the lowest bit of the lane that `imm5` names: the
+index of the lane, which is the bits of `imm5` above its lowest set bit, times its size. -/
+def lanePos (imm5 : BitVec 5) : Nat :=
+  if imm5.extractLsb' 0 1 = 1#1 then (imm5.toNat >>> 1) * 8
+  else if imm5.extractLsb' 0 2 = 2#2 then (imm5.toNat >>> 2) * 16
+  else if imm5.extractLsb' 0 3 = 4#3 then (imm5.toNat >>> 3) * 32
+  else (imm5.toNat >>> 4) * 64
+
+/-- The lowest bit of every lane of `n` bits. A value of `n` bits times this word is the
+value in every lane. -/
+def laneOnes (n : Nat) : Word :=
+  if n = 8 then 0x0101010101010101#64
+  else if n = 16 then 0x0001000100010001#64
+  else if n = 32 then 0x0000000100000001#64
+  else 1#64
+
+/-- A move between a general register and a lane of a vector register, or of a lane into
+every lane: `DUP` from a general register and from a lane, `INS` from a general register,
+`UMOV` and `SMOV`. A lane lies in one half of the register, so each works on the `braid`
+register of that half, with a shift by the position of the lane in it. `none` for `INS`
+from a lane, and for the encodings the model does not define. -/
+def insDupOps (q op : Bool) (imm5 : BitVec 5) (imm4 : BitVec 4) (rn rd : Arm64.VReg) :
+    Option (List Op) :=
+  let e := laneSize imm5
+  let half (k : Arm64.VReg) : Reg := if lanePos imm5 < 64 then vregLo k else vregHi k
+  let sh : Word := BitVec.ofNat 64 (lanePos imm5 % 64)
+  let splat : List Op :=
+    [.const 5 (laneOnes e), .bin 6 .mul 1 5, .const 7 0#64] ++ vset rd 6 (if q then 6 else 7)
+  if imm5.extractLsb' 0 4 = 0#4 then none
+  else if op = false ∧ imm4 = 1#4 ∧ ¬(e = 64 ∧ q = false) then
+    some ([rget 0 (Arm64.Reg.fromZRBits rn), .un 1 (.zext e) 0] ++ splat)
+  else if op = false ∧ imm4 = 0#4 ∧ ¬(e = 64 ∧ q = false) then
+    some ([.get 0 (half rn), .const 2 sh, .bin 3 .lshr 0 2, .un 1 (.zext e) 3] ++ splat)
+  else if q = true ∧ op = false ∧ imm4 = 3#4 then
+    some [rget 0 (Arm64.Reg.fromZRBits rn), .un 1 (.zext e) 0, .const 2 sh, .bin 3 .shl 1 2,
+      .get 4 (half rd), .const 5 (~~~((UnOp.zext e).eval (-1#64) <<< sh)), .bin 6 .and 4 5,
+      .bin 7 .or 6 3, .set (half rd) 7]
+  else if op = false ∧ imm4 = 7#4 ∧ ((q = true ∧ e = 64) ∨ (q = false ∧ e < 64)) then
+    some ([.get 0 (half rn), .const 1 sh, .bin 2 .lshr 0 1, .un 3 (.zext e) 2] ++
+      rset (Arm64.Reg.fromZRBits rd) 3)
+  else if op = false ∧ imm4 = 5#4 ∧ ((q = true ∧ e < 64) ∨ (q = false ∧ e < 32)) then
+    some ([.get 0 (half rn), .const 1 sh, .bin 2 .lshr 0 1, .un 3 (.sext e) 2,
+      .un 4 (.zext 32) 3] ++ rset (Arm64.Reg.fromZRBits rd) (if q then 3 else 4))
+  else none
+
 /-- The block of the instruction `i` at address `pc`. -/
 def lower (pc : Word) (i : Instr) : Block :=
   match i with
@@ -789,15 +904,15 @@ def lower (pc : Word) (i : Instr) : Block :=
     lowerLdp pc (match sz with | .X64 => .W64 | _ => .W32) false rt rt2 (.Offset rn offset)
   | .stnp sz rn rt rt2 offset =>
     lowerStp pc (match sz with | .X64 => .W64 | _ => .W32) rt rt2 (.Offset rn offset)
-  | .ldarStlr .. => ⟨[], .trap "ldarStlr"⟩
-  | .ldxr .. => ⟨[], .trap "ldxr"⟩
+  | .ldarStlr sz isLoad rn rt => if isLoad then lowerLdar pc sz rn rt else lowerStlr pc sz rn rt
+  | .ldxr sz _ rn rt => lowerLdar pc sz rn rt
   | .stxr .. => ⟨[], .trap "stxr"⟩
   | .ldxp .. => ⟨[], .trap "ldxp"⟩
   | .stxp .. => ⟨[], .trap "stxp"⟩
   | .cas .. => ⟨[], .trap "cas"⟩
   | .casp .. => ⟨[], .trap "casp"⟩
-  | .atomicRmw .. => ⟨[], .trap "atomicRmw"⟩
-  | .ldapr .. => ⟨[], .trap "ldapr"⟩
+  | .atomicRmw op sz _ _ rs rn rt => lowerAtomic pc op sz rs rn rt
+  | .ldapr sz rn rt => lowerLdar pc sz rn rt
   | .ldapurStlur .. => ⟨[], .trap "ldapurStlur"⟩
   | .ldrSimd sz vt addr => lowerLdrSimd pc sz vt addr
   | .strSimd sz vt addr => lowerStrSimd pc sz vt addr
@@ -835,9 +950,13 @@ def lower (pc : Word) (i : Instr) : Block :=
   | .simdImmShift q op immh immb opc rn rd =>
     match if immh = 0#4 ∧ opc.getLsbD 0 = false then
         moviImm op (opc.extractLsb' 1 4) (immb ++ rn) else none with
-    | some d64 => ⟨[.const 0 d64, .const 1 (if q then d64 else 0#64)] ++ vset rd 0 1, .jump (pc + 4)⟩
+    | some d64 =>
+      ⟨[.const 0 d64, .const 1 (if q then d64 else 0#64)] ++ vset rd 0 1, .jump (pc + 4)⟩
     | none => ⟨[], .trap "simdImmShift"⟩
-  | .simdInsDup .. => ⟨[], .trap "simdInsDup"⟩
+  | .simdInsDup q op imm5 imm4 rn rd =>
+    match insDupOps q op imm5 imm4 rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "simdInsDup"⟩
   | .simdThreeSame q u size rm opcode rn rd =>
     match vecOp q u size opcode with
     | some op => ⟨vecOps op q rm rn rd, .jump (pc + 4)⟩

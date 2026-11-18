@@ -12,6 +12,7 @@
   * `sound_ldrSimd`, `sound_strSimd`, `sound_ldpSimd`, `sound_stpSimd`: loads and stores
   * `sound_fmovGprVec`, `sound_fpDataProc1`: moves
   * `sound_simdThreeSame`, `sound_simdImmShift`: operations on lanes, and constants
+  * `sound_simdInsDup`: moves between general registers and lanes
 -/
 
 module
@@ -884,5 +885,246 @@ theorem sound_simdAddpScalar (h : Rel s σ) (hw : (lower s.pc (.simdAddpScalar r
   simp only [BinOp.eval_add]
   generalize s.vregs.read rn = x
   bv_decide
+
+/-! ## Lanes -/
+
+theorem bv5_cases (x : BitVec 5) :
+    x = 0#5 ∨ x = 1#5 ∨ x = 2#5 ∨ x = 3#5 ∨ x = 4#5 ∨ x = 5#5 ∨ x = 6#5 ∨ x = 7#5 ∨
+      x = 8#5 ∨ x = 9#5 ∨ x = 10#5 ∨ x = 11#5 ∨ x = 12#5 ∨ x = 13#5 ∨ x = 14#5 ∨ x = 15#5 ∨
+      x = 16#5 ∨ x = 17#5 ∨ x = 18#5 ∨ x = 19#5 ∨ x = 20#5 ∨ x = 21#5 ∨ x = 22#5 ∨ x = 23#5 ∨
+      x = 24#5 ∨ x = 25#5 ∨ x = 26#5 ∨ x = 27#5 ∨ x = 28#5 ∨ x = 29#5 ∨ x = 30#5 ∨ x = 31#5 := by
+  bv_decide
+
+/-- Split a 5-bit field into its 32 values. -/
+macro "bv5_split" x:ident : tactic => `(tactic|
+  (rcases bv5_cases $x:ident with
+    h | h | h | h | h | h | h | h |
+    h | h | h | h | h | h | h | h |
+    h | h | h | h | h | h | h | h |
+    h | h | h | h | h | h | h | h <;>
+   subst h))
+
+/-- The half of a vector register a lane lies in. -/
+def vhalf (imm5 : BitVec 5) (v : BitVec 128) : Word :=
+  if lanePos imm5 < 64 then v.truncate 64 else v.extractLsb' 64 64
+
+/-- The lane of a vector register that `imm5` names, zero-extended. -/
+def vlane (imm5 : BitVec 5) (v : BitVec 128) : Word :=
+  (UnOp.zext (laneSize imm5)).eval (vhalf imm5 v >>> BitVec.ofNat 64 (lanePos imm5 % 64))
+
+/-- The model's operation on each lane, as a fold over the lanes. -/
+theorem mapSimdLanes_eq (q : Bool) (esize : Nat) (v : BitVec 128) (f : BitVec 128 → BitVec 128) :
+    Arm64.mapSimdLanes q esize v f =
+      (List.range' 0 ((if q then 128 else 64) / esize)).foldl (fun acc i =>
+        acc ||| ((f ((v >>> (i * esize)) &&& ((1#128 <<< esize) - 1#128))) &&&
+            ((1#128 <<< esize) - 1#128)) <<< (i * esize)) 0#128 := by
+  simp [Arm64.mapSimdLanes, Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size]
+
+set_option maxRecDepth 4000 in
+theorem evalInst_umov (imm5 : BitVec 5) (q : Bool) (s : Arm64.State)
+    (h0 : imm5.extractLsb' 0 4 ≠ 0#4)
+    (hq : (q = true ∧ laneSize imm5 = 64) ∨ (q = false ∧ laneSize imm5 < 64)) :
+    prog.evalInst (.simdInsDup q false imm5 7#4 rn rd) s =
+      (s.writeReg64 (Arm64.Reg.fromZRBits rd) (vlane imm5 (s.vregs.read rn))).advancePC := by
+  bv5_split imm5 <;>
+    first
+    | exact absurd rfl h0
+    | (cases q <;> first
+        | (exfalso; revert hq; decide)
+        | (refine (rfl : prog.evalInst _ s = (s.writeReg64 _ _).advancePC).trans
+            (congrArg (fun v => (s.writeReg64 (Arm64.Reg.fromZRBits rd) v).advancePC) ?_)
+           simp [vlane, vhalf, laneSize, lanePos, Arm64.getSimdLane, Arm64.State.readVReg128]
+           generalize s.vregs.read rn = x
+           bv_decide))
+
+set_option maxRecDepth 4000 in
+theorem evalInst_smov (imm5 : BitVec 5) (q : Bool) (s : Arm64.State)
+    (h0 : imm5.extractLsb' 0 4 ≠ 0#4)
+    (hq : (q = true ∧ laneSize imm5 < 64) ∨ (q = false ∧ laneSize imm5 < 32)) :
+    prog.evalInst (.simdInsDup q false imm5 5#4 rn rd) s =
+      (s.writeReg64 (Arm64.Reg.fromZRBits rd)
+        (if q then (UnOp.sext (laneSize imm5)).eval
+            (vhalf imm5 (s.vregs.read rn) >>> BitVec.ofNat 64 (lanePos imm5 % 64))
+          else (UnOp.zext 32).eval ((UnOp.sext (laneSize imm5)).eval
+            (vhalf imm5 (s.vregs.read rn) >>> BitVec.ofNat 64 (lanePos imm5 % 64))))).advancePC := by
+  bv5_split imm5 <;>
+    first
+    | exact absurd rfl h0
+    | (cases q <;> first
+        | (exfalso; revert hq; decide)
+        | (refine (rfl : prog.evalInst _ s = (s.writeReg64 _ _).advancePC).trans
+            (congrArg (fun v => (s.writeReg64 (Arm64.Reg.fromZRBits rd) v).advancePC) ?_)
+           simp [vhalf, laneSize, lanePos, Arm64.getSimdLane, Arm64.State.readVReg128]
+           generalize s.vregs.read rn = x
+           bv_decide))
+
+/-- A vector register with the lane that `imm5` names replaced by the low bits of `x`. -/
+def vins (imm5 : BitVec 5) (v : BitVec 128) (x : Word) : BitVec 128 :=
+  let f (w : Word) : Word :=
+    (w &&& ~~~((UnOp.zext (laneSize imm5)).eval (-1#64) <<< BitVec.ofNat 64 (lanePos imm5 % 64))) |||
+      ((UnOp.zext (laneSize imm5)).eval x <<< BitVec.ofNat 64 (lanePos imm5 % 64))
+  if lanePos imm5 < 64 then v.extractLsb' 64 64 ++ f (v.truncate 64)
+  else f (v.extractLsb' 64 64) ++ v.truncate 64
+
+set_option maxRecDepth 4000 in
+theorem evalInst_ins (imm5 : BitVec 5) (s : Arm64.State) (h0 : imm5.extractLsb' 0 4 ≠ 0#4) :
+    prog.evalInst (.simdInsDup true false imm5 3#4 rn rd) s =
+      (s.writeVReg128 rd (vins imm5 (s.vregs.read rd)
+        (s.readReg64 (Arm64.Reg.fromZRBits rn)))).advancePC := by
+  bv5_split imm5 <;>
+    first
+    | exact absurd rfl h0
+    | (refine (rfl : prog.evalInst _ s = (s.writeVReg128 _ _).advancePC).trans
+        (congrArg (fun v => (s.writeVReg128 rd v).advancePC) ?_)
+       simp [vins, laneSize, lanePos, Arm64.State.readVReg128]
+       generalize s.vregs.read rd = x
+       generalize s.readReg64 _ = y
+       bv_decide)
+
+/-- A vector register with the lane `x` in every lane, of both halves or of the low one. -/
+def vsplat (q : Bool) (imm5 : BitVec 5) (x : Word) : BitVec 128 :=
+  (if q then x * laneOnes (laneSize imm5) else 0#64) ++ x * laneOnes (laneSize imm5)
+
+set_option maxRecDepth 4000 in
+theorem evalInst_dup (imm5 : BitVec 5) (q : Bool) (s : Arm64.State)
+    (h0 : imm5.extractLsb' 0 4 ≠ 0#4) (hq : ¬(laneSize imm5 = 64 ∧ q = false)) :
+    prog.evalInst (.simdInsDup q false imm5 1#4 rn rd) s =
+      (s.writeVReg128 rd (vsplat q imm5 ((UnOp.zext (laneSize imm5)).eval
+        (s.readReg64 (Arm64.Reg.fromZRBits rn))))).advancePC := by
+  bv5_split imm5 <;>
+    first
+    | exact absurd rfl h0
+    | (cases q <;> first
+        | (exfalso; revert hq; decide)
+        | (refine (rfl : prog.evalInst _ s = (s.writeVReg128 _ _).advancePC).trans
+            (congrArg (fun v => (s.writeVReg128 rd v).advancePC) ?_)
+           simp [vsplat, laneSize, laneOnes, mapSimdLanes_eq, List.range']
+           generalize s.readReg64 _ = y
+           bv_decide))
+
+set_option maxRecDepth 4000 in
+theorem evalInst_dupElem (imm5 : BitVec 5) (q : Bool) (s : Arm64.State)
+    (h0 : imm5.extractLsb' 0 4 ≠ 0#4) (hq : ¬(laneSize imm5 = 64 ∧ q = false)) :
+    prog.evalInst (.simdInsDup q false imm5 0#4 rn rd) s =
+      (s.writeVReg128 rd (vsplat q imm5 (vlane imm5 (s.vregs.read rn)))).advancePC := by
+  bv5_split imm5 <;>
+    first
+    | exact absurd rfl h0
+    | (cases q <;> first
+        | (exfalso; revert hq; decide)
+        | (refine (rfl : prog.evalInst _ s = (s.writeVReg128 _ _).advancePC).trans
+            (congrArg (fun v => (s.writeVReg128 rd v).advancePC) ?_)
+           simp [vsplat, vlane, vhalf, laneSize, lanePos, laneOnes, mapSimdLanes_eq, List.range',
+             Arm64.getSimdLane, Arm64.State.readVReg128]
+           generalize s.vregs.read rn = y
+           bv_decide))
+
+theorem setReg_comm_self (σ : State) {a b : Reg} (hab : b ≠ a) (v : Word) :
+    (σ.setReg a v).setReg b (σ.regs b) = σ.setReg a v := by
+  have := setReg_self (σ.setReg a v) b
+  simpa only [State.setReg, hab, ↓reduceIte] using this
+
+/-- Writing the low half of a vector register keeps its high half. -/
+theorem Rel.writeVRegLo (h : Rel s σ) (k : BitVec 5) (lo : Word) :
+    Rel (s.writeVReg128 k ((s.vregs.read k).extractLsb' 64 64 ++ lo)) (σ.setReg (vregLo k) lo) := by
+  have := h.writeVReg k lo (σ.regs (vregHi k))
+  have hne : vregHi k ≠ vregLo k := by
+    show (65 + 2 * k.toNat : Nat) ≠ 64 + 2 * k.toNat
+    omega
+  rwa [setReg_comm_self _ hne, vregHi, h.vhi] at this
+
+/-- The half of a vector register a lane lies in, read off a related state. -/
+theorem Rel.half (h : Rel s σ) (imm5 k : BitVec 5) :
+    σ.regs (if lanePos imm5 < 64 then 64 + 2 * k.toNat else 65 + 2 * k.toNat) =
+      vhalf imm5 (s.vregs.read k) := by
+  unfold vhalf
+  split
+  · exact h.vlo k
+  · exact h.vhi k
+
+/-- Writing a lane of a vector register gives a state related to the machine's. -/
+theorem Rel.ins (h : Rel s σ) (imm5 k : BitVec 5) (x y : Word)
+    (hy : y = (UnOp.zext (laneSize imm5)).eval x <<< BitVec.ofNat 64 (lanePos imm5 % 64)) :
+    Rel (s.writeVReg128 k (vins imm5 (s.vregs.read k) x))
+      (σ.setReg (if lanePos imm5 < 64 then 64 + 2 * k.toNat else 65 + 2 * k.toNat)
+        ((vhalf imm5 (s.vregs.read k) &&&
+          ~~~((UnOp.zext (laneSize imm5)).eval (-1#64) <<<
+            BitVec.ofNat 64 (lanePos imm5 % 64))) ||| y)) := by
+  subst hy
+  unfold vins vhalf
+  split
+  · exact h.writeVRegLo k _
+  · exact h.writeVRegHi k _
+
+/-- A move between a general register and a lane, or of a lane into every lane, is sound. -/
+theorem sound_simdInsDup {q op : Bool} {imm5 : BitVec 5} {imm4 : BitVec 4}
+    (h : Rel s σ) (hw : (lower s.pc (.simdInsDup q op imm5 imm4 rn rd)).wp σ Q) :
+    ∃ σ', Rel (prog.evalInst (.simdInsDup q op imm5 imm4 rn rd) s) σ' ∧ Q σ' ∧
+      KeepsCode s.mem (prog.evalInst (.simdInsDup q op imm5 imm4 rn rd) s).mem := by
+  simp only [lower] at hw
+  generalize hops : insDupOps q op imm5 imm4 rn rd = o at hw
+  cases o with
+  | none => exact absurd hw (by simp [Block.wp, wpOps, Term.wp])
+  | some ops =>
+    simp only [insDupOps] at hops
+    split at hops
+    · cases hops
+    rename_i h0
+    split at hops
+    · rename_i hc
+      obtain ⟨rfl, rfl, hq⟩ := hc
+      cases hops
+      vec_ops h hw
+      obtain ⟨σ', h', hw⟩ := wp_vset' h hw
+      simp only [Term.wp] at hw
+      refine step_done (h'.setPC _) hw
+        ((evalInst_dup prog rn rd imm5 q s h0 hq).trans (wv_eq _ ?_))
+      cases q <;>
+        simp only [vsplat, Env.set_apply, Nat.reduceEqDiff, ↓reduceIte, Bool.false_eq_true,
+          BinOp.eval_mul]
+    split at hops
+    · rename_i hc
+      obtain ⟨rfl, rfl, hq⟩ := hc
+      cases hops
+      vec_ops h hw
+      simp only [h.half] at hw
+      obtain ⟨σ', h', hw⟩ := wp_vset' h hw
+      simp only [Term.wp] at hw
+      refine step_done (h'.setPC _) hw
+        ((evalInst_dupElem prog rn rd imm5 q s h0 hq).trans (wv_eq _ ?_))
+      cases q <;>
+        simp only [vsplat, vlane, Env.set_apply, Nat.reduceEqDiff, ↓reduceIte, Bool.false_eq_true,
+          BinOp.eval_mul, BinOp.eval_lshr]
+    split at hops
+    · rename_i hc
+      obtain ⟨rfl, rfl, rfl⟩ := hc
+      cases hops
+      vec_ops h hw
+      simp only [h.half, Term.wp] at hw
+      exact step_done ((h.ins imm5 rd _ _ rfl).setPC _) hw (evalInst_ins prog rn rd imm5 s h0)
+    split at hops
+    · rename_i hc
+      obtain ⟨rfl, rfl, hq⟩ := hc
+      cases hops
+      vec_ops h hw
+      simp only [h.half] at hw
+      obtain ⟨σ', h', hw⟩ := wp_rset' h hw
+      simp only [Term.wp] at hw
+      exact step_done (h'.setPC _) hw
+        ((evalInst_umov prog rn rd imm5 q s h0 hq).trans (wr_eq _ rfl))
+    split at hops
+    · rename_i hc
+      obtain ⟨rfl, rfl, hq⟩ := hc
+      cases hops
+      vec_ops h hw
+      simp only [h.half] at hw
+      obtain ⟨σ', h', hw⟩ := wp_rset' h hw
+      simp only [Term.wp] at hw
+      refine step_done (h'.setPC _) hw
+        ((evalInst_smov prog rn rd imm5 q s h0 hq).trans (wr_eq _ ?_))
+      cases q <;>
+        simp only [Env.set_apply, Nat.reduceEqDiff, ↓reduceIte, Bool.false_eq_true,
+          BinOp.eval_lshr]
+    · cases hops
 
 end Lowering.Arm

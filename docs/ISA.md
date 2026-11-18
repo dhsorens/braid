@@ -76,11 +76,13 @@ How the lowering sees it:
 - Code is in memory. It is mapped read-execute, a `braid` store needs a writable byte, and so
   the code is still loaded after every step (`KeepsCode`).
 
-The lowering covers the integer core. It does not yet cover `RBIT`, `CLZ` and `CLS`, the
-atomics and exclusives, CRC, system registers and system calls, or floating point and SIMD.
-On a complete Go binary (118,148 instructions, the Go runtime included), 95% of the
-instructions lower to something other than `trap`; the rest are, in order, load-acquire and
-store-release, exclusives, SIMD and floating point, and `CLZ`.
+The lowering covers the integer core, the load-acquire and store-release instructions, the
+atomic read-modify-write instructions, and a first set of vector instructions: loads, stores,
+moves, bitwise operations and lane-wise addition. It does not yet cover store-exclusive and
+compare-and-swap, CRC, system registers and system calls, floating-point arithmetic, or the
+rest of SIMD. On a complete Go binary (118,148 instructions, the Go runtime included), 97% of
+the instructions lower to something other than `trap`; the largest groups left are
+store-exclusive, AES and compare-and-swap.
 
 What we would like: nothing in the model itself so far. Two things made proofs longer than
 they should be, and are worth raising upstream: the `exec*` helpers bind pairs with `let (a,

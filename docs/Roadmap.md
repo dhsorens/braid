@@ -11,7 +11,7 @@ see [`ISA.md`](ISA.md).
 | The `braid` dialect | syntax, a weakest-precondition semantics, a functional reading proved equivalent to it, MLIR and Lean printers, an IRDL definition, three proved simplification passes |
 | The logic | heaps and assertions as an Iris BI, atoms, triples with the frame rule built in, symbolic execution rules for every operation, tactics, arrays of words and bytes |
 | RISC-V lowering | every instruction of the model, proved sound |
-| AArch64 lowering | the integer core, and vector registers with their loads, stores, moves, bitwise operations and lane-wise addition, proved sound |
+| AArch64 lowering | the integer core with load-acquire, store-release and the atomic read-modify-writes, and vector registers with their loads, stores, moves, bitwise operations and lane-wise addition, proved sound |
 | x86-64 lowering | the integer core, and vector registers with their moves at 128, 256 and 512 bits and packed addition, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
@@ -31,7 +31,10 @@ In rough order of what they would buy.
    Go binary.
 2. **The exact overflow flag of `imul`, `adc` and `sbb`**. It is a `havoc` today, which is
    sound and loses the `jo` after a checked multiplication.
-3. **AArch64 `CLZ`, `RBIT`, and the atomics**, which are what is left of a Go binary there.
+3. **AArch64 store-exclusive and compare-and-swap**, the largest groups left of a Go binary
+   there (97% of it lowers). Both store or not depending on a comparison, and the dialect
+   has no conditional store: the block would write the old value back, which needs a lemma
+   that doing so changes nothing in the model.
 4. **More of the vector instructions.** A vector register is words of `braid` state, and a
    lane-wise operation on a word is in the dialect (`BinOp.lanes`). AArch64 has its loads,
    stores, moves, bitwise operations and lane-wise addition lowered and proved; x86-64 has

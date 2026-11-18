@@ -71,15 +71,47 @@ the lowering is stated on instruction words.
 | --- | --- |
 | `Lower.lean` | `lower`, `lowerProgram` |
 | `Mem.lean` | permissions and bytes of the model's memory |
-| `Sound.lean` | `Rel`, `lower_sound`, `lowerProgram_sound` |
+| `Rel.lean` | `Rel`, and what each piece of a block does to related states |
+| `Simd.lean` | the vector instructions, lowered soundly |
+| `Sound.lean` | the integer instructions, `lower_sound`, `lowerProgram_sound` |
 | `Logic.lean` | register and flag names, `lowerWords`, `triple_sound`, `machine_sound` |
+
+How the machine appears in `braid`:
+
+- `X0` to `X30` are registers 0 to 30, and `SP` is register 31. `N`, `Z`, `C`, `V` are flags
+  0 to 3.
+- A vector register is two registers: `V k` has its bits 0 to 63 in register `64 + 2 * k`
+  (`Regs.vlo k`, printed `v<k>.lo`) and its bits 64 to 127 in register `65 + 2 * k`
+  (`Regs.vhi k`, printed `v<k>.hi`). A vector instruction works on one half after the other,
+  and an operation on lanes is `BinOp.lanes` on each half.
+- The model runs one thread, so a load-acquire, a store-release and an atomic
+  read-modify-write are a load, a store, and the two with the operation between, each with
+  a `guard` that the address is aligned.
 
 Covered: the integer core, which is data processing with immediates and registers, shifted
 and extended operands, moves, bit fields, conditional selects and compares, multiplication
-and division, loads and stores in every addressing mode, pairs, and branches. Not yet
-covered: `RBIT`, `CLZ`, `CLS`, atomics and exclusives, CRC, system registers and calls,
-floating point and SIMD. On a whole Go binary, 95% of 118,148 instructions lower to something
-other than `trap`.
+and division, `REV`, `RBIT`, `CLZ` and `CLS`, loads and stores in every addressing mode,
+pairs, and branches; `LDAR`, `STLR`, `LDAPR`, `LDXR`, and the atomic read-modify-writes
+(`LDADD`, `LDCLR`, `LDEOR`, `LDSET`, the maxima and minima, `SWP`). Of the vector
+instructions:
+
+| Instructions | Covered | Left as `trap` |
+| --- | --- | --- |
+| `ldrSimd`, `strSimd`, `ldpSimd`, `stpSimd`, `ldnpSimd`, `stnpSimd` | sizes `B`, `H`, `S`, `D`, `Q`, every addressing mode | `ldrSimdLit`, `LD1` to `LD4`, `ST1` to `ST4`, `LD1R` |
+| `fmovGprVec` | `FMOV` between `W`, `X` and `S`, `D`, `V.D[1]` | conversions between integers and floating point |
+| `fpDataProc1`, `fpImm`, `fpCondSelect` | `FMOV` of a register or a constant, `FCSEL` (`S` and `D`) | arithmetic, conversions, half precision |
+| `simdThreeSame` | `AND`, `BIC`, `ORR`, `ORN`, `EOR`, `BSL`, `ADD` and `SUB` of lanes of 8 to 64 bits | `BIT`, `BIF`, comparisons, shifts, `MUL`, `ADDP`, saturating and floating point |
+| `simdImmShift` | `MOVI` of a byte, a byte mask, or a shifted 32- or 16-bit constant | `MVNI`, `ORR`, `BIC`, `FMOV` constants, shifts by a constant |
+| `simdInsDup` | `DUP` from a general register and from a lane, `INS` from a general register, `UMOV`, `SMOV` | `INS` from a lane |
+| `simdTwoRegMisc`, `simdAddpScalar` | `NOT`, scalar `ADDP` | the rest of `simdTwoRegMisc` |
+
+Not yet covered: compare-and-swap, store-exclusives and the exclusive pairs, `LDAPUR` and
+`STLUR`, CRC, system registers and calls, floating-point arithmetic and comparisons,
+`simdAcrossLanes`, `simdPermute`, `simdExt`, `simdTbl`, `simdDupScalar`, `simdPmull`,
+`simdThreeDiff`, and AES and SHA. On a whole Go binary, 97% of 118,148 instructions lower to
+something other than `trap`. Of the 1,105 that trap, the largest groups are `STXR` (369), AES
+(191) and `CAS` (119). Before the vector instructions, `LDAR`, `STLR`, `CLZ` and `RBIT` were
+added, 3,388 trapped.
 
 ## x86-64 (`X86/`)
 

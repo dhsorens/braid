@@ -412,14 +412,68 @@ theorem sound_dataProc2 (prog : Arm64.Program) {w : RegWidth} {op : DataProc2Op}
        have hb : b &&& 31#64 = k := by rw [← hk]; bv_decide
        bv_decide)
 
-/-- A byte reversal is sound. -/
+/-! The model counts leading zeros and sign bits, and reverses bits, with loops of its own.
+These are `BitVec.clz` and `BitVec.reverse`. -/
+
+theorem clz64 (v : BitVec 64) : BitVec.ofNat 64 (Arm64.countLeadingZeros v) = v.clz := by
+  simp only [Arm64.countLeadingZeros, Arm64.countLeadingZeros.loop, Nat.reduceSub, apply_ite (BitVec.ofNat 64)]
+  bv_decide
+
+theorem clz32 (v : BitVec 32) : BitVec.ofNat 64 (Arm64.countLeadingZeros v) = (v.zeroExtend 64).clz - 32#64 := by
+  simp only [Arm64.countLeadingZeros, Arm64.countLeadingZeros.loop, Nat.reduceSub, apply_ite (BitVec.ofNat 64)]
+  bv_decide
+
+theorem ite_yield {α : Type} (c : Prop) [Decidable c] (a b : α) :
+    (if c then (pure (ForInStep.yield a) : Id (ForInStep α)) else pure (ForInStep.yield b)) =
+      pure (ForInStep.yield (if c then a else b)) := by
+  split <;> rfl
+
+theorem reverseBits_eq {n : Nat} (v : BitVec n) :
+    Arm64.reverseBits v = (List.range' 0 n).foldl (fun acc i =>
+      if v.getLsbD i then acc ||| (BitVec.ofNat n 1 <<< (n - 1 - i)) else acc) 0 := by
+  simp only [Arm64.reverseBits, Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size]
+  simp [ite_yield]
+
+set_option maxRecDepth 20000 in
+theorem rbit64 (v : BitVec 64) : Arm64.reverseBits v = v.reverse := by
+  rw [reverseBits_eq]
+  simp only [List.range', List.foldl, Nat.reduceAdd, Nat.reduceSub]
+  bv_decide
+
+set_option maxRecDepth 20000 in
+theorem rbit32 (v : BitVec 32) : (Arm64.reverseBits v).zeroExtend 64 = (v.zeroExtend 64).reverse >>> 32#64 := by
+  rw [reverseBits_eq]
+  simp only [List.range', List.foldl, Nat.reduceAdd, Nat.reduceSub]
+  bv_decide
+
+theorem cls64 (v : BitVec 64) : BitVec.ofNat 64 (Arm64.countLeadingSigns v) = (v ^^^ v.sshiftRight' 1#64).clz - 1#64 := by
+  simp only [Arm64.countLeadingSigns, Arm64.countLeadingSigns.loop, Nat.reduceSub, Nat.reduceLeDiff, ↓reduceIte, apply_ite (BitVec.ofNat 64)]
+  bv_decide
+
+theorem cls32 (v : BitVec 32) : BitVec.ofNat 64 (Arm64.countLeadingSigns v) =
+    (v.signExtend 64 ^^^ (v.signExtend 64).sshiftRight' 1#64).clz - 33#64 := by
+  simp only [Arm64.countLeadingSigns, Arm64.countLeadingSigns.loop, Nat.reduceSub, Nat.reduceLeDiff, ↓reduceIte, apply_ite (BitVec.ofNat 64)]
+  bv_decide
+
+/-- A byte or bit reversal, or a count of leading zeros or sign bits, is sound. -/
 theorem sound_dataProc1 (prog : Arm64.Program) {w : RegWidth} {op : DataProc1Op}
     {rd rn : Arm64.Reg} (h : Rel s σ) (hw : (lower s.pc (.dataProc1 w op rd rn)).wp σ Q) :
     ∃ σ', Rel (prog.evalInst (.dataProc1 w op rd rn) s) σ' ∧ Q σ' ∧
       KeepsCode s.mem (prog.evalInst (.dataProc1 w op rd rn) s).mem := by
   cases op <;> cases w <;> simp only [lower, dp1Ops] at hw
   case RBIT.W32 | RBIT.W64 | CLZ.W32 | CLZ.W64 | CLS.W32 | CLS.W64 =>
-    exact absurd hw (by simp [Block.wp, wpOps, Term.wp])
+    arm_ops h hw
+    obtain ⟨σ', h', hw⟩ := wp_rset' h hw
+    simp only [Term.wp] at hw
+    refine step_done (h'.setPC _) hw ?_
+    env_simp
+    simp only [Arm64.Program.evalInst, Arm64.execInstWithSvc, Arm64.execDataProc1, writeReg_eq,
+      readReg_eq, norm, clz64, clz32, rbit64, rbit32, cls64, cls32, BinOp.eval_sub,
+      BinOp.eval_lshr, BinOp.eval_ashr, BinOp.eval_xor, UnOp.eval_clz, UnOp.eval_rbit,
+      UnOp.eval_sext]
+    refine wr_eq rd ?_
+    generalize s.readReg64 rn = a
+    bv_decide
   all_goals
     arm_ops h hw
     obtain ⟨σ', h', hw⟩ := wp_rset' h hw
@@ -583,6 +637,153 @@ theorem sound_bitfield (prog : Arm64.Program) {w : RegWidth} {op : BitfieldOp}
     | bf_bits 32 immr imms
     | bf_bits 64 immr imms
 
+/-! ## Loads and stores at an aligned address -/
+
+/-- The alignment guard of an access: the address is aligned. -/
+theorem wp_alignOps {a t : Nat} {sz : MemWidth} {ρ : Env} {K : Env → State → Prop}
+    {rest : List Op} (ha : a < t) (hw : wpOps (alignOps a t sz ++ rest) ρ σ K) :
+    sz.isAligned (ρ a) = true ∧ ∃ ρ' : Env, (∀ y, y < t → ρ' y = ρ y) ∧ wpOps rest ρ' σ K := by
+  have hat : a ≠ t := by omega
+  cases sz
+  · exact ⟨rfl, ρ, fun _ _ => rfl, hw⟩
+  all_goals
+    simp only [alignOps, List.cons_append, List.nil_append, wpOps, Op.wp, Env.set_apply, hat,
+      ↓reduceIte, Nat.reduceEqDiff, Nat.add_left_cancel_iff, BinOp.eval_and,
+      BinOp.eval_eq] at hw
+    refine ⟨?_, _, fun y hy => by env_below hy, hw.2⟩
+    have := hw.1
+    simp only [Arm64.MemWidth.isAligned]
+    simpa using this
+
+/-- An unsigned load fits the register it is written to. -/
+theorem norm_readSized (sz : MemWidth) (m : Arm64.Memory) (a : Word) :
+    norm (match sz with | .X64 => .W64 | _ => .W32) (m.readSized sz false a) =
+      m.readSized sz false a := by
+  cases sz <;> simp only [norm, Arm64.Memory.readSized, Bool.false_eq_true, ↓reduceIte]
+  · generalize m.read8 a = b; bv_decide
+  · generalize m.read16 a = b; bv_decide
+  · generalize m.read32 a = b; bv_decide
+
+theorem evalInst_ldar (prog : Arm64.Program) (sz : MemWidth) (rn rt : Arm64.Reg)
+    (hsp : Arm64.checkRegSPAligned s rn = true) (hal : sz.isAligned (s.readReg64 rn) = true)
+    (hcr : s.mem.canRead (s.readReg64 rn) sz.bytes = true) :
+    prog.evalInst (.ldarStlr sz true rn rt) s =
+      (s.writeReg64 rt (s.mem.readSized sz false (s.readReg64 rn))).setPC (s.pc + 4) := by
+  cases sz <;>
+    simp only [Arm64.Program.evalInst, Arm64.execInstWithSvc, hsp, hal, hcr, writeReg_eq,
+      Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  · exact wr_eq rt (norm_readSized .B8 _ _)
+  · exact wr_eq rt (norm_readSized .H16 _ _)
+  · exact wr_eq rt (norm_readSized .W32 _ _)
+  · exact wr_eq rt (norm_readSized .X64 _ _)
+
+theorem evalInst_stlr (prog : Arm64.Program) (sz : MemWidth) (rn rt : Arm64.Reg)
+    (hsp : Arm64.checkRegSPAligned s rn = true) (hal : sz.isAligned (s.readReg64 rn) = true)
+    (hcw : s.mem.canWrite (s.readReg64 rn) sz.bytes = true) :
+    prog.evalInst (.ldarStlr sz false rn rt) s =
+      (s.setMem (s.mem.writeSized sz (s.readReg64 rn) (s.readReg64 rt))).setPC (s.pc + 4) := by
+  simp only [Arm64.Program.evalInst, Arm64.execInstWithSvc, hsp, hal, hcw, Bool.not_true,
+    Bool.false_eq_true, ↓reduceIte]
+  rfl
+
+/-- A load from an aligned address is sound. -/
+theorem sound_ldar (prog : Arm64.Program) {sz : MemWidth} {rn rt : Arm64.Reg} (h : Rel s σ)
+    (hw : (lowerLdar s.pc sz rn rt).wp σ Q) :
+    ∃ σ', Rel (prog.evalInst (.ldarStlr sz true rn rt) s) σ' ∧ Q σ' ∧
+      KeepsCode s.mem (prog.evalInst (.ldarStlr sz true rn rt) s).mem := by
+  simp only [lowerLdar, Block.wp, List.append_assoc] at hw
+  obtain ⟨hsp, ρ₁, hw⟩ := wp_baseOps h hw
+  obtain ⟨hal, ρ₂, hlt, hw⟩ := wp_alignOps (a := 0) (t := 5) (by decide) hw
+  simp only [List.cons_append, List.nil_append, wpOps, Op.wp] at hw
+  obtain ⟨v, hv, hw⟩ := hw
+  obtain ⟨hcr, rfl⟩ := h.load hv
+  obtain ⟨σ', h', hw⟩ := wp_rset' h hw
+  simp only [Term.wp] at hw
+  simp only [hlt 0 (by decide), envExt_self, Env.set_same] at hal hcr h'
+  exact step_done (h'.setPC _) hw (evalInst_ldar prog sz rn rt hsp hal hcr)
+
+/-- A store to an aligned address is sound. -/
+theorem sound_stlr (prog : Arm64.Program) {sz : MemWidth} {rn rt : Arm64.Reg} (h : Rel s σ)
+    (hw : (lowerStlr s.pc sz rn rt).wp σ Q) :
+    ∃ σ', Rel (prog.evalInst (.ldarStlr sz false rn rt) s) σ' ∧ Q σ' ∧
+      KeepsCode s.mem (prog.evalInst (.ldarStlr sz false rn rt) s).mem := by
+  simp only [lowerStlr, Block.wp, wpOps, List.append_assoc] at hw
+  have hw := wp_rget h hw
+  obtain ⟨hsp, ρ₁, hw⟩ := wp_baseOps h hw
+  obtain ⟨hal, ρ₂, hlt, hw⟩ := wp_alignOps (a := 1) (t := 6) (by decide) hw
+  simp only [wpOps, Op.wp] at hw
+  obtain ⟨m, hm, hw⟩ := hw
+  obtain ⟨hcw, h₂⟩ := h.store hm
+  have hk := h.store_keeps hm
+  simp only [Term.wp] at hw
+  simp only [hlt 1 (by decide), hlt 0 (by decide), envExt_self,
+    envExt_lt _ _ _ (show 0 < 1 by decide), Env.set_same] at hal hcw h₂ hk
+  exact step_done (h₂.setPC _) hw (evalInst_stlr prog sz rn rt hsp hal hcw) hk
+
+/-- The new value of an atomic read-modify-write is the model's. -/
+theorem wp_atomicOps {op : Arm64.AtomicOp} {sz : MemWidth} {ρ : Env} {K : Env → State → Prop}
+    {rest : List Op} {m : Arm64.Memory} {a : Word} (hold : ρ 30 = m.readSized sz false a)
+    (hw : wpOps (atomicOps op sz ++ rest) ρ σ K) :
+    ∃ ρ' : Env, ρ' 40 = Arm64.evalAtomicOp op sz (ρ 30) (ρ 0) ∧
+      (∀ y : Nat, y < 31 → ρ' y = ρ y) ∧
+      wpOps rest ρ' σ K := by
+  cases op <;> cases sz <;>
+    simp only [atomicOps, MemWidth.bytes, Nat.reduceMul, List.cons_append, List.nil_append,
+      wpOps, Op.wp] at hw <;>
+    refine ⟨_, ?_, fun y hy => by env_below hy, hw⟩ <;>
+    simp only [Env.set_apply, Nat.reduceEqDiff, ↓reduceIte, Arm64.evalAtomicOp, MemWidth.bytes,
+      Nat.reduceMul, Nat.reduceSub, hold, Arm64.Memory.readSized, ofBool,
+      Bool.false_eq_true, BinOp.eval_add, BinOp.eval_and, BinOp.eval_or, BinOp.eval_xor,
+      BinOp.eval_ult, BinOp.eval_slt, UnOp.eval_not, UnOp.eval_zext, UnOp.eval_sext] <;>
+    generalize ρ 0 = r <;>
+    generalize m.read8 a = b₁ <;> generalize m.read16 a = b₂ <;>
+    generalize m.read32 a = b₃ <;> generalize m.read64 a = b₄ <;>
+    bv_decide
+
+theorem evalInst_atomic (prog : Arm64.Program) (op : Arm64.AtomicOp) (sz : MemWidth)
+    (acq rel : Bool) (rs rn rt : Arm64.Reg) (hsp : Arm64.checkRegSPAligned s rn = true)
+    (hal : sz.isAligned (s.readReg64 rn) = true)
+    (hcr : s.mem.canRead (s.readReg64 rn) sz.bytes = true)
+    (hcw : s.mem.canWrite (s.readReg64 rn) sz.bytes = true) :
+    prog.evalInst (.atomicRmw op sz acq rel rs rn rt) s =
+      ((s.setMem (s.mem.writeSized sz (s.readReg64 rn) (Arm64.evalAtomicOp op sz
+        (s.mem.readSized sz false (s.readReg64 rn)) (s.readReg64 rs)))).writeReg64 rt
+          (s.mem.readSized sz false (s.readReg64 rn))).setPC (s.pc + 4) := by
+  cases sz <;>
+    simp only [Arm64.Program.evalInst, Arm64.execInstWithSvc, hsp, hal, hcr, hcw, writeReg_eq,
+      Bool.not_true, Bool.false_eq_true, ↓reduceIte, Bool.and_self]
+  · exact wr_eq _ (norm_readSized .B8 _ _)
+  · exact wr_eq _ (norm_readSized .H16 _ _)
+  · exact wr_eq _ (norm_readSized .W32 _ _)
+  · exact wr_eq _ (norm_readSized .X64 _ _)
+
+/-- An atomic read-modify-write is sound. -/
+theorem sound_atomicRmw (prog : Arm64.Program) {op : Arm64.AtomicOp} {sz : MemWidth}
+    {acq rel : Bool} {rs rn rt : Arm64.Reg} (h : Rel s σ)
+    (hw : (lowerAtomic s.pc op sz rs rn rt).wp σ Q) :
+    ∃ σ', Rel (prog.evalInst (.atomicRmw op sz acq rel rs rn rt) s) σ' ∧ Q σ' ∧
+      KeepsCode s.mem (prog.evalInst (.atomicRmw op sz acq rel rs rn rt) s).mem := by
+  simp only [lowerAtomic, Block.wp, wpOps, List.append_assoc] at hw
+  have hw := wp_rget h hw
+  obtain ⟨hsp, ρ₁, hw⟩ := wp_baseOps h hw
+  obtain ⟨hal, ρ₂, hlt, hw⟩ := wp_alignOps (a := 1) (t := 6) (by decide) hw
+  simp only [List.cons_append, List.nil_append, wpOps, Op.wp] at hw
+  obtain ⟨v, hv, hw⟩ := hw
+  obtain ⟨hcr, rfl⟩ := h.load hv
+  obtain ⟨ρ₃, h40, hlt3, hw⟩ := wp_atomicOps (Env.set_same ..) hw
+  simp only [wpOps, Op.wp] at hw
+  obtain ⟨m, hm, hw⟩ := hw
+  obtain ⟨hcw, h₂⟩ := h.store hm
+  have hk := h.store_keeps hm
+  obtain ⟨σ', h', hw⟩ := wp_rset' h₂ hw
+  simp only [Term.wp] at hw
+  have e0 : ∀ v' : Word, (ρ₂.set 30 v') 0 = s.readReg64 rs := fun v' => by
+    rw [set_below _ _ (by decide), hlt 0 (by decide), envExt_lt _ _ _ (by decide), Env.set_same]
+  simp only [h40, hlt3 30 (by decide), hlt3 1 (by decide), Env.set_same, e0,
+    set_below _ _ (show 1 < 30 by decide), hlt 1 (by decide), envExt_self] at hal hcr hcw h' hk
+  exact step_done (h'.setPC _) hw
+    (evalInst_atomic prog op sz acq rel rs rn rt hsp hal hcr hcw) hk
+
 /-- One instruction: the machine executes it and stays running, in a state related to one
 satisfying the postcondition, and it keeps the bytes that may not be stored to. -/
 theorem lower_step (prog : Arm64.Program) {i : Instr} (h : Rel s σ)
@@ -742,6 +943,12 @@ theorem lower_step (prog : Arm64.Program) {i : Instr} (h : Rel s σ)
   case condCompareImm => exact sound_condCompareImm prog h hw
   case addSubCarry => exact sound_addSubCarry prog h hw
   case bitfield => exact sound_bitfield prog h hw
+  case ldarStlr sz isLoad rn rt =>
+    cases isLoad
+    · exact sound_stlr prog h hw
+    · exact sound_ldar prog h hw
+  case ldxr | ldapr => exact sound_ldar prog h hw
+  case atomicRmw => exact sound_atomicRmw prog h hw
   case ldrSimd => exact sound_ldrSimd prog h hw
   case strSimd => exact sound_strSimd prog h hw
   case ldpSimd => exact sound_ldpSimd prog h hw
@@ -758,6 +965,7 @@ theorem lower_step (prog : Arm64.Program) {i : Instr} (h : Rel s σ)
   case fpCondSelect => exact sound_fpCondSelect prog _ _ _ h hw
   case simdTwoRegMisc => exact sound_simdTwoRegMisc prog _ _ h hw
   case simdAddpScalar => exact sound_simdAddpScalar prog _ _ h hw
+  case simdInsDup => exact sound_simdInsDup prog _ _ h hw
   all_goals exact absurd hw (by simp [lower, Block.wp, wpOps, Term.wp])
 
 /-- **One instruction of the AArch64 lowering is sound.** If the block of the instruction
