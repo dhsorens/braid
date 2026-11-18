@@ -11,7 +11,6 @@ module
 public import Examples.PyBasic.RiscV.Image
 public import Lowering.RiscV.Logic
 public import Examples.Spec
-public import Examples.Memory.RiscV.Proofs
 
 public section
 

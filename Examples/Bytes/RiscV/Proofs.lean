@@ -10,7 +10,6 @@ module
 public import Examples.Bytes.RiscV.Image
 public import Lowering.RiscV.Logic
 public import Examples.Spec
-public import Examples.Memory.RiscV.Proofs
 
 public section
 
