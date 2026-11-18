@@ -66,7 +66,7 @@ statement.
 | Lowering proved sound | all of RV64IM in the model | the integer core | the integer core, without multi-word arithmetic |
 | Share of a Go binary lowered | (Go emits compressed code) | 95% | 94% |
 | Decompiler front end | ELF | ELF | ELF with `objdump`'s disassembly |
-| Verified examples | C, Rust, Swift | C, Go | C, Rust, Swift, Go |
+| Verified examples | C, Rust, Swift, Python | C, Go, Python, JavaScript | C, Rust, Swift, Go, Python |
 
 [`docs/Roadmap.md`](docs/Roadmap.md) says what exists, what does not, and what is next.
 

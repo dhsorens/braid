@@ -110,6 +110,24 @@ lower_python() {
   lower_ll "$name" "$module" "$@"
 }
 
+# A JavaScript source, compiled by V8: name, directory, module, functions. `emit_s.py` in the
+# directory runs the source under Node and writes the machine code TurboFan produced as an
+# assembly file. The code is for the machine Node runs on, which must be AArch64.
+lower_js() {
+  name=$1; dir=$2; module=$3; shift 3
+  fns=""; for f in "$@"; do fns="$fns --fn $f"; done
+  # shellcheck disable=SC2086
+  (cd "$dir" && python3 emit_s.py "$OLDPWD/Examples/bin/$name.s" "$@")
+  out=Examples/$(echo "$module" | tr . /)/Arm
+  mkdir -p "$out"
+  "$CLANG" --target=aarch64-unknown-linux-gnu -c "Examples/bin/$name.s" -o "Examples/bin/$name.arm.o"
+  "$LLD" -flavor gnu --image-base=0 -Ttext=0x10000 -e "$1" "Examples/bin/$name.arm.o" \
+    -o "Examples/bin/$name.arm.elf"
+  # shellcheck disable=SC2086
+  "$LOWER" "Examples/bin/$name.arm.elf" $fns --mlir "Examples/mlir/$name.arm.mlir" \
+    --lean "$out/Image.lean" --module "Examples.$module.Arm" 2>/dev/null
+}
+
 # A Go source: name, source, module, functions. Go has its own back ends and linker, and its
 # RISC-V back end emits compressed instructions, which the RISC-V model does not have, so Go
 # is lowered for AArch64 and x86-64 only. The binary holds the whole Go runtime; only the
@@ -148,6 +166,9 @@ if want swiftbasic; then
 fi
 if want pybasic; then
   lower_python pybasic Examples/src/python PyBasic py_add3 py_max_u64 py_gcd
+fi
+if want jsbasic; then
+  case " $ISAS " in *" arm "*) lower_js jsbasic Examples/src/js JsBasic js_add3 js_max ;; esac
 fi
 if want gobasic; then
   lower_go gobasic Examples/src/go/basic.go GoBasic main.Add3 main.MaxU64 main.SumSlice

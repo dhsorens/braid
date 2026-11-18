@@ -28,6 +28,8 @@ down to a theorem about the machine model alone (`<function>_correct`).
 | `rust/basic.rs` | **gcd** | lowered | add3, max_u64, sum_slice |
 | `swift/basic.swift` | swift_add3, swift_min, **swift_gcd** | lowered | swift_add3, swift_min |
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64 |
+| `python/basic.py` | py_add3, py_max_u64, py_gcd | py_add3, py_max_u64 | py_add3, py_max_u64 |
+| `js/basic.js` | | js_add3 | |
 
 What the examples exercise:
 
@@ -43,6 +45,15 @@ What the examples exercise:
   around the call. On x86-64 the return address is a word on the stack, pushed by `call` and
   popped by `ret`.
 
+- **Code from a just-in-time compiler** (`js_add3`): the machine code V8 produced for a
+  JavaScript function after it had run on small integers. The code checks that it has not
+  been marked for deoptimisation, that the stack has room, that each argument is a tagged
+  small integer and that the sum does not overflow, and the theorem is about the path on
+  which the checks pass. Its proof is three lemmas, for the prologue, the body and the
+  epilogue, joined by the frame rule.
+- **A foreign calling convention** (`py_add3`): Numba's compiled functions return a status
+  and write their result through a pointer.
+
 One specification serves a function on every instruction set, up to the names of the
 registers: `max2_spec` says `umax a b` everywhere, and `sum_array_spec` says `wsum xs 0`.
 
@@ -57,7 +68,8 @@ lake build Examples         # check every image and every proof
 ```
 
 `build.sh` needs clang with the RISC-V, AArch64 and x86-64 targets, a RISC-V linker, `lld`,
-and `rustc`, `swiftc` and `go` for those examples. The tools are named by variables at the top
+and `rustc`, `swiftc`, `go`, Node, and a Python with Numba (named by `PYTHON`) for those
+examples. The tools are named by variables at the top
 of the script. The lowered images are in the repository, so `lake build Examples` needs none
 of them.
 
@@ -68,6 +80,8 @@ How each language reaches all three instruction sets:
 | C | clang, once for each target |
 | Rust, Swift | the compiler's LLVM IR, then clang for each target, so that one back end produces the code for all three |
 | Go | Go's own back ends and linker. Its RISC-V back end emits compressed instructions, which the RISC-V model does not have, so Go is lowered for AArch64 and x86-64 |
+| Python | [Numba](https://numba.pydata.org) compiles a typed Python function through LLVM; `src/python/emit_ll.py` writes its IR, which then goes the way of Rust's and Swift's |
+| JavaScript | V8's optimising compiler, as Node prints its output (`node --print-opt-code`); `src/js/emit_s.py` writes the instruction words back as an assembly file. The code is for the machine Node runs on, so this example is AArch64 only |
 
 ## Writing a proof
 
