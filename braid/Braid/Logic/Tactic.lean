@@ -17,6 +17,7 @@ module
 
 public import Braid.Logic.Exec
 public import Braid.Logic.Sat
+public import Braid.Logic.Data
 public import Std.Tactic.BVDecide
 
 public section
@@ -61,7 +62,7 @@ macro "braid_norm" loc:(Lean.Parser.Tactic.location)? : tactic =>
     BitVec.zeroExtend_eq_setWidth, BitVec.setWidth_eq, sub_lit, BitVec.add_assoc, BitVec.reduceAdd,
     BitVec.reduceAnd, BitVec.reduceOr, BitVec.reduceXOr, BitVec.reduceNot,
     BitVec.reduceSub, BitVec.reduceNeg, BitVec.reduceMul, BitVec.add_zero, BitVec.zero_add,
-    ne_eq, ofBool_eq_zero, ofBool_bne_zero, Bool.not_eq_false, beq_iff_eq, bne_iff_ne, beq_eq_false_iff_ne, BitVec.reduceEq, BitVec.reduceNe,
+    ne_eq, ofBool_eq_zero, ofBool_bne_zero, Bool.not_eq_false, beq_iff_eq, bne_iff_ne, beq_eq_false_iff_ne, bne_eq_false_iff_eq, BitVec.reduceEq, BitVec.reduceNe,
     BitVec.reduceULT, BitVec.reduceULE, BitVec.reduceSLT, BitVec.reduceSLE, reduceCtorEq,
     not_true_eq_false, not_false_eq_true, Decidable.not_not] $[$loc]?)
 
@@ -139,5 +140,26 @@ macro "braid_disj" : tactic =>
       Atom.disj_reg_pc, Atom.disj_pc_reg, Atom.disj_flag_pc, Atom.disj_pc_flag,
       Atom.disj_mem_reg, Atom.disj_reg_mem, Atom.disj_mem_flag, Atom.disj_flag_mem,
       Atom.disj_mem_pc, Atom.disj_pc_mem, true_and]; try decide))
+
+/-- Open an atom of the symbolic state into atoms that mean the same, by a lemma such as
+`wordsAt_cons`. -/
+macro "braid_unfold " t:term : tactic =>
+  `(tactic| (braid_norm
+             apply Triple.unfold (heq := $t)
+             case hext => braid_extract
+             braid_norm))
+
+/-- Close atoms of the symbolic state into one atom that means the same, by a lemma such
+as `wordsAt_cons`. -/
+macro "braid_fold " t:term : tactic =>
+  `(tactic| (braid_norm
+             apply Triple.fold (heq := $t)
+             case hsplit => braid_split
+             braid_norm))
+
+/-- Forget the value of a register: `braid_forget r`. -/
+macro "braid_forget " r:term : tactic =>
+  `(tactic| (apply Triple.forget_reg (r := $r)
+             case hupd => braid_upd))
 
 end Braid
