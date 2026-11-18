@@ -152,6 +152,11 @@ maintainer, Derek Sorensen, before starting work, for example on the
 [Lean Zulip](https://leanprover.zulipchat.com). Then see [`CONTRIBUTING.md`](CONTRIBUTING.md)
 and [`STYLE.md`](STYLE.md).
 
+## Licence
+
+Apache-2.0 ([`LICENSE`](LICENSE)). The instruction-set models and iris-lean are dependencies
+under their own licences.
+
 ## Acknowledgements
 
 Braid builds on [machine-checked](https://github.com/Verified-zkEVM/machine-checked/).

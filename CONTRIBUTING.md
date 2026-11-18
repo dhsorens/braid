@@ -131,3 +131,8 @@ Keep commits buildable where you can.
 
 Be respectful and constructive. Assume good faith, critique work rather than people, and help
 newcomers find their way. Report unacceptable behaviour to the maintainer.
+
+## Licensing
+
+By contributing, you agree that your contributions are licensed under the repository's
+licence, Apache-2.0 ([`LICENSE`](LICENSE)).
