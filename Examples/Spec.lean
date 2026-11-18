@@ -34,6 +34,18 @@ theorem wgcd_rec (a b : Word) : wgcd a b = wgcd b (a % b) := by
   simp only [wgcd, BitVec.toNat_umod]
   rw [Nat.gcd_comm a.toNat, Nat.gcd_rec, Nat.gcd_comm]
 
+/-- A remainder computed as a compiler does without a remainder instruction: divide, multiply
+back, subtract. -/
+theorem sub_udiv_mul (a b : Word) : a - a / b * b = a % b := by
+  apply BitVec.eq_of_toNat_eq
+  have h1 := Nat.div_mul_le_self a.toNat b.toNat
+  have h2 := Nat.div_add_mod a.toNat b.toNat
+  rw [Nat.mul_comm] at h2
+  have h3 := a.isLt
+  rw [BitVec.toNat_sub, BitVec.toNat_mul, BitVec.toNat_udiv, BitVec.toNat_umod,
+    Nat.mod_eq_of_lt (a := a.toNat / b.toNat * b.toNat) (by omega)]
+  omega
+
 /-- The number of ones in the binary form of a number. -/
 def ones (n : Nat) : Nat := if n = 0 then 0 else n % 2 + ones (n / 2)
 decreasing_by omega
