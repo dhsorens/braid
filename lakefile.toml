@@ -1,0 +1,50 @@
+name = "machine-checked-mlir"
+version = "0.1.0"
+defaultTargets = ["Lowering", "braid-lower"]
+moreLeanArgs = ["--tstack=400000"]
+
+# The dialect and the separation logic, as a package of their own (`braid/README.md`).
+[[require]]
+name = "braid"
+path = "braid"
+
+# The three instruction-set semantics, each used unmodified at a pinned commit (`docs/ISA.md`).
+
+# RISC-V: the RV64IM machine model, tied to the Sail RISC-V model.
+[[require]]
+name = "riscv-zkvm"
+git = "https://github.com/Verified-zkEVM/riscv-zkvm"
+rev = "d81a91030371d1b66ad1a5ff5d348077d3690d6a"
+
+# x86-64: Kraken's x64 semantics.
+[[require]]
+name = "Kraken"
+git = "https://github.com/AeneasVerif/kraken"
+rev = "ebd10ebd800f61d1c7170e06b1eaea2bd9cdea66"
+
+# AArch64: the trusted package of arm64-semantics.
+[[require]]
+name = "arm64"
+git = "https://github.com/google-deepmind/code-verification"
+rev = "b0f729accbc21a0413e7ca4e1da43fa45b5f2e1b"
+subDir = "arm64-semantics/Arm64"
+
+# The lowerings: each instruction set into Braid, with its simulation proof.
+[[lean_lib]]
+name = "Lowering"
+globs = ["Lowering.+"]
+
+# Build-time tooling: the decompiler.
+[[lean_lib]]
+name = "Tools"
+globs = ["Tools.+"]
+
+[[lean_exe]]
+name = "braid-lower"
+root = "Tools.Main"
+supportInterpreter = true
+
+# The example corpus: lowered binaries and the proofs about them.
+[[lean_lib]]
+name = "Examples"
+globs = ["Examples.+"]

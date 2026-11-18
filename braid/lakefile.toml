@@ -1,0 +1,15 @@
+# Braid: the dialect, its semantics, and the separation logic. This is the library a proof
+# imports. It does not depend on any instruction-set model.
+name = "braid"
+version = "0.1.0"
+defaultTargets = ["Braid"]
+
+# Iris in Lean: the bunched-implication interface and the proof mode Braid's assertions plug into.
+[[require]]
+name = "iris"
+git = "https://github.com/leanprover-community/iris-lean"
+rev = "40e6418437a794dcd0429bfbe4d6b60fdafb2ecd"
+subDir = "Iris"
+
+[[lean_lib]]
+name = "Braid"
