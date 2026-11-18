@@ -152,10 +152,10 @@ Not yet covered, and lowered to `trap`: `adcx`, `adox`, `mulx`, the rotations th
 rotations and double shifts by `cl`, the widening multiplications at 8 and 16 bits, the string
 instructions, a 32-bit address size, and the vector instructions in the last two rows of the
 table above. The model itself has no
-`div`, `idiv`, `xchg`, `cqo`, bit tests or atomics ([`docs/ISA.md`](../docs/ISA.md)). Measured
-before any vector instruction was lowered, on a whole Go binary, 95% of 113,547 instructions
-lowered to something other than `trap`; of the 1,346 that trapped, 1,343 were vector
-instructions and 3 were `rcr`.
+`div`, `idiv`, `xchg`, `cqo`, bit tests or atomics ([`docs/ISA.md`](../docs/ISA.md)). On a
+whole Go binary, 96% of 113,547 instructions lower to something other than `trap`. The rest
+are almost all instructions Kraken's parser does not read; 43 are read and trap, 40 of them
+vector instructions and 3 `rcr`. Before the vector moves were lowered, 1,346 trapped.
 
 ### Code as lines
 

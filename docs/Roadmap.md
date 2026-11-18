@@ -8,11 +8,11 @@ see [`ISA.md`](ISA.md).
 
 | Piece | State |
 | --- | --- |
-| The `braid` dialect | syntax, a weakest-precondition semantics, a functional reading proved equivalent to it, MLIR and Lean printers |
+| The `braid` dialect | syntax, a weakest-precondition semantics, a functional reading proved equivalent to it, MLIR and Lean printers, an IRDL definition, three proved simplification passes |
 | The logic | heaps and assertions as an Iris BI, atoms, triples with the frame rule built in, symbolic execution rules for every operation, tactics, arrays of words and bytes |
 | RISC-V lowering | every instruction of the model, proved sound |
 | AArch64 lowering | the integer core, and vector registers with their loads, stores, moves, bitwise operations and lane-wise addition, proved sound |
-| x86-64 lowering | the integer core, proved sound |
+| x86-64 lowering | the integer core, and vector registers with their moves at 128, 256 and 512 bits and packed addition, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
 | Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 61 functions across the three instruction sets (17 on RISC-V, 23 on AArch64, 21 on x86-64), each with a proved specification and a theorem about the machine model alone |
@@ -32,12 +32,13 @@ In rough order of what they would buy.
 2. **The exact overflow flag of `imul`, `adc` and `sbb`**. It is a `havoc` today, which is
    sound and loses the `jo` after a checked multiplication.
 3. **AArch64 `CLZ`, `RBIT`, and the atomics**, which are what is left of a Go binary there.
-4. **Vectors on x86-64, and more of them on AArch64.** A vector register is words of `braid`
-   state, and a lane-wise operation on a word is in the dialect (`BinOp.lanes`). AArch64 has
-   its loads, stores, moves, bitwise operations and lane-wise addition lowered and proved.
-   x86-64 code moves data through `xmm` registers even with no floating point in sight (1,343
-   instructions of the Go binary), and that lowering is in progress. Shuffles, table lookups,
-   the cryptographic instructions and floating point are not lowered on either.
+4. **More of the vector instructions.** A vector register is words of `braid` state, and a
+   lane-wise operation on a word is in the dialect (`BinOp.lanes`). AArch64 has its loads,
+   stores, moves, bitwise operations and lane-wise addition lowered and proved; x86-64 has
+   its moves at 128, 256 and 512 bits, the moves to and from general registers, and packed
+   addition. That took the vector traps of a Go binary on x86-64 from 1,343 to 40. Not
+   lowered on either: shuffles, table lookups, shifts by lane, `vzeroupper`, the
+   cryptographic instructions and floating point.
 5. **What the models lack**: `div` and `idiv`, `xchg`, `cqo`, bit tests and atomics on x86-64;
    the RV64 word operations and compressed instructions on RISC-V. These go to the models
    ([`ISA.md`](ISA.md)), not here.
@@ -66,11 +67,14 @@ In rough order of what they would buy.
 
 ### The dialect
 
-1. **A simplifier across blocks.** `Block.dce` removes dead operations within a block and is
-   proved to preserve the runs of a program. Blocks are lowered one instruction at a time,
-   though, and the dead work that matters is a flag one block computes and the next
-   overwrites. A pass with liveness across blocks, proved the same way, would make the MLIR
-   text shorter and the symbolic state smaller.
+1. **A proved driver for the simplifier, and proofs that use it.** Three passes are proved to
+   preserve what the runs of a program reach: fusing a block with the block it jumps to,
+   removing a flag write that the same block overwrites, and removing operations whose
+   results nothing reads. `braid-lower --simplify` applies them to the text it prints, and a
+   function comes out with a third of its blocks and a fifth less text. Two things are
+   missing. The driver that chooses which blocks of a function to fuse is not itself proved,
+   only the passes it calls. And the Lean modules the decompiler writes are not simplified,
+   so proofs still step through one block for each instruction.
 2. **A dialect VeIR knows.** The value operations are defined in IRDL
    (`braid/mlir/braid.irdl.mlir`), so `mlir-opt` checks them, and every example module goes
    through [VeIR](https://github.com/opencompl/veir)'s `veir-opt` and back

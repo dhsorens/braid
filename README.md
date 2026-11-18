@@ -63,7 +63,7 @@ statement.
 | | RISC-V | AArch64 | x86-64 |
 | --- | --- | --- | --- |
 | Model | riscv-zkvm `Rv64` | arm64-semantics | Kraken `X64` |
-| Lowering proved sound | all of RV64IM in the model | the integer core, and a first set of SIMD | the integer core |
+| Lowering proved sound | all of RV64IM in the model | the integer core, and a first set of SIMD | the integer core, and vector moves and packed addition |
 | Share of a Go binary lowered | (Go emits compressed code) | 95% | 95% |
 | Decompiler front end | ELF | ELF | ELF with `objdump`'s disassembly |
 | Verified examples, each down to the machine | 17: C, Rust, Swift, Python | 23: C, Rust, Swift, Go, Python, JavaScript | 21: C, Rust, Swift, Go, Python, JavaScript |

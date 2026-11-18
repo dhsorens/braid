@@ -13,7 +13,10 @@ Braid/
     Mem.lean         loads and stores, byte by byte
     Print.lean       MLIR text, Lean terms, position-independent text
   Pass/
-    Dce.lean         remove dead operations from a block, proved to preserve its meaning
+    Fuse.lean        fuse a block with the block it jumps to
+    DeadFlags.lean   remove flag writes a block overwrites before reading
+    Dce.lean         remove operations whose results are never used
+    Simplify.lean    the three together, for a function
   Logic/
     Heap.lean        heaps: registers, flags, bytes, the program counter
     Assertion.lean   assertions, as an Iris BI
@@ -280,10 +283,11 @@ with no `braid` notion left in its statement. The walkthrough is
 - Types other than `i64`. A narrower value is a word whose high bits are zero or a sign.
 - Environment calls. A system call lowers to `trap`.
 - A parser for the textual form.
-- Passes beyond the first. `Block.dce` removes the operations of a block whose results are
-  never used, and `Program.dce_eventually` proves that a program and its image have the same
-  runs (`braid-lower --simplify` applies it to the text it prints). It works within a block,
-  and most dead work in lowered code is a flag that the next block overwrites: removing that
-  needs liveness across blocks.
+- A proved driver for the passes. `Braid/Pass/` has three passes, each proved to preserve
+  what the runs of a program reach: `Program.fuseAt` joins a block with the block it jumps
+  to, `Block.dse` removes a flag write the block overwrites before reading, and `Block.dce`
+  removes operations whose results are never used. `Func.simplify` applies them to a
+  function, and `braid-lower --simplify` to the text it prints. The choice of which blocks
+  to fuse is not proved, and the Lean modules the decompiler writes are not simplified.
 - Automatic extraction of a recursive Lean function from a loop. `Block.exec` is the
   function of a block; the function of a loop is still written by hand, as `wgcd` is above.
