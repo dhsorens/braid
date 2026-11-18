@@ -94,7 +94,7 @@ to the model's own `Eventually` with no step count in between.
 | `Mem.lean` | the model's byte map as `braid` memory: loads and stores |
 | `Flags.lean` | the model's integer-valued flag conditions, as overflow predicates |
 | `Rel.lean` | `Rel`, and what each piece of a block does to related states |
-| `Ops.lean`, `Shift.lean` | each instruction, lowered soundly |
+| `Ops.lean`, `Shift.lean`, `ShiftCl.lean`, `Carry.lean`, `Mul.lean` | each instruction, lowered soundly |
 | `Sound.lean` | control flow, `lower_sound`, `lowerProgram_sound` |
 | `Layout.lean` | the lines of a binary as an executable of the model |
 | `Logic.lean` | register and flag names, `triple_sound`, `machine_sound` |
@@ -110,16 +110,26 @@ How the machine appears in `braid`:
 - `push`, `pop`, `call` and `ret` are the stack-pointer arithmetic and the load or store they
   stand for. A return address is a word in memory like any other.
 
-Covered: `mov`, `movzx`, `movsx`, `lea`, `push`, `pop`, `setcc`, `cmovcc`, `add`, `sub`,
-`cmp`, `inc`, `dec`, `neg`, `not`, `test`, `and`, `or`, `xor`, the shifts `shl`, `shr`, `sar`
-by an immediate, `imul` with two or three operands, `jcc`, `jmp`, `call`, `ret` (direct,
-through a register, and through memory), `nop`, `cld` and `std`, at every operand width.
+Covered, at every operand width unless said otherwise: `mov`, `movzx`, `movsx`, `lea`,
+`push`, `pop`, `setcc`, `cmovcc`, `add`, `adc`, `sub`, `sbb`, `cmp`, `inc`, `dec`, `neg`,
+`not`, `test`, `and`, `or`, `xor`, the shifts `shl`, `shr`, `sar` by an immediate and by
+`cl`, `imul` with two or three operands, the widening `mul` (32 and 64 bits), `bswap`, `jcc`,
+`jmp`, `call`, `ret` (direct, through a register, and through memory), `nop`, `cld` and
+`std`.
 
-Not yet covered, and lowered to `trap`: `adc`, `sbb`, `adcx`, `adox`, `mul`, `mulx`,
-one-operand `imul`, shifts by `cl`, `shld`, `shrd`, the rotates, `bswap`, the string
-instructions, a 32-bit address size, and the vector instructions. The model itself has no
-`div`, `idiv`, `xchg`, `cqo`, bit tests or atomics ([`docs/ISA.md`](../docs/ISA.md)). On a
-whole Go binary, 94% of 113,547 instructions lower to something other than `trap`.
+Three places where a block says less than the model, each sound: the auxiliary carry flag is
+always undefined; the overflow flag of `adc`, `sbb` and `imul` is undefined; and `mul` at 8
+and 16 bits is not lowered.
+
+A shift by `cl` is the one instruction whose flags depend on a value known only when it
+runs: a count of zero changes no flag. Its block computes each new flag and takes a `select`
+between it and the old one.
+
+Not yet covered, and lowered to `trap`: `adcx`, `adox`, `mulx`, one-operand `imul`, `shld`,
+`shrd`, the rotates, the string instructions, a 32-bit address size, and the vector
+instructions. The model itself has no `div`, `idiv`, `xchg`, `cqo`, bit tests or atomics
+([`docs/ISA.md`](../docs/ISA.md)). On a whole Go binary, 95% of 113,547 instructions lower to
+something other than `trap`; of the 1,358 the lowering traps, 1,343 are vector instructions.
 
 ### Code as lines
 

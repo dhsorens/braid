@@ -114,15 +114,15 @@ Because programs are assembly, a theorem about x86-64 code is about the instruct
 disassembler printed. Checking them against the bytes of the binary is later work
 ([`Trust.md`](Trust.md)).
 
-The lowering covers the moves, `lea`, the stack, the conditional moves and sets, addition,
-subtraction, comparison, the bitwise operations, shifts by an immediate, `imul`, and every
-jump, call and return. It does not yet cover `adc`, `sbb`, `mul`, shifts by `cl`, the double
-shifts and rotates, the string instructions, a 32-bit address size, or the vector
-instructions. On a complete Go binary (113,547 instructions, padding left out), 94% of the
-instructions lower to something other than `trap`; of the rest, two thirds are instructions
-the model's parser does not read (moves through `xmm` registers, `lock`-prefixed and atomic
-instructions, bit tests) and the others are vector instructions, shifts by `cl`, `mul` and
-`sbb`.
+The lowering covers the moves, `lea`, the stack, the conditional moves and sets, addition and
+subtraction with and without carry, comparison, the bitwise operations, shifts by an
+immediate and by `cl`, `imul`, the widening `mul`, `bswap`, and every jump, call and return.
+It does not yet cover the double shifts and rotates, one-operand `imul`, the string
+instructions, a 32-bit address size, or the vector instructions. On a complete Go binary
+(113,547 instructions, padding left out), 95% of the instructions lower to something other
+than `trap`. Of the rest, three quarters are instructions the model's parser does not read
+(moves through `xmm` registers, `lock`-prefixed and atomic instructions, bit tests), and
+nearly all the others are vector instructions.
 
 ### What we would like from it
 

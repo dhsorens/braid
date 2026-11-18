@@ -23,10 +23,10 @@ down to a theorem about the machine model alone (`<function>_correct`).
 | Source | RISC-V | AArch64 | x86-64 |
 | --- | --- | --- | --- |
 | `c/basic.c` | **add3**, **max_u64** | **add3**, max_u64 | **add3**, max_u64 |
-| `c/memory.c` | swap, max2, max3, sum_array | swap, max2 | swap, **max2**, max3, sum_array |
-| `c/bytes.c` | str_len, **count_ones** | lowered | str_len |
-| `rust/basic.rs` | **gcd** | lowered | add3, max_u64, sum_slice |
-| `swift/basic.swift` | swift_add3, swift_min, **swift_gcd** | lowered | swift_add3, swift_min |
+| `c/memory.c` | swap, max2, max3, sum_array | swap, max2, max3, sum_array | swap, **max2**, max3, sum_array |
+| `c/bytes.c` | str_len, **count_ones** | str_len, count_ones | str_len |
+| `rust/basic.rs` | **gcd** | add3, max_u64, **gcd**, sum_slice | add3, max_u64, sum_slice |
+| `swift/basic.swift` | swift_add3, swift_min, **swift_gcd** | swift_add3, swift_min, swift_gcd | swift_add3, swift_min |
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64 |
 | `python/basic.py` | py_add3, py_max_u64, py_gcd | py_add3, py_max_u64 | py_add3, py_max_u64 |
 | `js/basic.js` | | js_add3 | |
@@ -120,4 +120,9 @@ Three habits from the corpus:
 Running real compiler output through the lowerings is how most of their gaps were found. The
 ones still open are in [`docs/Roadmap.md`](../docs/Roadmap.md); the ones that are properties
 of a model are in [`docs/ISA.md`](../docs/ISA.md). `braid-lower --stats` on a whole Go binary
-is the broadest test: 95% of its instructions lower on AArch64, and 94% on x86-64.
+is the broadest test: 95% of its instructions lower on AArch64, and 95% on x86-64.
+
+What is not verified, and why: `gcd` on x86-64, because the machine model has no `div`;
+`sum_to`, which every compiler turns into a closed form whose correctness is a fact of
+arithmetic not yet proved here; `fill`; and JavaScript on RISC-V and x86-64, because V8
+emits code for the machine it runs on.

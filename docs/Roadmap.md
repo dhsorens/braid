@@ -12,10 +12,10 @@ see [`ISA.md`](ISA.md).
 | The logic | heaps and assertions as an Iris BI, atoms, triples with the frame rule built in, symbolic execution rules for every operation, tactics, arrays of words and bytes |
 | RISC-V lowering | every instruction of the model, proved sound |
 | AArch64 lowering | the integer core, proved sound |
-| x86-64 lowering | the integer core without multi-word arithmetic, proved sound |
+| x86-64 lowering | the integer core, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | RISC-V |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 41 functions with proved specifications across the three instruction sets, 8 of them down to the machine model, at least one on each |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 53 functions with proved specifications across the three instruction sets, 9 of them down to the machine model, at least one on each |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.
@@ -26,13 +26,11 @@ In rough order of what they would buy.
 
 ### Coverage
 
-1. **x86-64 multi-word arithmetic and shifts by `cl`**: `adc`, `sbb`, `mul`, one-operand
-   `imul`, `shld`, `shrd`, and the shifts whose count is in `cl`. These are most of the 1.6%
-   of a Go binary that the lowering turns into `trap`, and `sum_to` in `basic.c` needs `mul`
-   and `shld`. The shifts by `cl` are the first instructions whose flags depend on a run-time
-   value; they lower with `select`.
-2. **The exact overflow flag of `imul`**. It is a `havoc` today, which is sound and loses the
-   `jo` after a checked multiplication.
+1. **What is left of the x86-64 integer core**: the rotates, `shld` and `shrd`, one-operand
+   `imul`, and `mul` at 8 and 16 bits. Together they are 15 instructions of a Go binary, but
+   `sum_to` in `basic.c` needs `shld`.
+2. **The exact overflow flag of `imul`, `adc` and `sbb`**. It is a `havoc` today, which is
+   sound and loses the `jo` after a checked multiplication.
 3. **AArch64 `CLZ`, `RBIT`, and the atomics**, which are what is left of a Go binary there.
 4. **Vectors.** x86-64 code moves data through `xmm` registers even with no floating point in
    sight (1,343 instructions of the Go binary). A 128-bit register is two words of `braid`
@@ -81,6 +79,7 @@ In rough order of what they would buy.
    64-bit division, strings, and an allocator.
 2. **More languages and more of each**: C++, Zig and OCaml; JavaScript on x86-64 and with
    heap objects; Python with arrays.
-3. **Proofs on AArch64 for the examples that so far are only lowered there.**
+3. **The closed forms.** At `-O1` every compiler turns the loop of `sum_to` into a product
+   and a shift. Its specification is a fact of arithmetic the corpus has not proved yet.
 4. **Continuity over real history**: proof lines changed per source line changed, over the
    edits of a real project ([`Continuity.md`](Continuity.md)).
