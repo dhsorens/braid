@@ -10,6 +10,7 @@
   * `Regs`, `Flags`: the names of the registers and flags
   * `lowerWords`: the blocks of a list of instruction words
   * `abs`: the `braid` state of a machine state
+  * `Regs.vlo`, `Regs.vhi`: the two registers of a vector register
 
   ## Main results
 
@@ -30,7 +31,9 @@ namespace Lowering.Arm
 
 open Braid
 
-/-! The names of the registers and flags, as `braid` registers and flags. -/
+/-! The names of the registers and flags, as `braid` registers and flags. The vector
+register `V k` is two registers: `vlo k` holds its bits 0 to 63 and `vhi k` its bits 64 to
+127. -/
 
 namespace Regs
 
@@ -68,6 +71,12 @@ abbrev x30 : Braid.Reg := 30
 abbrev sp : Braid.Reg := 31
 abbrev lr : Braid.Reg := 30
 abbrev fp : Braid.Reg := 29
+
+/-- The register that holds bits 0 to 63 of the vector register `V k`. -/
+abbrev vlo (k : Nat) : Braid.Reg := 64 + 2 * k
+
+/-- The register that holds bits 64 to 127 of the vector register `V k`. -/
+abbrev vhi (k : Nat) : Braid.Reg := 65 + 2 * k
 
 end Regs
 
@@ -159,8 +168,15 @@ theorem triple_sound {prog : Arm64.Program} {base : Word} {ws : List (BitVec 32)
 
 /-! ## Theorems about the machine alone -/
 
-/-- The value of the `braid` register `n` in a machine state: `Xn` below 31, and `SP` at
-31. -/
+/-- The value of the `braid` register `n` from 64 to 127 in a machine state: a half of the
+vector register `V ((n - 64) / 2)`, the low one if `n` is even and the high one if it is
+odd. -/
+def vregOf (s : Arm64.State) (n : Nat) : Word :=
+  if n % 2 = 0 then (s.vregs.read (BitVec.ofNat 5 ((n - 64) / 2))).truncate 64
+  else (s.vregs.read (BitVec.ofNat 5 ((n - 64) / 2))).extractLsb' 64 64
+
+/-- The value of the `braid` register `n` in a machine state: `Xn` below 31, `SP` at 31, and
+the halves of the vector registers from 64 to 127. -/
 def regOf (s : Arm64.State) : Nat → Word
   | 0 => s.regs.read 0#5
   | 1 => s.regs.read 1#5
@@ -194,7 +210,7 @@ def regOf (s : Arm64.State) : Nat → Word
   | 29 => s.regs.read 29#5
   | 30 => s.regs.read 30#5
   | 31 => s.sp
-  | _ => 0#64
+  | n => if 64 ≤ n ∧ n < 128 then vregOf s n else 0#64
 
 theorem regOf_toNat (s : Arm64.State) {i : BitVec 5} (hi : i ≠ 31#5) :
     regOf s i.toNat = s.regs.read i := by
@@ -235,8 +251,36 @@ theorem regOf_toNat (s : Arm64.State) {i : BitVec 5} (hi : i ≠ 31#5) :
   have hlt : i.toNat < 31 := by have := i.isLt; have := toNat_ne_31 hi; omega
   rw [key _ hlt, BitVec.ofNat_toNat, BitVec.setWidth_eq]
 
-/-- The `braid` state of a machine state: its registers, stack pointer, flags and program
-counter, and a cell at each byte the machine may load, writable where it may store. -/
+theorem regOf_add_32 (s : Arm64.State) (n : Nat) :
+    regOf s (n + 32) = if 64 ≤ n + 32 ∧ n + 32 < 128 then vregOf s (n + 32) else 0#64 := rfl
+
+theorem regOf_vlo (s : Arm64.State) (k : BitVec 5) :
+    regOf s (Regs.vlo k.toNat) = (s.vregs.read k).truncate 64 := by
+  have hk := k.isLt
+  have e : Regs.vlo k.toNat = 32 + 2 * k.toNat + 32 := by
+    show 64 + 2 * k.toNat = _
+    omega
+  have h1 : 64 ≤ 32 + 2 * k.toNat + 32 ∧ 32 + 2 * k.toNat + 32 < 128 := by omega
+  have h2 : (32 + 2 * k.toNat + 32) % 2 = 0 := by omega
+  have h3 : (32 + 2 * k.toNat + 32 - 64) / 2 = k.toNat := by omega
+  rw [e, regOf_add_32]
+  simp only [h1, and_self, ↓reduceIte, vregOf, h2, h3, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+theorem regOf_vhi (s : Arm64.State) (k : BitVec 5) :
+    regOf s (Regs.vhi k.toNat) = (s.vregs.read k).extractLsb' 64 64 := by
+  have hk := k.isLt
+  have e : Regs.vhi k.toNat = 33 + 2 * k.toNat + 32 := by
+    show 65 + 2 * k.toNat = _
+    omega
+  have h1 : 64 ≤ 33 + 2 * k.toNat + 32 ∧ 33 + 2 * k.toNat + 32 < 128 := by omega
+  have h2 : ¬ (33 + 2 * k.toNat + 32) % 2 = 0 := by omega
+  have h3 : (33 + 2 * k.toNat + 32 - 64) / 2 = k.toNat := by omega
+  rw [e, regOf_add_32]
+  simp only [h1, and_self, ↓reduceIte, vregOf, h2, h3, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- The `braid` state of a machine state: its registers, vector registers, stack pointer,
+flags and program counter, and a cell at each byte the machine may load, writable where it
+may store. -/
 def abs (s : Arm64.State) : State where
   regs := regOf s
   flags f :=
@@ -259,7 +303,8 @@ theorem abs_mem (s : Arm64.State) (a : Word) :
 
 /-- A running machine state is related to its `braid` state. -/
 theorem rel_abs {s : Arm64.State} (h : s.status = .Running) : Rel s (abs s) := by
-  refine ⟨fun i hi => ?_, rfl, rfl, rfl, rfl, rfl, rfl, h, fun _ => rfl⟩
+  refine ⟨fun i hi => ?_, rfl, rfl, rfl, rfl, rfl, rfl, h, fun _ => rfl, regOf_vlo s,
+    regOf_vhi s⟩
   exact regOf_toNat s hi
 
 /-- A memory atom is true of the state of a machine when the machine may load each of its
@@ -282,6 +327,21 @@ theorem Rel.readReg {s : Arm64.State} {σ : State} (h : Rel s σ) {i : BitVec 5}
 theorem Rel.readReg64 {s : Arm64.State} {σ : State} (h : Rel s σ) {i : BitVec 5}
     (hi : i ≠ 31#5) : σ.regs i.toNat = s.readReg64 (.gpr i) := by
   simp [Arm64.State.readReg64, hi, h.regs i hi]
+
+/-- The low half of a vector register, read off a related state. -/
+theorem Rel.readVRegLo {s : Arm64.State} {σ : State} (h : Rel s σ) (k : BitVec 5) :
+    σ.regs (Regs.vlo k.toNat) = (s.vregs.read k).truncate 64 :=
+  h.vlo k
+
+/-- The high half of a vector register, read off a related state. -/
+theorem Rel.readVRegHi {s : Arm64.State} {σ : State} (h : Rel s σ) (k : BitVec 5) :
+    σ.regs (Regs.vhi k.toNat) = (s.vregs.read k).extractLsb' 64 64 :=
+  h.vhi k
+
+/-- A vector register, read off a related state: its two halves. -/
+theorem Rel.readVReg {s : Arm64.State} {σ : State} (h : Rel s σ) (k : BitVec 5) :
+    s.vregs.read k = σ.regs (Regs.vhi k.toNat) ++ σ.regs (Regs.vlo k.toNat) := by
+  rw [h.readVRegLo, h.readVRegHi, halves_append]
 
 /-- A cell of a related state is a byte the machine may load, and holds the machine's
 byte. -/

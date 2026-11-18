@@ -8,10 +8,17 @@
   written: a read is the constant zero and a write is dropped. The flags `N`, `Z`, `C`, `V`
   are `braid` flags 0 to 3. A 32-bit operation works on values zero-extended to 64 bits.
 
+  A vector register is two `braid` registers: `V k` has its bits 0 to 63 in register
+  `64 + 2 * k` and its bits 64 to 127 in register `65 + 2 * k`. A vector instruction works
+  on the two halves one after the other, and an operation on lanes is `BinOp.lanes` on each
+  half. Covered: loads and stores of vector registers, moves between general and vector
+  registers, the bitwise operations and the addition and subtraction of lanes, and the
+  constants of `MOVI`.
+
   Whenever the model would not simply run the instruction (a permission fault, a stack
-  pointer that is not aligned, a supervisor call, a breakpoint), the block faults. SIMD and
-  floating point, atomics and exclusives, system registers and system calls, `CRC32`, and
-  `RBIT`, `CLZ` and `CLS` are outside the lowering and become a `trap`.
+  pointer that is not aligned, a supervisor call, a breakpoint), the block faults. Floating
+  point and the rest of SIMD, atomics and exclusives, system registers and system calls,
+  `CRC32`, and `RBIT`, `CLZ` and `CLS` are outside the lowering and become a `trap`.
 
   The SSA values of a block are numbered by the group of operations that defines them, so
   the numbers are neither dense nor in order of definition.
@@ -19,6 +26,7 @@
   ## Main definitions
 
   * `lower`: the block of one instruction
+  * `vregLo`, `vregHi`: the two `braid` registers of a vector register
   * `lowerProgram`: the program of a code image
   * `arch`: the names of the registers and flags
 -/
@@ -34,12 +42,17 @@ namespace Lowering.Arm
 
 open Braid
 open Arm64 (Instr RegWidth MemWidth CondCode ShiftType ExtendType AddrMode AddSubOp LogicalOp
-  MoveWideOp BitfieldOp CondSelectOp DataProc1Op DataProc2Op DataProc3Op)
+  MoveWideOp BitfieldOp CondSelectOp DataProc1Op DataProc2Op DataProc3Op SimdMemSize)
 
-/-- How AArch64 registers and flags are named in the textual form. -/
+/-- How AArch64 registers and flags are named in the textual form. The two halves of the
+vector register `V k` are `v<k>.lo` and `v<k>.hi`. -/
 def arch : Arch where
   name := "aarch64"
-  regName r := if r = 31 then "sp" else s!"x{r}"
+  regName r :=
+    if r = 31 then "sp"
+    else if 64 ≤ r ∧ r < 128 then
+      s!"v{(r - 64) / 2}.{if r % 2 = 0 then "lo" else "hi"}"
+    else s!"x{r}"
   flagName f :=
     match f with
     | 0 => "n" | 1 => "z" | 2 => "c" | 3 => "v"
@@ -476,6 +489,212 @@ def ccmpOps (w : RegWidth) (isSub : Bool) (nzcv : BitVec 4) : List Op :=
       .select 25 0 10 21, .select 26 0 11 22, .select 27 0 12 23, .select 28 0 13 24,
       .setf 0 25, .setf 1 26, .setf 2 27, .setf 3 28]
 
+/-! ## Vector registers -/
+
+/-- The `braid` register that holds bits 0 to 63 of the vector register `V k`. -/
+def vregLo (k : Arm64.VReg) : Reg := 64 + 2 * k.toNat
+
+/-- The `braid` register that holds bits 64 to 127 of the vector register `V k`. -/
+def vregHi (k : Arm64.VReg) : Reg := 65 + 2 * k.toNat
+
+/-- Read a vector register: its low half into `d` and its high half into `d + 1`. -/
+def vget (d : Var) (k : Arm64.VReg) : List Op := [.get d (vregLo k), .get (d + 1) (vregHi k)]
+
+/-- Write a vector register: its low half from `lo` and its high half from `hi`. -/
+def vset (k : Arm64.VReg) (lo hi : Var) : List Op := [.set (vregLo k) lo, .set (vregHi k) hi]
+
+/-- The width of the one access that loads or stores a vector register at a size of at most
+eight bytes, and of each of the two accesses at sixteen. -/
+def simdMemW : SimdMemSize → MemWidth
+  | .B8 => .B8
+  | .H16 => .H16
+  | .S32 => .W32
+  | .D64 => .X64
+  | .Q128 => .X64
+
+/-- The number of bytes of a vector register a load or store of size `sz` covers. -/
+def simdBytes : SimdMemSize → Word
+  | .B8 => 1#64
+  | .H16 => 2#64
+  | .S32 => 4#64
+  | .D64 => 8#64
+  | .Q128 => 16#64
+
+/-- A load of size `sz` from the address in `a`, as a vector register gets it: the low half
+in `d` and the high half in `d + 1`. A load of less than sixteen bytes clears the rest of the
+register. Uses `d + 2` and `d + 3`. -/
+def vloadOps (d a : Var) : SimdMemSize → List Op
+  | .B8 => [.load d .w8 a, .const (d + 1) 0]
+  | .H16 => [.load d .w16 a, .const (d + 1) 0]
+  | .S32 => [.load d .w32 a, .const (d + 1) 0]
+  | .D64 => [.load d .w64 a, .const (d + 1) 0]
+  | .Q128 =>
+    [.load d .w64 a, .const (d + 2) 8, .bin (d + 3) .add a (d + 2), .load (d + 1) .w64 (d + 3)]
+
+/-- A store of size `sz` to the address in `a`, of the vector register whose halves are in
+`lo` and `hi`. Uses `t` and `t + 1`. -/
+def vstoreOps (a lo hi t : Var) : SimdMemSize → List Op
+  | .B8 => [.store .w8 a lo]
+  | .H16 => [.store .w16 a lo]
+  | .S32 => [.store .w32 a lo]
+  | .D64 => [.store .w64 a lo]
+  | .Q128 => [.store .w64 a lo, .const t 8, .bin (t + 1) .add a t, .store .w64 (t + 1) hi]
+
+/-- A load of a vector register: `LDR` and `LDUR` of `B`, `H`, `S`, `D` or `Q`. -/
+def lowerLdrSimd (pc : Word) (sz : SimdMemSize) (vt : Arm64.VReg) (addr : AddrMode) : Block :=
+  ⟨addrOps 0 addr ++ vloadOps 30 0 sz ++ vset vt 30 31, .jump (pc + 4)⟩
+
+/-- A store of a vector register: `STR` and `STUR` of `B`, `H`, `S`, `D` or `Q`. -/
+def lowerStrSimd (pc : Word) (sz : SimdMemSize) (vt : Arm64.VReg) (addr : AddrMode) : Block :=
+  ⟨vget 0 vt ++ addrOps 2 addr ++ vstoreOps 2 0 1 30 sz, .jump (pc + 4)⟩
+
+/-- A load of a pair of vector registers: `LDP` of `S`, `D` or `Q`. -/
+def lowerLdpSimd (pc : Word) (sz : SimdMemSize) (vt1 vt2 : Arm64.VReg) (addr : AddrMode) :
+    Block :=
+  ⟨addrOps 0 addr ++ [.const 21 (simdBytes sz), .bin 22 .add 0 21] ++ vloadOps 23 0 sz ++
+      vloadOps 27 22 sz ++ vset vt1 23 24 ++ vset vt2 27 28,
+    .jump (pc + 4)⟩
+
+/-- A store of a pair of vector registers: `STP` of `S`, `D` or `Q`. -/
+def lowerStpSimd (pc : Word) (sz : SimdMemSize) (vt1 vt2 : Arm64.VReg) (addr : AddrMode) :
+    Block :=
+  ⟨vget 0 vt1 ++ vget 2 vt2 ++ addrOps 4 addr ++ [.const 30 (simdBytes sz), .bin 31 .add 4 30] ++
+      vstoreOps 4 0 1 32 sz ++ vstoreOps 31 2 3 34 sz,
+    .jump (pc + 4)⟩
+
+/-- A move between a general register and a vector register, the `FMOV` that converts
+nothing: into `W` or `X` from the low 32 or 64 bits or from the high half, and from `W` or
+`X` into the low bits, clearing the rest, or into the high half, keeping the low one. `none`
+for the conversions between integers and floating point. -/
+def fmovOps (sf : Bool) (ftype rmode : BitVec 2) (opcode : BitVec 3) (rn rd : Arm64.VReg) :
+    Option (List Op) :=
+  if opcode = 6#3 then
+    if sf = false ∧ ftype = 0#2 ∧ rmode = 0#2 then
+      some ([.get 0 (vregLo rn), .un 1 (.zext 32) 0] ++ rset (Arm64.Reg.fromZRBits rd) 1)
+    else if sf = true ∧ ftype = 1#2 ∧ rmode = 0#2 then
+      some (.get 0 (vregLo rn) :: rset (Arm64.Reg.fromZRBits rd) 0)
+    else if sf = true ∧ ftype = 2#2 ∧ rmode = 1#2 then
+      some (.get 0 (vregHi rn) :: rset (Arm64.Reg.fromZRBits rd) 0)
+    else none
+  else if opcode = 7#3 then
+    if sf = false ∧ ftype = 0#2 ∧ rmode = 0#2 then
+      some ([rget 0 (Arm64.Reg.fromZRBits rn), .un 1 (.zext 32) 0, .const 2 0] ++ vset rd 1 2)
+    else if sf = true ∧ ftype = 1#2 ∧ rmode = 0#2 then
+      some ([rget 0 (Arm64.Reg.fromZRBits rn), .const 1 0] ++ vset rd 0 1)
+    else if sf = true ∧ ftype = 2#2 ∧ rmode = 1#2 then
+      some [rget 0 (Arm64.Reg.fromZRBits rn), .set (vregHi rd) 0]
+    else none
+  else none
+
+/-- A move of the low 32 or 64 bits of a vector register into another, clearing the rest:
+`FMOV Sd, Sn` and `FMOV Dd, Dn`. `none` for the arithmetic on floating point. -/
+def fpMovOps (ftype : BitVec 2) (opcode : BitVec 6) (rn rd : Arm64.VReg) : Option (List Op) :=
+  if opcode = 0#6 then
+    if ftype = 0#2 then
+      some ([.get 0 (vregLo rn), .un 1 (.zext 32) 0, .const 2 0] ++ vset rd 1 2)
+    else if ftype = 1#2 then some ([.get 0 (vregLo rn), .const 1 0] ++ vset rd 0 1)
+    else none
+  else none
+
+/-- An operation on two vector registers that works the same way on each half: a bitwise
+operation, `BSL`, which also reads the destination, or an addition or subtraction of lanes
+of `n` bits. -/
+inductive VecOp where
+  | and | bic | orr | orn | eor | bsl
+  | add (n : Nat)
+  | sub (n : Nat)
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The value of an operation on one half: of `x` and `y`, and the destination `z`. -/
+def VecOp.eval : VecOp → Word → Word → Word → Word
+  | .and, x, y, _ => x &&& y
+  | .bic, x, y, _ => x &&& ~~~y
+  | .orr, x, y, _ => x ||| y
+  | .orn, x, y, _ => x ||| ~~~y
+  | .eor, x, y, _ => x ^^^ y
+  | .bsl, x, y, z => ((x ^^^ y) &&& z) ^^^ y
+  | .add n, x, y, _ => (BinOp.lanes n .add).eval x y
+  | .sub n, x, y, _ => (BinOp.lanes n .sub).eval x y
+
+/-- The operations of one half, of `x`, `y` and the destination `z`, into `d`. Uses `d + 1`
+and `d + 2`. -/
+def VecOp.ops : VecOp → (d x y z : Var) → List Op
+  | .and, d, x, y, _ => [.bin d .and x y]
+  | .bic, d, x, y, _ => [.un (d + 1) .not y, .bin d .and x (d + 1)]
+  | .orr, d, x, y, _ => [.bin d .or x y]
+  | .orn, d, x, y, _ => [.un (d + 1) .not y, .bin d .or x (d + 1)]
+  | .eor, d, x, y, _ => [.bin d .xor x y]
+  | .bsl, d, x, y, z => [.bin (d + 1) .xor x y, .bin (d + 2) .and (d + 1) z, .bin d .xor (d + 2) y]
+  | .add n, d, x, y, _ => [.bin d (.lanes n .add) x y]
+  | .sub n, d, x, y, _ => [.bin d (.lanes n .sub) x y]
+
+/-- The operation of a `simdThreeSame` instruction, where it is one the lowering covers:
+`AND`, `BIC`, `ORR`, `ORN`, `EOR`, `BSL`, and `ADD` and `SUB` of lanes. -/
+def vecOp (q u : Bool) (size : BitVec 2) (opcode : BitVec 5) : Option VecOp :=
+  if opcode = 3#5 then
+    if u = false then
+      if size = 0#2 then some .and else if size = 1#2 then some .bic
+      else if size = 2#2 then some .orr else some .orn
+    else if size = 0#2 then some .eor else if size = 1#2 then some .bsl else none
+  else if size = 3#2 ∧ q = false then none
+  else if opcode = 16#5 then
+    some (if u then .sub (8 <<< size.toNat) else .add (8 <<< size.toNat))
+  else none
+
+/-- An operation on two vector registers, half by half. With `q` clear it works on the low
+halves only and clears the high half of the destination. -/
+def vecOps (op : VecOp) (q : Bool) (rm rn rd : Arm64.VReg) : List Op :=
+  vget 0 rn ++ vget 2 rm ++ (if op = .bsl then vget 4 rd else []) ++ op.ops 10 0 2 4 ++
+    (if q then op.ops 20 1 3 5 else [.const 20 0#64]) ++ vset rd 10 20
+
+/-- The 64 bits that a `MOVI` with the 8-bit constant `imm8` repeats: a byte in every byte,
+a byte or all ones for each bit, or a shifted constant in every 32 or 16 bits. `none` for
+the other modified constants. -/
+def moviImm (op : Bool) (cmode : BitVec 4) (imm8 : BitVec 8) : Option Word :=
+  if op = false ∧ cmode = 14#4 then
+    some (imm8 ++ imm8 ++ imm8 ++ imm8 ++ imm8 ++ imm8 ++ imm8 ++ imm8)
+  else if op = true ∧ cmode = 14#4 then
+    let b (i : Nat) : BitVec 8 := if imm8.getLsbD i then 0xff#8 else 0x00#8
+    some (b 7 ++ b 6 ++ b 5 ++ b 4 ++ b 3 ++ b 2 ++ b 1 ++ b 0)
+  else if op = false ∧ cmode &&& 9#4 = 0#4 then
+    let w32 : BitVec 32 := (imm8.zeroExtend 32) <<< ((cmode.extractLsb' 1 2).toNat * 8)
+    some (w32 ++ w32)
+  else if op = false ∧ cmode &&& 13#4 = 8#4 then
+    let h16 : BitVec 16 := (imm8.zeroExtend 16) <<< ((cmode.extractLsb' 1 1).toNat * 8)
+    some (h16 ++ h16 ++ h16 ++ h16)
+  else none
+
+/-- An `FMOV` of a floating-point constant into the low 32 or 64 bits of a vector register,
+clearing the rest. The constant is the model's expansion of `imm8`. `none` for half
+precision. -/
+def fpImmOps (ftype : BitVec 2) (imm8 : BitVec 8) (rd : Arm64.VReg) : Option (List Op) :=
+  if ftype = 0#2 then
+    some ([.const 0 ((Arm64.vfpExpandImm32 imm8).zeroExtend 64), .const 1 0#64] ++ vset rd 0 1)
+  else if ftype = 1#2 then
+    some ([.const 0 (Arm64.vfpExpandImm64 imm8), .const 1 0#64] ++ vset rd 0 1)
+  else none
+
+/-- `FCSEL`: the low 32 or 64 bits of `rn` if the condition holds and of `rm` otherwise,
+with the rest of the destination clear. `none` for half precision. -/
+def fcselOps (ftype : BitVec 2) (rm : Arm64.VReg) (cond : BitVec 4) (rn rd : Arm64.VReg) :
+    Option (List Op) :=
+  if ftype = 0#2 then
+    some (condOps 0 (CondCode.ofBits cond) ++ [.get 5 (vregLo rn), .get 6 (vregLo rm),
+      .select 7 0 5 6, .un 8 (.zext 32) 7, .const 9 0#64] ++ vset rd 8 9)
+  else if ftype = 1#2 then
+    some (condOps 0 (CondCode.ofBits cond) ++ [.get 5 (vregLo rn), .get 6 (vregLo rm),
+      .select 7 0 5 6, .const 9 0#64] ++ vset rd 7 9)
+  else none
+
+/-- `NOT` (`MVN`) of a vector register, on both halves or on the low one with the high one
+clear. `none` for the other `simdTwoRegMisc` instructions. -/
+def notOps (q u : Bool) (size : BitVec 2) (opcode : BitVec 5) (rn rd : Arm64.VReg) :
+    Option (List Op) :=
+  if u = true ∧ opcode = 5#5 ∧ size = 0#2 then
+    some ([.get 0 (vregLo rn), .un 1 .not 0] ++
+      (if q then [.get 2 (vregHi rn), .un 3 .not 2] else [.const 3 0#64]) ++ vset rd 1 3)
+  else none
+
 /-- The block of the instruction `i` at address `pc`. -/
 def lower (pc : Word) (i : Instr) : Block :=
   match i with
@@ -580,36 +799,60 @@ def lower (pc : Word) (i : Instr) : Block :=
   | .atomicRmw .. => ⟨[], .trap "atomicRmw"⟩
   | .ldapr .. => ⟨[], .trap "ldapr"⟩
   | .ldapurStlur .. => ⟨[], .trap "ldapurStlur"⟩
-  | .ldrSimd .. => ⟨[], .trap "ldrSimd"⟩
-  | .strSimd .. => ⟨[], .trap "strSimd"⟩
+  | .ldrSimd sz vt addr => lowerLdrSimd pc sz vt addr
+  | .strSimd sz vt addr => lowerStrSimd pc sz vt addr
   | .ldrSimdLit .. => ⟨[], .trap "ldrSimdLit"⟩
-  | .ldpSimd .. => ⟨[], .trap "ldpSimd"⟩
-  | .stpSimd .. => ⟨[], .trap "stpSimd"⟩
-  | .ldnpSimd .. => ⟨[], .trap "ldnpSimd"⟩
-  | .stnpSimd .. => ⟨[], .trap "stnpSimd"⟩
+  | .ldpSimd sz vt1 vt2 addr => lowerLdpSimd pc sz vt1 vt2 addr
+  | .stpSimd sz vt1 vt2 addr => lowerStpSimd pc sz vt1 vt2 addr
+  | .ldnpSimd sz vt1 vt2 rn offset => lowerLdpSimd pc sz vt1 vt2 (.Offset rn offset)
+  | .stnpSimd sz vt1 vt2 rn offset => lowerStpSimd pc sz vt1 vt2 (.Offset rn offset)
   | .st1SinglePost .. => ⟨[], .trap "st1SinglePost"⟩
   | .simdLdSt1Single .. => ⟨[], .trap "simdLdSt1Single"⟩
   | .simdLdSt1Multi .. => ⟨[], .trap "simdLdSt1Multi"⟩
   | .simdLdStMulti .. => ⟨[], .trap "simdLdStMulti"⟩
   | .simdLd1r .. => ⟨[], .trap "simdLd1r"⟩
-  | .fmovGprVec .. => ⟨[], .trap "fmovGprVec"⟩
-  | .fpDataProc1 .. => ⟨[], .trap "fpDataProc1"⟩
+  | .fmovGprVec sf ftype rmode opcode rn rd =>
+    match fmovOps sf ftype rmode opcode rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "fmovGprVec"⟩
+  | .fpDataProc1 ftype opcode rn rd =>
+    match fpMovOps ftype opcode rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "fpDataProc1"⟩
   | .fpDataProc2 .. => ⟨[], .trap "fpDataProc2"⟩
   | .fpCompare .. => ⟨[], .trap "fpCompare"⟩
-  | .fpImm .. => ⟨[], .trap "fpImm"⟩
+  | .fpImm ftype imm8 rd =>
+    match fpImmOps ftype imm8 rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "fpImm"⟩
   | .fpCondCompare .. => ⟨[], .trap "fpCondCompare"⟩
-  | .fpCondSelect .. => ⟨[], .trap "fpCondSelect"⟩
+  | .fpCondSelect ftype rm cond rn rd =>
+    match fcselOps ftype rm cond rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "fpCondSelect"⟩
   | .fpDataProc3 .. => ⟨[], .trap "fpDataProc3"⟩
   | .fpFixedConv .. => ⟨[], .trap "fpFixedConv"⟩
-  | .simdImmShift .. => ⟨[], .trap "simdImmShift"⟩
+  | .simdImmShift q op immh immb opc rn rd =>
+    match if immh = 0#4 ∧ opc.getLsbD 0 = false then
+        moviImm op (opc.extractLsb' 1 4) (immb ++ rn) else none with
+    | some d64 => ⟨[.const 0 d64, .const 1 (if q then d64 else 0#64)] ++ vset rd 0 1, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "simdImmShift"⟩
   | .simdInsDup .. => ⟨[], .trap "simdInsDup"⟩
-  | .simdThreeSame .. => ⟨[], .trap "simdThreeSame"⟩
-  | .simdTwoRegMisc .. => ⟨[], .trap "simdTwoRegMisc"⟩
+  | .simdThreeSame q u size rm opcode rn rd =>
+    match vecOp q u size opcode with
+    | some op => ⟨vecOps op q rm rn rd, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "simdThreeSame"⟩
+  | .simdTwoRegMisc q u size opcode rn rd =>
+    match notOps q u size opcode rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "simdTwoRegMisc"⟩
   | .simdAcrossLanes .. => ⟨[], .trap "simdAcrossLanes"⟩
   | .simdPermute .. => ⟨[], .trap "simdPermute"⟩
   | .simdExt .. => ⟨[], .trap "simdExt"⟩
   | .simdTbl .. => ⟨[], .trap "simdTbl"⟩
-  | .simdAddpScalar .. => ⟨[], .trap "simdAddpScalar"⟩
+  | .simdAddpScalar rn rd =>
+    ⟨[.get 0 (vregLo rn), .get 1 (vregHi rn), .bin 2 .add 0 1, .const 3 0#64] ++ vset rd 2 3,
+      .jump (pc + 4)⟩
   | .simdDupScalar .. => ⟨[], .trap "simdDupScalar"⟩
   | .simdPmull .. => ⟨[], .trap "simdPmull"⟩
   | .simdThreeDiff .. => ⟨[], .trap "simdThreeDiff"⟩
