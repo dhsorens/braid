@@ -338,7 +338,7 @@ def lower [Labels] (p : Std.Rco Int64) : Instr → Block
     match lowerOp p op with
     | some (ops, t) => ⟨ops, t⟩
     | none => ⟨[], .trap (opName op)⟩
-  | .regular _ _ op => ⟨[], .trap (opName op ++ " (32-bit address)")⟩
+  | .regular .. => ⟨[], .trap "32-bit address size"⟩
   | .avx .. => ⟨[], .trap "vector instruction"⟩
 
 /-- The block of the directives at one address: labels, which take no room, and then one

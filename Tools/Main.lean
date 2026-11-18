@@ -9,6 +9,7 @@
 
 import Tools.RiscV
 import Tools.Arm
+import Tools.X86
 
 open Tools
 
@@ -18,20 +19,22 @@ structure Options where
   mlir : Option String := none
   lean : Option String := none
   norm : Option String := none
+  disasm : Option String := none
   module : String := "Image"
   list : Bool := false
   stats : Bool := false
 
 def usage : String :=
   "usage: braid-lower <binary> [--list] [--stats] [--fn <name>]... [--mlir <file>] [--lean <file>]\n" ++
-  "                   [--norm <file>] [--module <Name>]\n" ++
+  "                   [--norm <file>] [--module <Name>] [--disasm <file>]\n" ++
   "  --list           print the functions of the binary and stop\n" ++
   "  --stats          print how much of the code the lowering covers\n" ++
   "  --fn <name>      lower this function (repeatable; default: every function)\n" ++
   "  --mlir <file>    write the lowered functions in MLIR's generic syntax\n" ++
   "  --lean <file>    write the lowered functions as a Lean module\n" ++
   "  --norm <file>    write the lowered functions as position-independent text, for diffing\n" ++
-  "  --module <Name>  the namespace of the Lean module (default: Image)\n"
+  "  --module <Name>  the namespace of the Lean module (default: Image)\n" ++
+  "  --disasm <file>  x86-64 only: the output of `objdump -d` on the binary\n"
 
 def parseArgs : List String → Options → Except String Options
   | [], o => if o.input.isEmpty then .error usage else .ok o
@@ -42,6 +45,7 @@ def parseArgs : List String → Options → Except String Options
   | "--lean" :: f :: rest, o => parseArgs rest { o with lean := some f }
   | "--norm" :: f :: rest, o => parseArgs rest { o with norm := some f }
   | "--module" :: m :: rest, o => parseArgs rest { o with module := m }
+  | "--disasm" :: f :: rest, o => parseArgs rest { o with disasm := some f }
   | a :: rest, o =>
     if a.startsWith "--" then .error s!"unknown option {a}\n{usage}"
     else parseArgs rest { o with input := a }
@@ -121,6 +125,34 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile out <|
         leanHeader opts.module ["Lowering.Arm.Logic"] [] ++
         "\n".intercalate (decoded.map fun (f, (ws, _)) => Arm.leanSource f.name f.addr ws) ++
+        s!"\nend {opts.module}\n"
+    return 0
+  | .x86_64 =>
+    let some dis := opts.disasm
+      | IO.eprintln "braid-lower: an x86-64 binary needs --disasm <file>, the output of `objdump -d`"
+        return 1
+    let allFns := X86Asm.parseObjdump (← IO.FS.readFile dis)
+    let chosen := if opts.fns.isEmpty then allFns else
+      opts.fns.filterMap fun n => allFns.find? (·.name == n)
+    for n in opts.fns do
+      unless allFns.any (·.name == n) do
+        IO.eprintln s!"warning: no function named {n} in the disassembly"
+    let image := X86.image chosen
+    let lines := image.flatMap (·.2)
+    unless opts.stats do
+      for (f, _) in image do
+        for (a, t) in X86.unread f do
+          IO.eprintln s!"warning: {f.name}: 0x{Braid.hex a}: the model does not read `{t}`"
+    let funcs := image.map fun (f, ls) => X86.toFunc lines f.name f.addr ls
+    if opts.stats then
+      printStats funcs (image.foldl (fun n (f, _) => n + (X86.unread f).length) 0)
+    if let some out := opts.mlir then
+      IO.FS.writeFile out (Braid.Module.toMlir Lowering.X86.arch { arch := "x86_64", funcs })
+    if let some out := opts.norm then
+      IO.FS.writeFile out (Braid.Module.toNorm Lowering.X86.arch { arch := "x86_64", funcs })
+    if let some out := opts.lean then
+      IO.FS.writeFile out <|
+        leanHeader opts.module ["Lowering.X86.Logic"] [] ++ X86.leanSource image ++
         s!"\nend {opts.module}\n"
     return 0
   | m =>

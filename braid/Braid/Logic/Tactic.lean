@@ -11,6 +11,7 @@
   * `braid_norm`: put values and addresses in normal form
   * `braid_block`, `braid_step`, `braid_run`: run a block, one block of a program, a program
   * `braid_done`: finish, when the symbolic state is the postcondition
+  * `braid_forget`, `braid_name_reg`: forget the value of a register, and name it again
 -/
 
 module
@@ -180,5 +181,17 @@ macro "braid_forget " r:term : tactic =>
 macro "braid_forget_flag " f:term : tactic =>
   `(tactic| (apply Triple.forget_flag (f := $f)
              case hupd => braid_upd))
+
+/-- Name the value of a register that holds some value: `braid_name_reg r`. -/
+macro "braid_name_reg " r:term : tactic =>
+  `(tactic| (apply Triple.reg_any (r := $r)
+             case hext => braid_extract
+             intro _))
+
+/-- Name the value of a flag that holds some value: `braid_name_flag f`. -/
+macro "braid_name_flag " f:term : tactic =>
+  `(tactic| (apply Triple.flag_any (f := $f)
+             case hext => braid_extract
+             intro _))
 
 end Braid
