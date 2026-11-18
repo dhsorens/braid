@@ -13,6 +13,7 @@
 module
 
 public import Examples.JsBasic.Arm.Image
+public import Examples.ArmMachine
 public import Examples.Spec
 
 public section
@@ -161,5 +162,65 @@ theorem js_add3_spec (a b c : BitVec 32) (fn code fl root lim sp0 fp0 cp0 v1 r :
   braid_call js_add3_epilogue (sp0 - 16#64) fp0 r _ _ _ _ _ _ _ _ (by bv_decide)
   apply Triple.done_split
   braid_split
+
+/-! ## On the machine -/
+
+/-- **`js_add3` on the machine.** Take a running machine whose program holds the words of
+`js_add3`, with its code loaded and its program counter at the entry, called as V8 calls
+optimised code: the argument count `4` in `x0`, the closure in `x2`, whose code object is not
+marked for deoptimisation, the roots in `x26` with a stack limit below the frame to come, an
+aligned stack pointer with six words of memory below it, and the receiver and the Smis of
+`a`, `b` and `c` from it on, where `a + b` does not overflow. The words the code reads
+outside the stack are apart from each other and from the stack. The machine runs to the
+address in the link register with the Smi of `a + b + c` in `x0`. It has popped the receiver
+and the arguments, and the frame pointer is as it was. -/
+theorem js_add3_correct (prog : Arm64.Program) (s : Arm64.State) (a b c : BitVec 32)
+    (code fl lim recv m0 m1 m2 m3 m4 m5 : Word)
+    (hw : prog.hasWords 0x10000#64 js_add3_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10000#64)
+    (hargc : s.regs.read 0#5 = 4#64) (hsp : s.sp &&& 15#64 = 0#64)
+    (hfl : fl &&& 1#64 = 0#64) (hlim : lim.ult (s.sp - 48#64) = true)
+    (hov : a.saddOverflow b = false)
+    (hcode : HasBytes s (s.regs.read 2#5 - 8#64) 8 code)
+    (hflags : HasBytes s (code + 53#64) 4 fl)
+    (hroot : HasBytes s (s.regs.read 26#5 - 224#64) 8 lim)
+    (h0 : HasBytes s (s.sp - 48#64) 8 m0) (h1 : HasBytes s (s.sp - 40#64) 8 m1)
+    (h2 : HasBytes s (s.sp - 32#64) 8 m2) (h3 : HasBytes s (s.sp - 24#64) 8 m3)
+    (h4 : HasBytes s (s.sp - 16#64) 8 m4) (h5 : HasBytes s (s.sp - 8#64) 8 m5)
+    (hrecv : HasBytes s s.sp 8 recv) (ha : HasBytes s (s.sp + 8#64) 8 (smi a))
+    (hb : HasBytes s (s.sp + 16#64) 8 (smi b)) (hc' : HasBytes s (s.sp + 24#64) 8 (smi c))
+    (d1 : Apart (s.regs.read 2#5 - 8#64) 8 (code + 53#64) 4)
+    (d2 : Apart (s.regs.read 2#5 - 8#64) 8 (s.regs.read 26#5 - 224#64) 8)
+    (d3 : Apart (code + 53#64) 4 (s.regs.read 26#5 - 224#64) 8)
+    (d4 : Apart (s.regs.read 2#5 - 8#64) 8 (s.sp - 48#64) 80)
+    (d5 : Apart (code + 53#64) 4 (s.sp - 48#64) 80)
+    (d6 : Apart (s.regs.read 26#5 - 224#64) 8 (s.sp - 48#64) 80) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = smi (a + b + c) ∧ s'.sp = s.sp + 32#64 ∧
+      s'.regs.read 29#5 = s.regs.read 29#5 := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound js_add3_lowered
+    (js_add3_spec a b c (s.regs.read 2#5) code fl (s.regs.read 26#5) lim s.sp
+      (s.regs.read 29#5) (s.regs.read 27#5) (s.regs.read 1#5) (s.regs.read 30#5)
+      (s.regs.read 3#5) (s.regs.read 4#5) (s.regs.read 5#5) (s.regs.read 16#5)
+      m0 m1 m2 m3 m4 m5 recv s.pstate.n s.pstate.z s.pstate.c s.pstate.v hsp hfl hlim hov)
+    hw hc hrun (by simp [Atom.IsPointsTo])
+    (by braid_disj_mem
+        all_goals first
+          | (refine d1.disj_mem ?_ ?_ <;> bv_omega)
+          | (refine d2.disj_mem ?_ ?_ <;> bv_omega)
+          | (refine d3.disj_mem ?_ ?_ <;> bv_omega)
+          | (refine d4.disj_mem ?_ ?_ <;> bv_omega)
+          | (refine d5.disj_mem ?_ ?_ <;> bv_omega)
+          | (refine d6.disj_mem ?_ ?_ <;> bv_omega))
+    (by simp [Atom.sat_reg, Atom.sat_flag, Atom.sat_pc, sat_mem_hasBytes, regOf, Flags.n,
+      Flags.z, Flags.c, Flags.v, hpc, hargc, hcode, hflags, hroot, h0, h1, h2, h3, h4, h5,
+      hrecv, ha, hb, hc'])
+  refine ⟨s', hsteps, ?_, ?_, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
+  · rw [← hr.sp]; exact Atoms.reg_of_holds (r := 31) hq (by braid_at)
+  · rw [← hr.readReg (i := 29#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 29) hq (by braid_at)
 
 end Examples.JsBasic.Arm

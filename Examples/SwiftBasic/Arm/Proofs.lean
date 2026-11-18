@@ -80,4 +80,62 @@ theorem swift_gcd_spec (a b t8 t9 r : Word) :
     braid_forget 9
     exact Triple.done_eq (by simp [wgcd_zero])
 
+/-! ## On the machine -/
+
+/-- **`swift_add3` on the machine.** A running machine whose program holds the words of
+`swift_add3`, with its code loaded and its program counter at the entry, runs to the address in
+the link register with the sum of `x0`, `x1` and `x2` in `x0`. -/
+theorem swift_add3_correct (prog : Arm64.Program) (s : Arm64.State)
+    (hw : prog.hasWords 0x10000#64 swift_add3_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10000#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = s.regs.read 1#5 + (s.regs.read 0#5 + s.regs.read 2#5) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound swift_add3_lowered
+    (swift_add3_spec (s.regs.read 0#5) (s.regs.read 1#5) (s.regs.read 2#5) (s.regs.read 8#5)
+      (s.regs.read 30#5)) hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, regOf, hpc])
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
+
+/-- **`swift_min` on the machine.** A running machine whose program holds the words of
+`swift_min`, with its code loaded and its program counter at the entry, runs to the address in
+the link register with the smaller of `x0` and `x1`, as unsigned numbers, in `x0`. -/
+theorem swift_min_correct (prog : Arm64.Program) (s : Arm64.State)
+    (hw : prog.hasWords 0x10058#64 swift_min_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10058#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = umin (s.regs.read 0#5) (s.regs.read 1#5) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound swift_min_lowered
+    (swift_min_spec (s.regs.read 0#5) (s.regs.read 1#5) (s.regs.read 30#5) s.pstate.n
+      s.pstate.z s.pstate.c s.pstate.v) hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_flag, Atom.sat_pc, regOf, Flags.n, Flags.z, Flags.c,
+      Flags.v, hpc])
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) (v := umin _ _) hq (by braid_at)
+
+/-- **`swift_gcd` on the machine.** A running machine whose program holds the words of
+`swift_gcd`, with its code loaded and its program counter at the entry, runs to the address in
+the link register with the greatest common divisor of `x0` and `x1` in `x0`. -/
+theorem swift_gcd_correct (prog : Arm64.Program) (s : Arm64.State)
+    (hw : prog.hasWords 0x10018#64 swift_gcd_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10018#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 =
+        BitVec.ofNat 64 (Nat.gcd (s.regs.read 0#5).toNat (s.regs.read 1#5).toNat) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound swift_gcd_lowered
+    (swift_gcd_spec (s.regs.read 0#5) (s.regs.read 1#5) (s.regs.read 8#5) (s.regs.read 9#5)
+      (s.regs.read 30#5)) hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, regOf, hpc])
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) (v := wgcd _ _) hq (by braid_at)
+
 end Examples.SwiftBasic.Arm

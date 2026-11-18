@@ -1,8 +1,8 @@
 /-
   Examples.Basic.Arm.Proofs
 
-  `basic.c` on AArch64: straight-line code and a conditional select, with `add3` down to the
-  machine model. The compiler turns the loop of `sum_to` into a closed form.
+  `basic.c` on AArch64: straight-line code and a conditional select, each down to the machine
+  model. The compiler turns the loop of `sum_to` into a closed form.
 -/
 
 module
@@ -89,5 +89,44 @@ theorem sum_to_spec (n t8 t9 t10 r : Word) :
     braid_forget 9
     braid_forget 10
     exact Triple.done_eq (by rw [tri_zero])
+
+/-! ## On the machine -/
+
+/-- **`max_u64` on the machine.** A running machine whose program holds the words of
+`max_u64`, with its code loaded and its program counter at the entry, runs to the address in
+the link register with the larger of `x0` and `x1`, as unsigned numbers, in `x0`. -/
+theorem max_u64_correct (prog : Arm64.Program) (s : Arm64.State)
+    (hw : prog.hasWords 0x1000c#64 max_u64_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x1000c#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = umax (s.regs.read 0#5) (s.regs.read 1#5) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound max_u64_lowered
+    (max_u64_spec (s.regs.read 0#5) (s.regs.read 1#5) (s.regs.read 30#5)
+      s.pstate.n s.pstate.z s.pstate.c s.pstate.v) hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_flag, Atom.sat_pc, regOf, Flags.n, Flags.z, Flags.c,
+      Flags.v, hpc])
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) (v := umax _ _) hq (by braid_at)
+
+/-- **`sum_to` on the machine.** A running machine whose program holds the words of `sum_to`,
+with its code loaded and its program counter at the entry, runs to the address in the link
+register with the sum of the numbers from one to `x0`, as a 64-bit word, in `x0`. -/
+theorem sum_to_correct (prog : Arm64.Program) (s : Arm64.State)
+    (hw : prog.hasWords 0x10018#64 sum_to_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10018#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = tri (s.regs.read 0#5) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound sum_to_lowered
+    (sum_to_spec (s.regs.read 0#5) (s.regs.read 8#5) (s.regs.read 9#5) (s.regs.read 10#5)
+      (s.regs.read 30#5)) hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, regOf, hpc])
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) (v := tri _) hq (by braid_at)
 
 end Examples.Basic.Arm

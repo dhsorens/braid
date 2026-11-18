@@ -8,6 +8,7 @@
 module
 
 public import Examples.Bytes.Arm.Image
+public import Examples.ArmMachine
 public import Examples.Spec
 
 public section
@@ -188,5 +189,110 @@ theorem fill_spec (p v r : Word) (bs : List (BitVec 8)) (fn fz fc fv : Bool)
     · exfalso
       have : BitVec.ofNat 64 (bs.length + 1) ≠ 0#64 := by bv_omega
       exact this (by simpa using hbr)
+
+/-! ## On the machine -/
+
+/-- **`count_ones` on the machine.** A running machine whose program holds the words of
+`count_ones`, with its code loaded and its program counter at the entry, runs to the address in
+the link register with the number of ones in the binary form of `x0` in `x0`. -/
+theorem count_ones_correct (prog : Arm64.Program) (s : Arm64.State)
+    (hw : prog.hasWords 0x1002c#64 count_ones_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x1002c#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = BitVec.ofNat 64 (ones (s.regs.read 0#5).toNat) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound count_ones_lowered
+    (count_ones_spec (s.regs.read 0#5) (s.regs.read 8#5) (s.regs.read 9#5) (s.regs.read 30#5))
+    hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_pc, regOf, hpc])
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
+
+/-- **`str_len` on the machine.** A running machine whose program holds the words of
+`str_len`, with its code loaded and its program counter at the entry, and with the bytes
+`bs`, none of them zero, and then a zero byte in memory where `x0` points, runs to the
+address in the link register with the number of the bytes `bs` in `x0`. -/
+theorem str_len_correct (prog : Arm64.Program) (s : Arm64.State) (bs : List (BitVec 8))
+    (hw : prog.hasWords 0x10000#64 str_len_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10000#64) (hnz : ∀ b ∈ bs, b ≠ 0#8)
+    (hmem : ∀ (i : Nat) (hi : i < bs.length),
+      HasBytes s (s.regs.read 0#5 + BitVec.ofNat 64 i) 1 (bs[i].zeroExtend 64))
+    (hend : HasBytes s (s.regs.read 0#5 + BitVec.ofNat 64 bs.length) 1 0#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = BitVec.ofNat 64 bs.length := by
+  have hl : bs.length < 2 ^ 64 := by
+    refine Nat.lt_of_not_le fun h => ?_
+    have h1 := (hmem (bs.length - 2 ^ 64) (by omega)
+      (s.regs.read 0#5 + BitVec.ofNat 64 (bs.length - 2 ^ 64)) (by simp)).2.1
+    have h2 := (hend (s.regs.read 0#5 + BitVec.ofNat 64 bs.length) (by simp)).2.1
+    have e : BitVec.ofNat 64 (bs.length - 2 ^ 64) = BitVec.ofNat 64 bs.length := by
+      apply BitVec.eq_of_toNat_eq
+      simp only [BitVec.toNat_ofNat]
+      omega
+    rw [e, h2] at h1
+    exact hnz _ (List.getElem_mem _) (by simpa using h1.symm)
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound_flat str_len_lowered
+    (str_len_spec (s.regs.read 0#5) (s.regs.read 30#5) (s.regs.read 8#5) (s.regs.read 9#5)
+      bs hnz) hw hc hrun
+    (flat := [.pc 0x10000#64, .reg x0 (s.regs.read 0#5), .reg x8 (s.regs.read 8#5),
+      .reg x9 (s.regs.read 9#5)] ++ bytesAtoms (s.regs.read 0#5) (bs ++ [0#8]) ++
+      [.reg lr (s.regs.read 30#5)])
+    (by rw [bytesAt_eq_interp]
+        exact Atoms.interp_flatten [.pc 0x10000#64, .reg x0 (s.regs.read 0#5),
+          .reg x8 (s.regs.read 8#5), .reg x9 (s.regs.read 9#5)] _ _)
+    (Atoms.forall_flat (by simp [Atom.IsPointsTo]) bytesAtoms_isPointsTo)
+    (Atoms.pairwise_flat (by braid_disj) (bytesAtoms_pairwise (by simp; omega))
+      (by braid_disj_array))
+    (Atoms.forall_flat (by simp [Atom.sat_reg, Atom.sat_pc, regOf, hpc])
+      (bytesAtoms_sat fun i hi => sat_mem_hasBytes.2 (by
+        by_cases h : i < bs.length
+        · simpa [List.getElem_append_left h] using hmem i h
+        · have e : i = bs.length := by simp at hi; omega
+          subst e
+          simpa using hend)))
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
+
+/-- **`fill` on the machine.** A running machine whose program holds the words of `fill`,
+with its code loaded and its program counter at the entry, and with the bytes `bs` in memory
+where `x0` points and their number in `x1`, runs to the address in the link register with
+the low byte of `x2` in each of those bytes. -/
+theorem fill_correct (prog : Arm64.Program) (s : Arm64.State) (bs : List (BitVec 8))
+    (hw : prog.hasWords 0x10018#64 fill_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10018#64) (hl : bs.length < 2 ^ 64)
+    (hn : s.regs.read 1#5 = BitVec.ofNat 64 bs.length)
+    (hmem : ∀ (i : Nat) (hi : i < bs.length),
+      HasBytes s (s.regs.read 0#5 + BitVec.ofNat 64 i) 1 (bs[i].zeroExtend 64)) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      ∀ i : Nat, i < bs.length →
+        HasBytes s' (s.regs.read 0#5 + BitVec.ofNat 64 i) 1
+          (((s.regs.read 2#5).truncate 8).zeroExtend 64) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound_flat fill_lowered
+    (fill_spec (s.regs.read 0#5) (s.regs.read 2#5) (s.regs.read 30#5) bs s.pstate.n
+      s.pstate.z s.pstate.c s.pstate.v hl) hw hc hrun
+    (flat := [.pc 0x10018#64, .reg x0 (s.regs.read 0#5), .reg x1 (BitVec.ofNat 64 bs.length),
+      .reg x2 (s.regs.read 2#5)] ++ bytesAtoms (s.regs.read 0#5) bs ++
+      [.reg lr (s.regs.read 30#5), .flag Flags.n s.pstate.n, .flag Flags.z s.pstate.z,
+        .flag Flags.c s.pstate.c, .flag Flags.v s.pstate.v])
+    (by rw [bytesAt_eq_interp]
+        exact Atoms.interp_flatten [.pc 0x10018#64, .reg x0 (s.regs.read 0#5),
+          .reg x1 (BitVec.ofNat 64 bs.length), .reg x2 (s.regs.read 2#5)] _ _)
+    (Atoms.forall_flat (by simp [Atom.IsPointsTo]) bytesAtoms_isPointsTo)
+    (Atoms.pairwise_flat (by braid_disj) (bytesAtoms_pairwise (by omega))
+      (by braid_disj_array))
+    (Atoms.forall_flat
+      (by simp [Atom.sat_reg, Atom.sat_flag, Atom.sat_pc, regOf, Flags.n, Flags.z, Flags.c,
+        Flags.v, hpc, hn])
+      (bytesAtoms_sat fun i hi => sat_mem_hasBytes.2 (hmem i hi)))
+  refine ⟨s', hsteps, ?_, fun i hi => ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · have h := hasBytes_of_bytesAt (p := s.regs.read 0#5)
+      (bs := List.replicate bs.length ((s.regs.read 2#5).truncate 8)) hr hq (by braid_at) i
+      (by simpa using hi)
+    simpa using h
 
 end Examples.Bytes.Arm

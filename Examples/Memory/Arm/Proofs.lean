@@ -9,6 +9,7 @@
 module
 
 public import Examples.Memory.Arm.Image
+public import Examples.ArmMachine
 public import Examples.Spec
 
 public section
@@ -158,5 +159,113 @@ theorem sum_array_spec (p t8 t9 r : Word) (xs : List Word) (fn fz fc fv : Bool)
     · exfalso
       have : BitVec.ofNat 64 (xs.length + 1) ≠ 0#64 := by bv_omega
       exact this (by simpa using hbr)
+
+/-! ## On the machine -/
+
+/-- **`max2` on the machine.** A running machine whose program holds the words of `max2`, with
+its code loaded and its program counter at the entry, runs to the address in the link register
+with the larger of `x0` and `x1`, as unsigned numbers, in `x0`. -/
+theorem max2_correct (prog : Arm64.Program) (s : Arm64.State)
+    (hw : prog.hasWords 0x10034#64 max2_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10034#64) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = umax (s.regs.read 0#5) (s.regs.read 1#5) := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound max2_lowered
+    (max2_spec (s.regs.read 0#5) (s.regs.read 1#5) (s.regs.read 30#5) s.pstate.n s.pstate.z
+      s.pstate.c s.pstate.v) hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj)
+    (by simp [Atom.sat_reg, Atom.sat_flag, Atom.sat_pc, regOf, Flags.n, Flags.z, Flags.c,
+      Flags.v, hpc])
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) (v := umax _ _) hq (by braid_at)
+
+/-- **`swap` on the machine.** A running machine whose program holds the words of `swap`,
+with its code loaded and its program counter at the entry, and with the words `x` and `y` in
+memory where `x0` and `x1` point, apart from one another, runs to the address in the link
+register with `y` where `x0` points and `x` where `x1` points. -/
+theorem swap_correct (prog : Arm64.Program) (s : Arm64.State) (x y : Word)
+    (hw : prog.hasWords 0x10000#64 swap_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10000#64)
+    (hx : HasBytes s (s.regs.read 0#5) 8 x) (hy : HasBytes s (s.regs.read 1#5) 8 y)
+    (hd : Apart (s.regs.read 0#5) 8 (s.regs.read 1#5) 8) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      HasBytes s' (s.regs.read 0#5) 8 y ∧ HasBytes s' (s.regs.read 1#5) 8 x := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound swap_lowered
+    (swap_spec (s.regs.read 0#5) (s.regs.read 1#5) x y (s.regs.read 8#5) (s.regs.read 9#5)
+      (s.regs.read 30#5)) hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj_mem; exact disj_mem_of_apart hd)
+    (by simp [Atom.sat_reg, Atom.sat_pc, sat_mem_hasBytes, regOf, hpc, hx, hy])
+  refine ⟨s', hsteps, ?_, hasBytes_of_holds hr hq (by braid_at),
+    hasBytes_of_holds hr hq (by braid_at)⟩
+  rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+
+/-- **`max3` on the machine.** A running machine whose program holds the words of `max3` and
+of `max2`, which it calls, with its code loaded and its program counter at the entry of
+`max3`, whose stack pointer is aligned and has three words of memory below it, runs to the
+address in the link register with the largest of `x0`, `x1` and `x2`, as unsigned numbers, in
+`x0`. The stack pointer, the frame pointer and `x19` are as they were. -/
+theorem max3_correct (prog : Arm64.Program) (s : Arm64.State) (m0 m1 m2 : Word)
+    (hw : prog.hasWords 0x10040#64 max3_words) (hw2 : prog.hasWords 0x10034#64 max2_words)
+    (hc : prog.CodeLoaded s.mem) (hrun : s.status = .Running) (hpc : s.pc = 0x10040#64)
+    (hsp : s.sp &&& 15#64 = 0#64) (h0 : HasBytes s (s.sp - 32#64) 8 m0)
+    (h1 : HasBytes s (s.sp - 24#64) 8 m1) (h2 : HasBytes s (s.sp - 16#64) 8 m2) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = umax (umax (s.regs.read 0#5) (s.regs.read 1#5)) (s.regs.read 2#5) ∧
+      s'.sp = s.sp ∧ s'.regs.read 29#5 = s.regs.read 29#5 ∧
+      s'.regs.read 19#5 = s.regs.read 19#5 := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound₂ max2_lowered max3_lowered
+    (max3_spec (s.regs.read 0#5) (s.regs.read 1#5) (s.regs.read 2#5) (s.regs.read 19#5)
+      (s.regs.read 29#5) s.sp (s.regs.read 30#5) m0 m1 m2 s.pstate.n s.pstate.z s.pstate.c
+      s.pstate.v hsp) hw2 hw hc hrun
+    (by simp [Atom.IsPointsTo]) (by braid_disj_mem)
+    (by simp [Atom.sat_reg, Atom.sat_flag, Atom.sat_pc, sat_mem_hasBytes, regOf, Flags.n,
+      Flags.z, Flags.c, Flags.v, hpc, h0, h1, h2])
+  refine ⟨s', hsteps, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) (v := umax _ _) hq (by braid_at)
+  · rw [← hr.sp]; exact Atoms.reg_of_holds (r := 31) hq (by braid_at)
+  · rw [← hr.readReg (i := 29#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 29) hq (by braid_at)
+  · rw [← hr.readReg (i := 19#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 19) hq (by braid_at)
+
+/-- **`sum_array` on the machine.** A running machine whose program holds the words of
+`sum_array`, with its code loaded and its program counter at the entry, and with the words
+`xs` in memory where `x0` points and their number in `x1`, runs to the address in the link
+register with their sum in `x0`. -/
+theorem sum_array_correct (prog : Arm64.Program) (s : Arm64.State) (xs : List Word)
+    (hw : prog.hasWords 0x10014#64 sum_array_words) (hc : prog.CodeLoaded s.mem)
+    (hrun : s.status = .Running) (hpc : s.pc = 0x10014#64) (hl : xs.length < 2 ^ 61)
+    (hn : s.regs.read 1#5 = BitVec.ofNat 64 xs.length)
+    (hmem : ∀ (i : Nat) (hi : i < xs.length),
+      HasBytes s (s.regs.read 0#5 + BitVec.ofNat 64 (8 * i)) 8 xs[i]) :
+    ∃ s', Arm64.Steps prog s s' ∧ s'.pc = s.regs.read 30#5 ∧
+      s'.regs.read 0#5 = wsum xs 0#64 := by
+  obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_sound_flat sum_array_lowered
+    (sum_array_spec (s.regs.read 0#5) (s.regs.read 8#5) (s.regs.read 9#5) (s.regs.read 30#5)
+      xs s.pstate.n s.pstate.z s.pstate.c s.pstate.v (by omega)) hw hc hrun
+    (flat := [.pc 0x10014#64, .reg x0 (s.regs.read 0#5), .reg x1 (BitVec.ofNat 64 xs.length),
+      .reg x8 (s.regs.read 8#5), .reg x9 (s.regs.read 9#5)] ++
+      wordsAtoms (s.regs.read 0#5) xs ++
+      [.reg lr (s.regs.read 30#5), .flag Flags.n s.pstate.n, .flag Flags.z s.pstate.z,
+        .flag Flags.c s.pstate.c, .flag Flags.v s.pstate.v])
+    (by rw [wordsAt_eq_interp]
+        exact Atoms.interp_flatten [.pc 0x10014#64, .reg x0 (s.regs.read 0#5),
+          .reg x1 (BitVec.ofNat 64 xs.length), .reg x8 (s.regs.read 8#5),
+          .reg x9 (s.regs.read 9#5)] _ _)
+    (Atoms.forall_flat (by simp [Atom.IsPointsTo]) wordsAtoms_isPointsTo)
+    (Atoms.pairwise_flat (by braid_disj) (wordsAtoms_pairwise (by omega))
+      (by braid_disj_array))
+    (Atoms.forall_flat
+      (by simp [Atom.sat_reg, Atom.sat_flag, Atom.sat_pc, regOf, Flags.n, Flags.z, Flags.c,
+        Flags.v, hpc, hn])
+      (wordsAtoms_sat fun i hi => sat_mem_hasBytes.2 (hmem i hi)))
+  refine ⟨s', hsteps, ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.readReg (i := 0#5) (by decide)]
+    exact Atoms.reg_of_holds (r := 0) (v := wsum _ _) hq (by braid_at)
 
 end Examples.Memory.Arm

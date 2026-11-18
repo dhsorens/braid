@@ -12,6 +12,7 @@ mlir/          the lowered code of each example, as MLIR text
 <Module>/<ISA>/Image.lean    the lowered code, as a Lean module (written by braid-lower)
 <Module>/<ISA>/Proofs.lean   specifications and proofs
 Spec.lean      functions the specifications share (umax, wsum, wgcd, ones)
+ArmMachine.lean  what the AArch64 machine theorems are stated with (HasBytes, Apart)
 continuity/    the continuity experiment (docs/Continuity.md)
 ```
 
@@ -22,14 +23,14 @@ down to a theorem about the machine model alone (`<function>_correct`).
 
 | Source | RISC-V | AArch64 | x86-64 |
 | --- | --- | --- | --- |
-| `c/basic.c` | **add3**, **max_u64**, **sum_to** | **add3**, max_u64, sum_to | **add3**, **max_u64**, **sum_to** |
-| `c/memory.c` | **swap**, **max2**, **max3**, **sum_array** | swap, max2, max3, sum_array | **swap**, **max2**, **max3**, **sum_array** |
-| `c/bytes.c` | **str_len**, **fill**, **count_ones** | str_len, fill, count_ones | **str_len**, **fill**, **count_ones** |
-| `rust/basic.rs` | **gcd** | add3, max_u64, **gcd**, sum_slice | **add3**, **max_u64**, **sum_slice** |
-| `swift/basic.swift` | **swift_add3**, **swift_min**, **swift_gcd** | swift_add3, swift_min, swift_gcd | **swift_add3**, **swift_min** |
-| `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | **Add3**, **MaxU64**, **SumSlice** |
-| `python/basic.py` | **py_add3**, **py_max_u64**, **py_gcd** | py_add3, py_max_u64 | **py_add3**, **py_max_u64** |
-| `js/basic.js` | | js_add3 | **js_add3** (to its return instruction) |
+| `c/basic.c` | **add3**, **max_u64**, **sum_to** | **add3**, **max_u64**, **sum_to** | **add3**, **max_u64**, **sum_to** |
+| `c/memory.c` | **swap**, **max2**, **max3**, **sum_array** | **swap**, **max2**, **max3**, **sum_array** | **swap**, **max2**, **max3**, **sum_array** |
+| `c/bytes.c` | **str_len**, **fill**, **count_ones** | **str_len**, **fill**, **count_ones** | **str_len**, **fill**, **count_ones** |
+| `rust/basic.rs` | **gcd** | **add3**, **max_u64**, **gcd**, **sum_slice** | **add3**, **max_u64**, **sum_slice** |
+| `swift/basic.swift` | **swift_add3**, **swift_min**, **swift_gcd** | **swift_add3**, **swift_min**, **swift_gcd** | **swift_add3**, **swift_min** |
+| `go/basic.go` | not lowered | **Add3**, **MaxU64**, **SumSlice** | **Add3**, **MaxU64**, **SumSlice** |
+| `python/basic.py` | **py_add3**, **py_max_u64**, **py_gcd** | **py_add3**, **py_max_u64** | **py_add3**, **py_max_u64** |
+| `js/basic.js` | | **js_add3** | **js_add3** (to its return instruction) |
 
 What the examples exercise:
 
