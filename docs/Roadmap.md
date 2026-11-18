@@ -14,7 +14,7 @@ see [`ISA.md`](ISA.md).
 | AArch64 lowering | the integer core, proved sound |
 | x86-64 lowering | the integer core, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
-| Differential tester | RISC-V |
+| Differential tester | all three instruction sets |
 | Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 53 functions with proved specifications across the three instruction sets, 9 of them down to the machine model, at least one on each |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
@@ -71,7 +71,6 @@ In rough order of what they would buy.
 2. **Whole programs.** A theorem is about the functions it names. Linking specifications
    across a binary, with its data sections as initial memory, is the step from functions to
    programs.
-3. **Differential testing for AArch64 and x86-64**, as for RISC-V.
 
 ### The corpus
 

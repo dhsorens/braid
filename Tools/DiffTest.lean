@@ -11,13 +11,18 @@
 -/
 
 import Tools.RiscV
+import Tools.DiffTestMore
 import Braid.IR.Exec
 
 open Tools
 
-namespace Tools.DiffTest
+namespace Tools.DiffTest.RiscV
 
-open RiscvZkvm.Rv64
+open RiscvZkvm.Rv64 hiding Instr MachineState
+
+/-- The RISC-V model's instructions and states; the x86-64 model has types of the same names. -/
+abbrev Instr := RiscvZkvm.Rv64.Instr
+abbrev MachineState := RiscvZkvm.Rv64.MachineState
 
 /-- Where the stack pointer starts: inside the model's valid memory. -/
 def stackTop : Braid.Word := 0x70000000#64
@@ -92,9 +97,30 @@ def randWords (seed n : Nat) : List Braid.Word :=
       go k x (BitVec.ofNat 64 v :: acc)
   go n (seed + 1) []
 
+end Tools.DiffTest.RiscV
+
+namespace Tools.DiffTest
+
+/-- Print the verdicts of the runs of a function, and count the failures. -/
+def report (fn : String) (runs : Nat) (result : String) (vs : List (List Word × Verdict)) :
+    IO UInt32 := do
+  let mut failed := 0
+  for (input, v) in vs do
+    match v with
+    | .agree n r =>
+      if runs == 0 then IO.println s!"{fn}: agree after {n} instructions, {result} = {hex r}"
+    | .outOfFuel n => IO.println s!"{fn}: agree for {n} instructions, then out of fuel"
+    | .bothStop n pc => IO.println s!"{fn}: both stop after {n} instructions at {hex pc}"
+    | .mismatch n pc d =>
+      failed := failed + 1
+      IO.println s!"{fn}: MISMATCH after {n} instructions at {hex pc}: {d}"
+      IO.println s!"  inputs: {input.map hex}"
+  if runs != 0 then IO.println s!"{fn}: {runs - failed}/{runs} runs agree"
+  return if failed == 0 then 0 else 1
+
 end Tools.DiffTest
 
-open Tools.DiffTest in
+open Tools.DiffTest Tools.DiffTest.RiscV in
 def main (args : List String) : IO UInt32 := do
   let rec parse : List String → (String × String × List Nat × Nat × Nat × Nat) →
       (String × String × List Nat × Nat × Nat × Nat)
@@ -106,15 +132,54 @@ def main (args : List String) : IO UInt32 := do
     | "--runs" :: n :: r, (i, f, a, st, sd, _) => parse r (i, f, a, st, sd, n.toNat!)
     | x :: r, (_, f, a, st, sd, rn) => parse r (x, f, a, st, sd, rn)
     | [], o => o
+  let disasm := match args.dropWhile (· != "--disasm") with
+    | _ :: f :: _ => some f
+    | _ => none
+  let args := match args.span (· != "--disasm") with
+    | (pre, _ :: _ :: post) => pre ++ post
+    | (pre, _) => pre
   let (input, fn, fixed, steps, seed, runs) := parse args ("", "", [], 100000, 0, 0)
   if input.isEmpty || fn.isEmpty then
-    IO.eprintln "usage: braid-difftest <binary> --fn <name> [--args a,b,..] [--steps n] [--seed n --runs n]"
+    IO.eprintln ("usage: braid-difftest <binary> --fn <name> [--args a,b,..] [--steps n] " ++
+      "[--seed n --runs n] [--disasm <file>]")
     return 1
   let img ← match Elf.parse (← IO.FS.readBinFile input) with
     | .ok i => pure i
     | .error e => IO.eprintln e; return 1
+  let inputs : List (List Braid.Word) :=
+    if runs == 0 then [fixed.map (BitVec.ofNat 64)]
+    else (List.range runs).map fun k => RiscV.randWords (seed + k) 6
+  if img.machine == .aarch64 then
+    let some f := img.functions.find? (·.name == fn)
+      | IO.eprintln s!"no function named {fn}"; return 1
+    -- Every function of the binary is loaded, so that calls can be followed.
+    let fns := img.functions.toList
+    let base := fns.foldl (fun b g => min b g.addr) f.addr
+    let top := fns.foldl (fun t g => max t (g.addr + g.bytes.size)) 0
+    let bytes : Array (BitVec 8) := fns.foldl (init := Array.replicate (top - base) 0#8)
+      fun arr g => (List.range g.bytes.size).foldl
+        (fun arr i => arr.set! (g.addr - base + i) (BitVec.ofNat 8 g.bytes[i]!.toNat)) arr
+    let P := Braid.Program.ofList (fns.flatMap fun g =>
+      (Arm.toFunc g.name g.addr (Arm.decodeFunction g.addr (Elf.words32 g.bytes)).1).blocks)
+    let vs := inputs.map fun input =>
+      let s := Tools.DiffTest.Arm.initMachine base bytes.toList f.addr input
+      (input, Tools.DiffTest.Arm.run {} P steps 0 s (Lowering.Arm.abs s))
+    return ← report fn runs "x0" vs
+  if img.machine == .x86_64 then
+    let some dis := disasm
+      | IO.eprintln "braid-difftest: an x86-64 binary needs --disasm <file>"; return 1
+    let fns := X86Asm.parseObjdump (← IO.FS.readFile dis)
+    let some f := fns.find? (·.name == fn)
+      | IO.eprintln s!"no function named {fn}"; return 1
+    let lines := (X86.image fns).flatMap (·.2)
+    let e := Lowering.X86.exeOf lines
+    let P := Braid.Program.ofList (Lowering.X86.lowerLines (Lowering.X86.labelsOf lines) lines)
+    let vs := inputs.map fun input =>
+      let m := Tools.DiffTest.X86.initMachine f.addr input
+      (input, Tools.DiffTest.X86.run e P steps 0 m (Lowering.X86.abs m) [])
+    return ← report fn runs "rax" vs
   unless img.machine == .riscv do
-    IO.eprintln "braid-difftest: only RISC-V binaries so far"
+    IO.eprintln "braid-difftest: no model for this machine"
     return 1
   let some f := img.functions.find? (·.name == fn)
     | IO.eprintln s!"no function named {fn}"; return 1
