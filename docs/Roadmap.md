@@ -15,7 +15,7 @@ see [`ISA.md`](ISA.md).
 | x86-64 lowering | the integer core without multi-word arithmetic, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | RISC-V |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 39 functions with proved specifications across the three instruction sets, 7 of them down to the machine model |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 41 functions with proved specifications across the three instruction sets, 8 of them down to the machine model, at least one on each |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.

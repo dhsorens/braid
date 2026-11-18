@@ -22,7 +22,7 @@ down to a theorem about the machine model alone (`<function>_correct`).
 
 | Source | RISC-V | AArch64 | x86-64 |
 | --- | --- | --- | --- |
-| `c/basic.c` | **add3**, **max_u64** | lowered | **add3**, max_u64 |
+| `c/basic.c` | **add3**, **max_u64** | **add3**, max_u64 | **add3**, max_u64 |
 | `c/memory.c` | swap, max2, max3, sum_array | swap, max2 | swap, **max2**, max3, sum_array |
 | `c/bytes.c` | str_len, **count_ones** | lowered | str_len |
 | `rust/basic.rs` | **gcd** | lowered | add3, max_u64, sum_slice |
