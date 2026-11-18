@@ -307,4 +307,17 @@ theorem machine_sound {prog : Arm64.Program} {base : Word} {ws : List (BitVec 32
     ∃ s' σ', Arm64.Steps prog s s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' :=
   triple_sound hlow ht hw hc (rel_abs hrun) (Atoms.holds_of_sat hpt hdisj hsat)
 
+/-- `machine_sound`, for a precondition with arrays in it: `flat` is the precondition with
+each array written out as its memory atoms (`Atoms.interp_flatten`). -/
+theorem machine_sound_flat {prog : Arm64.Program} {base : Word} {ws : List (BitVec 32)}
+    {blocks : List (Word × Block)} {pre flat post : Atoms} {s : Arm64.State}
+    (hlow : blocks = lowerWords base ws)
+    (ht : Triple (Program.ofList blocks) (Atoms.interp pre) (Atoms.interp post))
+    (hw : prog.hasWords base ws) (hc : prog.CodeLoaded s.mem) (hrun : s.status = .Running)
+    (heq : Atoms.interp pre = Atoms.interp flat)
+    (hpt : ∀ a ∈ flat, a.IsPointsTo) (hdisj : flat.Pairwise Atom.Disj)
+    (hsat : ∀ a ∈ flat, a.sat (abs s)) :
+    ∃ s' σ', Arm64.Steps prog s s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' :=
+  triple_sound hlow ht hw hc (rel_abs hrun) (Atoms.holds_of_sat_flat heq hpt hdisj hsat)
+
 end Lowering.Arm

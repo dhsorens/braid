@@ -178,6 +178,19 @@ theorem machine_sound [Layout] {e : Executable} {blocks : List (Word × Block)}
       (fun m' => ∃ σ', Rel m' σ' ∧ (Atoms.interp post).holds iprop(True) σ') m :=
   triple_sound hcode ht (rel_abs m) (Atoms.holds_of_sat hpt hdisj hsat)
 
+/-- `machine_sound`, for a precondition with arrays in it: `flat` is the precondition with
+each array written out as its memory atoms (`Atoms.interp_flatten`). -/
+theorem machine_sound_flat [Layout] {e : Executable} {blocks : List (Word × Block)}
+    {pre flat post : Atoms} {m : MachineState}
+    (hcode : ∀ p ∈ blocks, lowerProgram e p.1 = some p.2)
+    (ht : Triple (Program.ofList blocks) (Atoms.interp pre) (Atoms.interp post))
+    (heq : Atoms.interp pre = Atoms.interp flat)
+    (hpt : ∀ a ∈ flat, a.IsPointsTo) (hdisj : flat.Pairwise Atom.Disj)
+    (hsat : ∀ a ∈ flat, a.sat (abs m)) :
+    Eventually (step1 e)
+      (fun m' => ∃ σ', Rel m' σ' ∧ (Atoms.interp post).holds iprop(True) σ') m :=
+  triple_sound hcode ht (rel_abs m) (Atoms.holds_of_sat_flat heq hpt hdisj hsat)
+
 /-- Forget the values of the six status flags. -/
 macro "x86_forget_flags" : tactic =>
   `(tactic| (braid_forget_flag 0; braid_forget_flag 1; braid_forget_flag 2
