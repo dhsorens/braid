@@ -217,13 +217,6 @@ private theorem hasBytes_of_holds {as : Atoms} {R : SProp} {σ : State} {m : Mac
   rw [hb]
   simpa using (congrArg Cell.val hc).symm
 
-/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
-round the address space. -/
-private theorem disj_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
-    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
-    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
-  Atom.disj_mem_mem fun x hx => by bv_omega
-
 /-- **`swap` on the machine.** A machine of the model that runs the executable of this image,
 is at the entry of `swap`, has the words `x` and `y` in memory where `rdi` and `rsi` point,
 and has the return address `r` in the eight bytes at the stack pointer, the three words
@@ -250,7 +243,7 @@ theorem swap_correct [Layout] (m : MachineState) (x y r : Word) (hpc : m.pc = 0x
     (by
       braid_disj
       repeat' constructor
-      all_goals first | decide | exact disj_apart (by assumption))
+      all_goals first | decide | exact Atom.disj_mem_mem_of_apart (by assumption))
     (by simp [Atom.sat_reg, Atom.sat_pc, sat_mem_abs, regOf, hpc, hret, hx, hy]))
   rintro m' ⟨σ', hr, hq⟩
   refine ⟨?_, ?_, ?_⟩
@@ -282,7 +275,7 @@ theorem max3_correct [Layout] (m : MachineState) (r m0 m1 : Word) (hpc : m.pc = 
     (by
       braid_disj
       repeat' constructor
-      all_goals first | decide | exact disj_apart (by bv_omega))
+      all_goals first | decide | exact Atom.disj_mem_mem_of_apart (by bv_omega))
     (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
       hret, hs0, hs1]))
   rintro m' ⟨σ', hr, hq⟩

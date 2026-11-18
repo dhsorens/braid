@@ -144,13 +144,6 @@ private theorem hasBytes_of_holds {as : Atoms} {R : SProp} {σ : State} {m : Mac
   rw [hb]
   simpa using (congrArg Cell.val hc).symm
 
-/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
-round the address space. -/
-private theorem disj_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
-    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
-    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
-  Atom.disj_mem_mem fun x hx => by bv_omega
-
 /-- A memory atom apart from the sixty-four bytes around the stack pointer is disjoint from
 each word of them. -/
 private theorem disj_stack {a b sp v v' : Word} {n : Nat} {w w' : Bool}
@@ -212,13 +205,13 @@ theorem js_add3_correct [Layout] (m : MachineState) (a b d : BitVec 32)
       braid_disj
       repeat' constructor
       all_goals try decide
-      · exact disj_apart hcf
-      · exact disj_apart hcl
+      · exact Atom.disj_mem_mem_of_apart hcf
+      · exact Atom.disj_mem_mem_of_apart hcl
       iterate 8 exact disj_stack hcs (by bv_omega)
-      · exact disj_apart hfll
+      · exact Atom.disj_mem_mem_of_apart hfll
       iterate 8 exact disj_stack hfs (by bv_omega)
       iterate 8 exact disj_stack hls (by bv_omega)
-      all_goals exact disj_apart (by bv_omega))
+      all_goals exact Atom.disj_mem_mem_of_apart (by bv_omega))
     (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
       hret, hcode, hflag, hlimit, hs0, hs1, hs2, hs3, hd, hb, ha]))
   rintro m' ⟨σ', hr, hq⟩

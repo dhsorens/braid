@@ -182,13 +182,6 @@ theorem main_MaxU64_correct [Layout] (m : MachineState) (r : Word) (hpc : m.pc =
   · rw [← hr.reg .rax]
     exact Atoms.reg_of_holds (r := 0) (v := umax _ _) hq (by braid_at)
 
-/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
-round the address space. -/
-private theorem disj_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
-    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
-    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
-  Atom.disj_mem_mem fun x hx => by bv_omega
-
 /-- Neither of two words one after the other, which start at or beyond the end of an array
 and end before the array starts, reaches into it. -/
 private theorem sep_array_pair {s p : Word} {l : Nat}
@@ -238,7 +231,7 @@ theorem main_SumSlice_correct [Layout] (m : MachineState) (xs : List Word) (old 
       (by
         braid_disj
         repeat' constructor
-        all_goals first | decide | exact disj_apart (by bv_omega))
+        all_goals first | decide | exact Atom.disj_mem_mem_of_apart (by bv_omega))
       (wordsAtoms_pairwise (by omega))
       (by
         braid_disj_array

@@ -67,13 +67,6 @@ private theorem hasBytes_of_holds {as : Atoms} {R : SProp} {σ : State} {m : Mac
   rw [hb]
   simpa using (congrArg Cell.val hc).symm
 
-/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
-round the address space. -/
-private theorem disj_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
-    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
-    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
-  Atom.disj_mem_mem fun x hx => by bv_omega
-
 /-- **`py_add3` on the machine.** A machine of the model that runs the executable of this
 image, is at the entry of `py_add3`, has a word of memory where `rdi` points, and has the
 return address `r` in the eight bytes at the stack pointer, apart from that word, reaches `r`
@@ -98,7 +91,7 @@ theorem py_add3_correct [Layout] (m : MachineState) (old r : Word) (hpc : m.pc =
     (by
       braid_disj
       repeat' constructor
-      all_goals first | decide | exact disj_apart hsep)
+      all_goals first | decide | exact Atom.disj_mem_mem_of_apart hsep)
     (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
       hret, hres]))
   rintro m' ⟨σ', hr, hq⟩
@@ -132,7 +125,7 @@ theorem py_max_u64_correct [Layout] (m : MachineState) (old r : Word) (hpc : m.p
     (by
       braid_disj
       repeat' constructor
-      all_goals first | decide | exact disj_apart hsep)
+      all_goals first | decide | exact Atom.disj_mem_mem_of_apart hsep)
     (by simp [Atom.sat_reg, Atom.sat_pc, Atom.sat_flag, sat_mem_abs, regOf, flagOf, hpc,
       hret, hres]))
   rintro m' ⟨σ', hr, hq⟩
