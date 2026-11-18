@@ -19,6 +19,7 @@ module
 public import Lowering.X86.Ops
 public import Lowering.X86.Shift
 public import Lowering.X86.ShiftCl
+public import Lowering.X86.Carry
 
 @[expose] public section
 
@@ -141,6 +142,9 @@ theorem lowerOp_sound {w : Width} (i : Operation w) : OpSound p i := by
   case nop n => exact nop_sound n
   case nopalign a pad => exact nopalign_sound a pad
   case imul dst src1 src2 => exact imul_sound dst src1 src2
+  case adc dst src => exact adc_sound dst src
+  case sbb dst src => exact sbb_sound dst src
+  case bswap dst => exact bswap_sound dst
   case shl dst c =>
     cases c with
     | cl => exact shl_cl_sound dst

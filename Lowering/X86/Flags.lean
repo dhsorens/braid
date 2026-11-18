@@ -135,6 +135,115 @@ theorem dec_ne64 (a : BitVec 64) :
     (BitVec.signed (a - 1) != BitVec.signed a - 1) = BitVec.ssubOverflow a 1 :=
   dec_ne a (by decide)
 
+/-- The carry of an addition with a carry in: either addition carries. `hc` says the width
+has room for the carry bit. -/
+theorem adc_ne {w : Nat} (a b : BitVec w) (c : Bool)
+    (hc : (BitVec.ofNat w c.toNat).toNat = c.toNat) :
+    (BitVec.unsigned (a + b + BitVec.ofNat w c.toNat) !=
+        BitVec.unsigned a + BitVec.unsigned b + (c.toNat : Int)) =
+      (BitVec.uaddOverflow a b || BitVec.uaddOverflow (a + b) (BitVec.ofNat w c.toNat)) := by
+  have hv := (a + b + BitVec.ofNat w c.toNat).isLt
+  by_cases h1 : BitVec.uaddOverflow a b
+  · rw [h1, Bool.true_or]
+    simp only [BitVec.uaddOverflow, ge_iff_le, decide_eq_true_eq] at h1
+    simp only [BitVec.unsigned, bne_iff_ne, ne_eq]
+    omega
+  · have e1 := BitVec.toNat_add_of_not_uaddOverflow h1
+    simp only [Bool.not_eq_true] at h1
+    rw [h1, Bool.false_or]
+    by_cases h2 : BitVec.uaddOverflow (a + b) (BitVec.ofNat w c.toNat)
+    · rw [h2]
+      simp only [BitVec.uaddOverflow, ge_iff_le, decide_eq_true_eq] at h2
+      simp only [BitVec.unsigned, bne_iff_ne, ne_eq]
+      omega
+    · have e2 := BitVec.toNat_add_of_not_uaddOverflow h2
+      simp only [Bool.not_eq_true] at h2
+      rw [h2]
+      simp only [BitVec.unsigned, bne_eq_false_iff_eq]
+      omega
+
+/-- The borrow of a subtraction with a borrow in: either subtraction borrows. -/
+theorem sbb_ne {w : Nat} (a b : BitVec w) (c : Bool)
+    (hc : (BitVec.ofNat w c.toNat).toNat = c.toNat) :
+    (BitVec.unsigned (b - a - BitVec.ofNat w c.toNat) !=
+        BitVec.unsigned b - BitVec.unsigned a - (c.toNat : Int)) =
+      (BitVec.usubOverflow b a || BitVec.usubOverflow (b - a) (BitVec.ofNat w c.toNat)) := by
+  by_cases h1 : BitVec.usubOverflow b a
+  · rw [h1, Bool.true_or]
+    simp only [BitVec.usubOverflow, decide_eq_true_eq] at h1
+    simp only [BitVec.unsigned, bne_iff_ne, ne_eq]
+    omega
+  · have e1 := BitVec.toNat_sub_of_not_usubOverflow h1
+    have h1' : a.toNat ≤ b.toNat := by
+      simpa [BitVec.usubOverflow] using h1
+    simp only [Bool.not_eq_true] at h1
+    rw [h1, Bool.false_or]
+    by_cases h2 : BitVec.usubOverflow (b - a) (BitVec.ofNat w c.toNat)
+    · rw [h2]
+      simp only [BitVec.usubOverflow, decide_eq_true_eq] at h2
+      simp only [BitVec.unsigned, bne_iff_ne, ne_eq]
+      omega
+    · have e2 := BitVec.toNat_sub_of_not_usubOverflow h2
+      have h2' : (BitVec.ofNat w c.toNat).toNat ≤ (b - a).toNat := by
+        simpa [BitVec.usubOverflow] using h2
+      simp only [Bool.not_eq_true] at h2
+      rw [h2]
+      simp only [BitVec.unsigned, bne_eq_false_iff_eq]
+      omega
+
+/-- A truth value as a bit-vector, in the form the bit-vector solver reads. -/
+theorem ofNat_toNat_bool (w : Nat) (c : Bool) :
+    BitVec.ofNat w c.toNat = (BitVec.ofBool c).setWidth w := by
+  cases c <;> apply BitVec.eq_of_toNat_eq <;> simp
+
+theorem adc_ne8 (a b : BitVec 8) (c : Bool) :
+    (BitVec.unsigned (a + b + BitVec.ofNat 8 c.toNat) !=
+        BitVec.unsigned a + BitVec.unsigned b + (c.toNat : Int)) =
+      (BitVec.uaddOverflow a b || BitVec.uaddOverflow (a + b) (BitVec.ofNat 8 c.toNat)) :=
+  adc_ne a b c (by cases c <;> rfl)
+
+theorem sbb_ne8 (a b : BitVec 8) (c : Bool) :
+    (BitVec.unsigned (b - a - BitVec.ofNat 8 c.toNat) !=
+        BitVec.unsigned b - BitVec.unsigned a - (c.toNat : Int)) =
+      (BitVec.usubOverflow b a || BitVec.usubOverflow (b - a) (BitVec.ofNat 8 c.toNat)) :=
+  sbb_ne a b c (by cases c <;> rfl)
+
+theorem adc_ne16 (a b : BitVec 16) (c : Bool) :
+    (BitVec.unsigned (a + b + BitVec.ofNat 16 c.toNat) !=
+        BitVec.unsigned a + BitVec.unsigned b + (c.toNat : Int)) =
+      (BitVec.uaddOverflow a b || BitVec.uaddOverflow (a + b) (BitVec.ofNat 16 c.toNat)) :=
+  adc_ne a b c (by cases c <;> rfl)
+
+theorem sbb_ne16 (a b : BitVec 16) (c : Bool) :
+    (BitVec.unsigned (b - a - BitVec.ofNat 16 c.toNat) !=
+        BitVec.unsigned b - BitVec.unsigned a - (c.toNat : Int)) =
+      (BitVec.usubOverflow b a || BitVec.usubOverflow (b - a) (BitVec.ofNat 16 c.toNat)) :=
+  sbb_ne a b c (by cases c <;> rfl)
+
+theorem adc_ne32 (a b : BitVec 32) (c : Bool) :
+    (BitVec.unsigned (a + b + BitVec.ofNat 32 c.toNat) !=
+        BitVec.unsigned a + BitVec.unsigned b + (c.toNat : Int)) =
+      (BitVec.uaddOverflow a b || BitVec.uaddOverflow (a + b) (BitVec.ofNat 32 c.toNat)) :=
+  adc_ne a b c (by cases c <;> rfl)
+
+theorem sbb_ne32 (a b : BitVec 32) (c : Bool) :
+    (BitVec.unsigned (b - a - BitVec.ofNat 32 c.toNat) !=
+        BitVec.unsigned b - BitVec.unsigned a - (c.toNat : Int)) =
+      (BitVec.usubOverflow b a || BitVec.usubOverflow (b - a) (BitVec.ofNat 32 c.toNat)) :=
+  sbb_ne a b c (by cases c <;> rfl)
+
+theorem adc_ne64 (a b : BitVec 64) (c : Bool) :
+    (BitVec.unsigned (a + b + BitVec.ofNat 64 c.toNat) !=
+        BitVec.unsigned a + BitVec.unsigned b + (c.toNat : Int)) =
+      (BitVec.uaddOverflow a b || BitVec.uaddOverflow (a + b) (BitVec.ofNat 64 c.toNat)) :=
+  adc_ne a b c (by cases c <;> rfl)
+
+theorem sbb_ne64 (a b : BitVec 64) (c : Bool) :
+    (BitVec.unsigned (b - a - BitVec.ofNat 64 c.toNat) !=
+        BitVec.unsigned b - BitVec.unsigned a - (c.toNat : Int)) =
+      (BitVec.usubOverflow b a || BitVec.usubOverflow (b - a) (BitVec.ofNat 64 c.toNat)) :=
+  sbb_ne a b c (by cases c <;> rfl)
+
 theorem cpop_eq {w : Nat} (x : BitVec w) : x.cpop_ = x.cpop := by
   have key : ∀ pos acc, x.cpopNatRec_ pos acc = x.cpopNatRec pos acc := by
     intro pos

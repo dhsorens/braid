@@ -248,6 +248,22 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
       [.bin 18 .ult 8 0, .setf 0 18, .bin 19 .xor 8 0, .bin 20 .xor 8 v, .bin 21 .and 19 20,
         .const 22 (signBit w), .bin 23 .and 21 22, .setf 5 23] ++
       afOps 24 ++ pzsOps 32 w v ++ writeRM p 48 dst v)
+  | .adc dst src =>
+    let (c1, t) := cut 17 w 16
+    let (c2, v) := cut 19 w 18
+    fin (readOp p 0 src ++ readRM p 8 dst ++ [.getf 9 0, .bin 16 .add 0 8] ++ c1 ++
+      [.bin 18 .add t 9] ++ c2 ++
+      [.bin 20 .ult t 0, .bin 21 .ult v t, .bin 22 .or 20 21, .setf 0 22, .havoc 23,
+        .setf 5 23] ++
+      afOps 24 ++ pzsOps 32 w v ++ writeRM p 48 dst v)
+  | .sbb dst src =>
+    let (c1, t) := cut 17 w 16
+    let (c2, v) := cut 19 w 18
+    fin (readOp p 0 src ++ readRM p 8 dst ++ [.getf 9 0, .bin 16 .sub 8 0] ++ c1 ++
+      [.bin 18 .sub t 9] ++ c2 ++
+      [.bin 20 .ult 8 0, .bin 21 .ult t 9, .bin 22 .or 20 21, .setf 0 22, .havoc 23,
+        .setf 5 23] ++
+      afOps 24 ++ pzsOps 32 w v ++ writeRM p 48 dst v)
   | .cmp a b =>
     let (c, v) := cut 17 w 16
     fin (readRM p 0 a ++ readOp p 8 b ++ [.bin 16 .sub 0 8] ++ c ++
@@ -344,6 +360,13 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
       writeRM p 24 (match dst with | some d => d | none => src1) v ++
       [.havoc 40, .setf 0 40, .setf 5 40, .havoc 41, .setf 4 41, .havoc 42, .setf 3 42,
         .havoc 43, .setf 2 43, .havoc 44, .setf 1 44])
+  | .bswap dst =>
+    match w with
+    | .W64 => fin (readReg 0 dst ++ [.un 8 .bswap 0] ++ writeReg 16 dst 8)
+    | .W32 =>
+      fin (readReg 0 dst ++ [.un 8 .bswap 0, .const 9 32, .bin 10 .lshr 8 9] ++
+        writeReg 16 dst 10)
+    | _ => none
   | .jcc cc l => some (ccOps 0 cc, .branch 0 (label l).toBitVec p.upper.toBitVec)
   | .jmp (.rel c) => some ([], .jump (p.upper + c.interp p).toBitVec)
   | .jmp (.reg r) => some (readReg 0 r, .jumpInd 0)
