@@ -48,6 +48,21 @@ lower_rust() {
   lower_rv "$name" "$module" "$@"
 }
 
+# A Swift source: name, source, module, functions. As for Rust, through LLVM IR. The Swift
+# calling convention and Apple's linker metadata are removed: the exported functions use the
+# C convention.
+lower_swift() {
+  name=$1; src=$2; module=$3; shift 3
+  swiftc -O -parse-as-library -emit-ir "$src" -o "Examples/bin/$name.ll" 2>/dev/null
+  sed -E 's/"target-features"="[^"]*"/"target-features"="+m"/g; s/"target-cpu"="[^"]*"//g;
+          /^target datalayout/d; /^target triple/d; s/"probe-stack"="[^"]*"//g;
+          s/"frame-pointer"="[^"]*"//g; s/ swiftcc / /g; /^!llvm.linker.options/d;
+          s/, section "[^"]*"//g' "Examples/bin/$name.ll" > "Examples/bin/$name.rv.ll"
+  "$CLANG" --target=riscv64-unknown-elf -march=rv64im -mabi=lp64 -O1 -Wno-override-module \
+    -c "Examples/bin/$name.rv.ll" -o "Examples/bin/$name.rv.o"
+  lower_rv "$name" "$module" "$@"
+}
+
 if [ $# -eq 0 ] || [ "$1" = basic ]; then
   lower_c basic Examples/src/c/basic.c Basic add3 max_u64 sum_to
 fi
@@ -56,4 +71,7 @@ if [ $# -eq 0 ] || [ "$1" = memory ]; then
 fi
 if [ $# -eq 0 ] || [ "$1" = rustbasic ]; then
   lower_rust rustbasic Examples/src/rust/basic.rs RustBasic add3 max_u64 gcd sum_slice
+fi
+if [ $# -eq 0 ] || [ "$1" = swiftbasic ]; then
+  lower_swift swiftbasic Examples/src/swift/basic.swift SwiftBasic swift_add3 swift_gcd swift_min
 fi

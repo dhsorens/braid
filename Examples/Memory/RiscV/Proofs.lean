@@ -8,12 +8,13 @@ module
 
 public import Examples.Memory.RiscV.Image
 public import Lowering.RiscV.Logic
+public import Examples.Spec
 
 public section
 
 namespace Examples.Memory.RiscV
 
-open Braid Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
+open Braid Examples Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
 
 /-- `swap` exchanges the two words its arguments point to. -/
 theorem swap_spec (p q x y t2 t3 r : Word) (hp : p &&& 7#64 = 0#64) (hq : q &&& 7#64 = 0#64) :
@@ -24,9 +25,6 @@ theorem swap_spec (p q x y t2 t3 r : Word) (hp : p &&& 7#64 = 0#64) (hq : q &&& 
         .mem p 8 y true, .mem q 8 x true, .reg ra r]) := by
   braid_run
   braid_done
-
-/-- The larger of two words, unsigned. -/
-def umax (a b : Word) : Word := if b.ult a then a else b
 
 /-- `max2` returns the larger of its arguments. -/
 theorem max2_spec (a b r : Word) :
@@ -62,9 +60,6 @@ theorem max3_spec (a b c s r v0 vt m0 m1 : Word) (hs : s &&& 7#64 = 0#64) :
   iterate 6 braid_step
   braid_call max2_spec' _ _ _
   braid_done
-
-/-- The sum of a list of words, added to `acc` from the left as the loop does. -/
-def wsum (xs : List Word) (acc : Word) : Word := xs.foldl (fun s x => x + s) acc
 
 /-- The loop of `sum_array`, entered with at least one word left. -/
 theorem sum_array_loop (r e : Word) : ∀ (xs : List Word) (x q acc t3 : Word),

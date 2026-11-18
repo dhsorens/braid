@@ -8,21 +8,13 @@ module
 
 public import Examples.RustBasic.RiscV.Image
 public import Lowering.RiscV.Logic
+public import Examples.Spec
 
 public section
 
 namespace Examples.RustBasic.RiscV
 
-open Braid Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
-
-/-- The greatest common divisor of two words. -/
-def wgcd (a b : Word) : Word := BitVec.ofNat 64 (Nat.gcd a.toNat b.toNat)
-
-theorem wgcd_zero (a : Word) : wgcd a 0#64 = a := by simp [wgcd]
-
-theorem wgcd_rec (a b : Word) : wgcd a b = wgcd b (a % b) := by
-  simp only [wgcd, BitVec.toNat_umod]
-  rw [Nat.gcd_comm a.toNat, Nat.gcd_rec, Nat.gcd_comm]
+open Braid Examples Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
 
 /-- The loop of `gcd`, entered with a divisor that is not zero. -/
 theorem gcd_loop (r : Word) (k : Nat) : ∀ a b t : Word, b.toNat = k → b ≠ 0#64 →
