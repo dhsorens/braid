@@ -110,6 +110,53 @@ def Module.toMlir (arch : Arch) (m : Module) : String :=
   "\"braid.module\"() ({\n" ++ String.join (m.funcs.map (Mlir.func arch)) ++
     s!"}) \{arch = {repr m.arch}} : () -> ()\n"
 
+/-! ## Position-independent text, for comparing two lowerings -/
+
+namespace Norm
+
+/-- An address, relative to the block at `a` when it lies within the function. -/
+def rel (f : Func) (a : Word) (x : Word) : String :=
+  let lo := f.entry.toNat
+  let hi := lo + 4 * f.blocks.length + 64
+  if lo ≤ x.toNat && x.toNat < hi then
+    if x.toNat ≥ a.toNat then s!"@+{x.toNat - a.toNat}" else s!"@-{a.toNat - x.toNat}"
+  else s!"{x.toInt}"
+
+def op (arch : Arch) (f : Func) (a : Word) : Op → String
+  | .const d v => s!"%{d} = const {rel f a v}"
+  | .un d (.sext n) x => s!"%{d} = sext{n} %{x}"
+  | .un d (.zext n) x => s!"%{d} = zext{n} %{x}"
+  | .un d o x => s!"%{d} = {o.name} %{x}"
+  | .bin d o x y => s!"%{d} = {o.name} %{x}, %{y}"
+  | .select d c x y => s!"%{d} = select %{c}, %{x}, %{y}"
+  | .get d r => s!"%{d} = get {arch.regName r}"
+  | .set r x => s!"set {arch.regName r}, %{x}"
+  | .getf d r => s!"%{d} = getf {arch.flagName r}"
+  | .setf r x => s!"setf {arch.flagName r}, %{x}"
+  | .load d w x => s!"%{d} = load{w.bits} %{x}"
+  | .store w x y => s!"store{w.bits} %{x}, %{y}"
+  | .havoc d => s!"%{d} = havoc"
+  | .guard c => s!"guard %{c}"
+
+def term (f : Func) (a : Word) : Term → String
+  | .jump t => s!"br {rel f a t}"
+  | .branch c t e => s!"cond_br %{c}, {rel f a t}, {rel f a e}"
+  | .jumpInd x => s!"br_ind %{x}"
+  | .trap r => s!"trap {r}"
+
+def func (arch : Arch) (f : Func) : String :=
+  s!"func {f.name}\n" ++ String.join (f.blocks.map fun (a, b) =>
+    "  block\n" ++ String.join (b.ops.map fun o => s!"    {op arch f a o}\n") ++
+      s!"    {term f a b.term}\n")
+
+end Norm
+
+/-- The module as position-independent text: SSA values are numbered within their block,
+and addresses inside a function are written relative to the block that mentions them. Two
+lowerings that differ only by where the code sits have the same text. -/
+def Module.toNorm (arch : Arch) (m : Module) : String :=
+  String.join (m.funcs.map (Norm.func arch))
+
 /-! ## Lean -/
 
 namespace LeanSrc

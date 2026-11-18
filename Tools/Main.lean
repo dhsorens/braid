@@ -16,17 +16,20 @@ structure Options where
   fns : List String := []
   mlir : Option String := none
   lean : Option String := none
+  norm : Option String := none
   module : String := "Image"
   list : Bool := false
   stats : Bool := false
 
 def usage : String :=
-  "usage: braid-lower <binary> [--list] [--fn <name>]... [--mlir <file>] [--lean <file>] [--module <Name>]\n" ++
+  "usage: braid-lower <binary> [--list] [--stats] [--fn <name>]... [--mlir <file>] [--lean <file>]\n" ++
+  "                   [--norm <file>] [--module <Name>]\n" ++
   "  --list           print the functions of the binary and stop\n" ++
   "  --stats          print how much of the code the lowering covers\n" ++
   "  --fn <name>      lower this function (repeatable; default: every function)\n" ++
   "  --mlir <file>    write the lowered functions in MLIR's generic syntax\n" ++
   "  --lean <file>    write the lowered functions as a Lean module\n" ++
+  "  --norm <file>    write the lowered functions as position-independent text, for diffing\n" ++
   "  --module <Name>  the namespace of the Lean module (default: Image)\n"
 
 def parseArgs : List String → Options → Except String Options
@@ -36,6 +39,7 @@ def parseArgs : List String → Options → Except String Options
   | "--fn" :: n :: rest, o => parseArgs rest { o with fns := o.fns ++ [n] }
   | "--mlir" :: f :: rest, o => parseArgs rest { o with mlir := some f }
   | "--lean" :: f :: rest, o => parseArgs rest { o with lean := some f }
+  | "--norm" :: f :: rest, o => parseArgs rest { o with norm := some f }
   | "--module" :: m :: rest, o => parseArgs rest { o with module := m }
   | a :: rest, o =>
     if a.startsWith "--" then .error s!"unknown option {a}\n{usage}"
@@ -91,6 +95,8 @@ def main (args : List String) : IO UInt32 := do
       printStats funcs (decoded.foldl (fun n (_, (_, bad)) => n + bad.length) 0)
     if let some out := opts.mlir then
       IO.FS.writeFile out (Braid.Module.toMlir Lowering.RiscV.arch { arch := "riscv64", funcs })
+    if let some out := opts.norm then
+      IO.FS.writeFile out (Braid.Module.toNorm Lowering.RiscV.arch { arch := "riscv64", funcs })
     if let some out := opts.lean then
       IO.FS.writeFile out <|
         leanHeader opts.module ["Lowering.RiscV.Sound"] ["RiscvZkvm.Rv64"] ++
