@@ -11,11 +11,11 @@ see [`ISA.md`](ISA.md).
 | The `braid` dialect | syntax, a weakest-precondition semantics, a functional reading proved equivalent to it, MLIR and Lean printers |
 | The logic | heaps and assertions as an Iris BI, atoms, triples with the frame rule built in, symbolic execution rules for every operation, tactics, arrays of words and bytes |
 | RISC-V lowering | every instruction of the model, proved sound |
-| AArch64 lowering | the integer core, proved sound |
+| AArch64 lowering | the integer core, and vector registers with their loads, stores, moves, bitwise operations and lane-wise addition, proved sound |
 | x86-64 lowering | the integer core, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 61 functions with proved specifications across the three instruction sets, 9 of them down to the machine model, at least one on each |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 61 functions across the three instruction sets (17 on RISC-V, 23 on AArch64, 21 on x86-64), each with a proved specification and a theorem about the machine model alone |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.
@@ -32,9 +32,12 @@ In rough order of what they would buy.
 2. **The exact overflow flag of `imul`, `adc` and `sbb`**. It is a `havoc` today, which is
    sound and loses the `jo` after a checked multiplication.
 3. **AArch64 `CLZ`, `RBIT`, and the atomics**, which are what is left of a Go binary there.
-4. **Vectors.** x86-64 code moves data through `xmm` registers even with no floating point in
-   sight (1,343 instructions of the Go binary). A 128-bit register is two words of `braid`
-   state; a lane-wise operation on a word is drafted in the dialect (`BinOp.lanes`).
+4. **Vectors on x86-64, and more of them on AArch64.** A vector register is words of `braid`
+   state, and a lane-wise operation on a word is in the dialect (`BinOp.lanes`). AArch64 has
+   its loads, stores, moves, bitwise operations and lane-wise addition lowered and proved.
+   x86-64 code moves data through `xmm` registers even with no floating point in sight (1,343
+   instructions of the Go binary), and that lowering is in progress. Shuffles, table lookups,
+   the cryptographic instructions and floating point are not lowered on either.
 5. **What the models lack**: `div` and `idiv`, `xchg`, `cqo`, bit tests and atomics on x86-64;
    the RV64 word operations and compressed instructions on RISC-V. These go to the models
    ([`ISA.md`](ISA.md)), not here.
