@@ -101,10 +101,10 @@ def Mem.store (m : Mem) (a : Word) (w : Width) (v : Word) : Option Mem := m.stor
 /-! ## Operations -/
 
 /-- `1` if `b`, and `0` otherwise. -/
-def ofBool (b : Bool) : Word := if b then 1 else 0
+def ofBool (b : Bool) : Word := if b then 1#64 else 0#64
 
-@[simp] theorem ofBool_true : ofBool true = 1 := rfl
-@[simp] theorem ofBool_false : ofBool false = 0 := rfl
+@[simp] theorem ofBool_true : ofBool true = 1#64 := rfl
+@[simp] theorem ofBool_false : ofBool false = 0#64 := rfl
 
 @[simp] theorem ofBool_eq_zero (b : Bool) : (ofBool b = 0#64) = (b = false) := by
   cases b <;> simp [ofBool]
@@ -197,15 +197,15 @@ def Op.wp : Op → Env → State → (Env → State → Prop) → Prop
   | .const d v, ρ, σ, Q => Q (ρ.set d v) σ
   | .un d op a, ρ, σ, Q => Q (ρ.set d (op.eval (ρ a))) σ
   | .bin d op a b, ρ, σ, Q => Q (ρ.set d (op.eval (ρ a) (ρ b))) σ
-  | .select d c a b, ρ, σ, Q => Q (ρ.set d (if ρ c ≠ 0 then ρ a else ρ b)) σ
+  | .select d c a b, ρ, σ, Q => Q (ρ.set d (if ρ c ≠ 0#64 then ρ a else ρ b)) σ
   | .get d r, ρ, σ, Q => Q (ρ.set d (σ.regs r)) σ
   | .set r a, ρ, σ, Q => Q ρ (σ.setReg r (ρ a))
   | .getf d f, ρ, σ, Q => Q (ρ.set d (ofBool (σ.flags f))) σ
-  | .setf f a, ρ, σ, Q => Q ρ (σ.setFlag f (ρ a != 0))
+  | .setf f a, ρ, σ, Q => Q ρ (σ.setFlag f (ρ a != 0#64))
   | .load d w a, ρ, σ, Q => ∃ v, σ.mem.load (ρ a) w = some v ∧ Q (ρ.set d v) σ
   | .store w a v, ρ, σ, Q => ∃ m, σ.mem.store (ρ a) w (ρ v) = some m ∧ Q ρ { σ with mem := m }
   | .havoc d, ρ, σ, Q => ∀ v, Q (ρ.set d v) σ
-  | .guard c, ρ, σ, Q => ρ c ≠ 0 ∧ Q ρ σ
+  | .guard c, ρ, σ, Q => ρ c ≠ 0#64 ∧ Q ρ σ
 
 /-- The weakest precondition of a list of operations, in order. -/
 def wpOps : List Op → Env → State → (Env → State → Prop) → Prop
@@ -215,13 +215,13 @@ def wpOps : List Op → Env → State → (Env → State → Prop) → Prop
 /-- The weakest precondition of a terminator: where the program counter goes. -/
 def Term.wp : Term → Env → State → (State → Prop) → Prop
   | .jump a, _, σ, Q => Q (σ.setPc a)
-  | .branch c t f, ρ, σ, Q => Q (σ.setPc (if ρ c ≠ 0 then t else f))
+  | .branch c t f, ρ, σ, Q => Q (σ.setPc (if ρ c ≠ 0#64 then t else f))
   | .jumpInd a, ρ, σ, Q => Q (σ.setPc (ρ a))
   | .trap _, _, _, _ => False
 
 /-- The weakest precondition of a block. Its SSA values start out as zero. -/
 def Block.wp (b : Block) (σ : State) (Q : State → Prop) : Prop :=
-  wpOps b.ops (fun _ => 0) σ fun ρ σ' => b.term.wp ρ σ' Q
+  wpOps b.ops (fun _ => 0#64) σ fun ρ σ' => b.term.wp ρ σ' Q
 
 /-! ## Monotonicity -/
 

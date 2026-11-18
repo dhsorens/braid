@@ -13,3 +13,8 @@ subDir = "Iris"
 
 [[lean_lib]]
 name = "Braid"
+
+# Tests of the library on small hand-written programs.
+[[lean_lib]]
+name = "BraidTest"
+globs = ["BraidTest.+"]
