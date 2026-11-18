@@ -72,4 +72,44 @@ theorem add3_correct [Layout] (m : MachineState) (r : Word) (hpc : m.pc = 0x4010
   · rw [← hr.reg .rax]
     exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
 
+/-- `sum_to` returns `1 + 2 + ... + n`. The compiler has replaced the loop of the source by a
+closed form with a 128-bit product (`mul`) and a double shift (`shld`). -/
+theorem sum_to_spec (n t0 t1 t2 t3 s r : Word) (c p x z sg o : Bool) :
+    Triple sum_to.program
+      (Atoms.interp [.pc 0x401020#64, .reg rdi n, .reg rax t0, .reg rsi t1, .reg rcx t2,
+        .reg rdx t3, .reg rsp s, .mem s 8 r true, .flag Flags.cf c, .flag Flags.pf p,
+        .flag Flags.af x, .flag Flags.zf z, .flag Flags.sf sg, .flag Flags.of o])
+      (Atoms.interp [.pc r, .prop (regAny rdi), .reg rax (tri n), .prop (regAny rsi),
+        .prop (regAny rcx), .prop (regAny rdx), .reg rsp (s + 8#64), .mem s 8 r true,
+        .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
+        .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)]) := by
+  braid_step
+  braid_step
+  · have hn : n = 0#64 := by simpa using hbr
+    subst hn
+    braid_run
+    braid_forget 5
+    braid_forget 4
+    braid_forget 2
+    braid_forget 3
+    x86_forget_flags
+    simp only [BitVec.xor_self, tri_zero]
+    braid_done
+  · have hn : n ≠ 0#64 := by simpa using hbr
+    braid_run
+    braid_forget 5
+    braid_forget 4
+    braid_forget 2
+    braid_forget 3
+    x86_forget_flags
+    refine Triple.done_eq ?_
+    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_decide
+    have a2 : 18446744073709551614#64 + n = n - 2#64 := by bv_decide
+    have hw : BitVec.setWidth 128 (n - 1#64) * BitVec.setWidth 128 (n - 2#64) =
+        wide (n - 1#64) (n - 2#64) := rfl
+    rw [a1, a2, hw, ← tri_closed n hn, ← wide_lo (n - 1#64) (n - 2#64)]
+    generalize wide (n - 1#64) (n - 2#64) = X
+    simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
+    bv_decide
+
 end Examples.Basic.X86

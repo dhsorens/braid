@@ -15,7 +15,7 @@ see [`ISA.md`](ISA.md).
 | x86-64 lowering | the integer core, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 53 functions with proved specifications across the three instruction sets, 9 of them down to the machine model, at least one on each |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 61 functions with proved specifications across the three instruction sets, 9 of them down to the machine model, at least one on each |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.
@@ -26,9 +26,8 @@ In rough order of what they would buy.
 
 ### Coverage
 
-1. **What is left of the x86-64 integer core**: the rotates, `shld` and `shrd`, one-operand
-   `imul`, and `mul` at 8 and 16 bits. Together they are 15 instructions of a Go binary, but
-   `sum_to` in `basic.c` needs `shld`.
+1. **What is left of the x86-64 integer core**: the rotates, one-operand `imul`, the double
+   shifts by `cl`, and `mul` at 8 and 16 bits: 15 instructions of a Go binary.
 2. **The exact overflow flag of `imul`, `adc` and `sbb`**. It is a `havoc` today, which is
    sound and loses the `jo` after a checked multiplication.
 3. **AArch64 `CLZ`, `RBIT`, and the atomics**, which are what is left of a Go binary there.
@@ -78,7 +77,5 @@ In rough order of what they would buy.
    64-bit division, strings, and an allocator.
 2. **More languages and more of each**: C++, Zig and OCaml; JavaScript on x86-64 and with
    heap objects; Python with arrays.
-3. **The closed forms.** At `-O1` every compiler turns the loop of `sum_to` into a product
-   and a shift. Its specification is a fact of arithmetic the corpus has not proved yet.
 4. **Continuity over real history**: proof lines changed per source line changed, over the
    edits of a real project ([`Continuity.md`](Continuity.md)).

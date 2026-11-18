@@ -61,4 +61,33 @@ theorem add3_correct (prog : Arm64.Program) (s : Arm64.State)
   · rw [← hr.readReg (i := 0#5) (by decide)]
     exact Atoms.reg_of_holds (r := 0) hq (by braid_at)
 
+/-- `sum_to` returns `1 + 2 + ... + n`. The compiler has replaced the loop of the source by a
+closed form with a 128-bit product. -/
+theorem sum_to_spec (n t8 t9 t10 r : Word) :
+    Triple sum_to.program
+      (Atoms.interp [.pc 0x10018#64, .reg x0 n, .reg x8 t8, .reg x9 t9, .reg x10 t10,
+        .reg lr r])
+      (Atoms.interp [.pc r, .reg x0 (tri n), .prop (regAny x8), .prop (regAny x9),
+        .prop (regAny x10), .reg lr r]) := by
+  braid_step
+  · braid_run
+    braid_forget 8
+    braid_forget 9
+    braid_forget 10
+    refine Triple.done_eq ?_
+    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_decide
+    have a2 : n + 18446744073709551614#64 = n - 2#64 := by bv_decide
+    have hw : BitVec.setWidth 128 (n - 1#64) * BitVec.setWidth 128 (n - 2#64) =
+        wide (n - 1#64) (n - 2#64) := rfl
+    rw [a1, a2, hw, ← tri_closed n hbr, ← wide_lo (n - 1#64) (n - 2#64)]
+    generalize wide (n - 1#64) (n - 2#64) = X
+    simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
+    bv_decide
+  · subst hbr
+    braid_run
+    braid_forget 8
+    braid_forget 9
+    braid_forget 10
+    exact Triple.done_eq (by rw [tri_zero])
+
 end Examples.Basic.Arm

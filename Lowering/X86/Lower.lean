@@ -354,6 +354,37 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
       [.const 14 1, .bin 12 .sub 8 14, .bin 13 .ashr 7 12, .bin 19 .and 13 14,
         .const 22 0, .havoc 23, .bin 26 .eq 8 14, .select 27 26 22 23, .havoc 24] ++
       pzsVals 32 w v ++ selFlags 29 19 37 24 38 40 27 ++ writeRM p 48 dst v)
+  | .shld dst src (.imm8 c) =>
+    let k := immCount p w c
+    match w with
+    | .W8 | .W16 => none
+    | _ =>
+      if k = 0 then fin (readRM p 0 dst ++ writeRM p 8 dst 0) else
+      let (ct, v) := cut 17 w 16
+      fin (readRM p 0 dst ++ readReg 8 src ++
+        [.const 12 (k.zeroExtend 64), .bin 13 .shl 0 12,
+          .const 14 (BitVec.ofNat 64 w.bits - k.zeroExtend 64), .bin 15 .lshr 8 14,
+          .bin 16 .or 13 15] ++ ct ++
+        [.bin 18 .lshr 0 14, .const 19 1, .bin 20 .and 18 19, .setf 0 20] ++
+        (if k = 1 then [.bin 21 .xor v 0, .const 22 (signBit w), .bin 23 .and 21 22, .setf 5 23]
+        else [.havoc 23, .setf 5 23]) ++
+        afOps 24 ++ pzsOps 32 w v ++ writeRM p 48 dst v)
+  | .shrd dst src (.imm8 c) =>
+    let k := immCount p w c
+    match w with
+    | .W8 | .W16 => none
+    | _ =>
+      if k = 0 then fin (readRM p 0 dst ++ writeRM p 8 dst 0) else
+      let (ct, v) := cut 17 w 16
+      fin (readRM p 0 dst ++ readReg 8 src ++
+        [.const 12 (k.zeroExtend 64), .bin 13 .lshr 0 12,
+          .const 14 (BitVec.ofNat 64 w.bits - k.zeroExtend 64), .bin 15 .shl 8 14,
+          .bin 16 .or 13 15] ++ ct ++
+        [.const 18 ((k - 1).zeroExtend 64), .bin 19 .lshr 0 18, .const 21 1, .bin 20 .and 19 21,
+          .setf 0 20] ++
+        (if k = 1 then [.bin 21 .xor v 0, .const 22 (signBit w), .bin 23 .and 21 22, .setf 5 23]
+        else [.havoc 23, .setf 5 23]) ++
+        afOps 24 ++ pzsOps 32 w v ++ writeRM p 48 dst v)
   | .imul dst src1 src2 =>
     let (c, v) := cut 17 w 16
     fin (readRM p 0 src1 ++ readOp p 8 src2 ++ [.bin 16 .mul 0 8] ++ c ++

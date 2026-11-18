@@ -22,9 +22,9 @@ down to a theorem about the machine model alone (`<function>_correct`).
 
 | Source | RISC-V | AArch64 | x86-64 |
 | --- | --- | --- | --- |
-| `c/basic.c` | **add3**, **max_u64** | **add3**, max_u64 | **add3**, max_u64 |
+| `c/basic.c` | **add3**, **max_u64**, sum_to | **add3**, max_u64, sum_to | **add3**, max_u64, sum_to |
 | `c/memory.c` | swap, max2, max3, sum_array | swap, max2, max3, sum_array | swap, **max2**, max3, sum_array |
-| `c/bytes.c` | str_len, **count_ones** | str_len, count_ones | str_len |
+| `c/bytes.c` | str_len, fill, **count_ones** | str_len, fill, count_ones | str_len, fill |
 | `rust/basic.rs` | **gcd** | add3, max_u64, **gcd**, sum_slice | add3, max_u64, sum_slice |
 | `swift/basic.swift` | swift_add3, swift_min, **swift_gcd** | swift_add3, swift_min, swift_gcd | swift_add3, swift_min |
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64 |
@@ -39,7 +39,10 @@ What the examples exercise:
 - **Loads and stores** (`swap`): points-to facts and the frame rule.
 - **A loop over an array** (`sum_array`, `sum_slice`, `SumSlice`): a pointer walk on RISC-V,
   an indexed load on AArch64 and x86-64, a signed loop condition in Go.
-- **A loop over bytes** (`str_len`): byte loads, and a comparison against memory on x86-64.
+- **A loop over bytes** (`str_len`, `fill`): byte loads and stores, and a comparison against
+  memory on x86-64.
+- **A loop the compiler removed** (`sum_to`): the binary multiplies at double width and
+  shifts; the specification is the sum, and a lemma connects the two.
 - **A loop that needs a measure** (`gcd`, `count_ones`): termination by strong induction.
 - **A call with a stack frame, and a tail call** (`max3`): a callee-saved register saved
   around the call. On x86-64 the return address is a word on the stack, pushed by `call` and
@@ -113,7 +116,9 @@ Three habits from the corpus:
   flags it sets. Take them in the precondition with any value, and leave them as `flagAny` in
   the postcondition (`x86_forget_flags` does all six).
 - **Say what the compiler did, not what you wrote.** `sum_to` in `basic.c` is a loop in the
-  source and a closed form with a 128-bit product on x86-64. The proof is about the binary.
+  source and, on every instruction set, a closed form with a 128-bit product in the binary.
+  Its proof is the symbolic run and one lemma of arithmetic, `tri_closed`, shared by all
+  three.
 
 ## What the corpus found
 
@@ -123,6 +128,5 @@ of a model are in [`docs/ISA.md`](../docs/ISA.md). `braid-lower --stats` on a wh
 is the broadest test: 95% of its instructions lower on AArch64, and 95% on x86-64.
 
 What is not verified, and why: `gcd` on x86-64, because the machine model has no `div`;
-`sum_to`, which every compiler turns into a closed form whose correctness is a fact of
-arithmetic not yet proved here; `fill`; and JavaScript on RISC-V and x86-64, because V8
-emits code for the machine it runs on.
+`count_ones` on x86-64, which is lowered and tested but not yet proved; and JavaScript on
+RISC-V and x86-64, because V8 emits code for the machine it runs on.

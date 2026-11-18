@@ -9,12 +9,13 @@ module
 
 public import Examples.Basic.RiscV.Image
 public import Lowering.RiscV.Logic
+public import Examples.Spec
 
 public section
 
 namespace Examples.Basic.RiscV
 
-open Braid Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
+open Braid Examples Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
 
 /-- `add3` returns the sum of its arguments. -/
 theorem add3_spec (a b c r : Word) :
@@ -62,5 +63,34 @@ theorem max_u64_correct (s : MachineState)
   refine ⟨n, s', hn, ?_, ?_⟩
   · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
   · rw [← hr.getReg (r := .x10) (by decide)]; exact Atoms.reg_of_holds (r := 10) hq (by braid_at)
+
+/-- `sum_to` returns `1 + 2 + ... + n`. The compiler has replaced the loop of the source by a
+closed form with a 128-bit product. -/
+theorem sum_to_spec (n t1 t2 t3 r : Word) :
+    Triple sum_to.program
+      (Atoms.interp [.pc 0x10018#64, .reg a0 n, .reg a1 t1, .reg a2 t2, .reg a3 t3, .reg ra r])
+      (Atoms.interp [.pc (r &&& ~~~1#64), .reg a0 (tri n), .prop (regAny a1),
+        .prop (regAny a2), .prop (regAny a3), .reg ra r]) := by
+  braid_step
+  · subst hbr
+    braid_run
+    braid_forget 11
+    braid_forget 12
+    braid_forget 13
+    have h0 : tri 0#64 = 0#64 := by decide
+    exact Triple.done_eq (by rw [h0])
+  · braid_run
+    braid_forget 11
+    braid_forget 12
+    braid_forget 13
+    refine Triple.done_eq ?_
+    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_decide
+    have a2 : n + 18446744073709551614#64 = n - 2#64 := by bv_decide
+    have hw : BitVec.setWidth 128 (n - 1#64) * BitVec.setWidth 128 (n - 2#64) =
+        wide (n - 1#64) (n - 2#64) := rfl
+    rw [a1, a2, hw, ← tri_closed n hbr, ← wide_lo (n - 1#64) (n - 2#64)]
+    generalize wide (n - 1#64) (n - 2#64) = X
+    simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
+    bv_decide
 
 end Examples.Basic.RiscV

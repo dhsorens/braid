@@ -246,7 +246,35 @@
       "braid.set"(%bb1d_0) {reg = "rax"} : (i64) -> ()
       "braid.br"()[^bb20] : () -> ()
     ^bb20:  // 0x401040
-      "braid.trap"() {reason = "shld"} : () -> ()
+      %bb20_0 = "braid.get"() {reg = "rdx"} : () -> i64
+      %bb20_8 = "braid.get"() {reg = "rcx"} : () -> i64
+      %bb20_12 = "braid.const"() {value = 63 : i64} : () -> i64
+      %bb20_13 = "braid.shl"(%bb20_0, %bb20_12) : (i64, i64) -> i64
+      %bb20_14 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb20_15 = "braid.lshr"(%bb20_8, %bb20_14) : (i64, i64) -> i64
+      %bb20_16 = "braid.or"(%bb20_13, %bb20_15) : (i64, i64) -> i64
+      %bb20_18 = "braid.lshr"(%bb20_0, %bb20_14) : (i64, i64) -> i64
+      %bb20_19 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb20_20 = "braid.and"(%bb20_18, %bb20_19) : (i64, i64) -> i64
+      "braid.setf"(%bb20_20) {flag = "cf"} : (i64) -> ()
+      %bb20_23 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb20_23) {flag = "of"} : (i64) -> ()
+      %bb20_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb20_24) {flag = "af"} : (i64) -> ()
+      %bb20_32 = "braid.zext"(%bb20_16) {bits = 8 : i64} : (i64) -> i64
+      %bb20_33 = "braid.popcnt"(%bb20_32) : (i64) -> i64
+      %bb20_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb20_35 = "braid.and"(%bb20_33, %bb20_34) : (i64, i64) -> i64
+      %bb20_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb20_37 = "braid.eq"(%bb20_35, %bb20_36) : (i64, i64) -> i64
+      "braid.setf"(%bb20_37) {flag = "pf"} : (i64) -> ()
+      %bb20_38 = "braid.eq"(%bb20_16, %bb20_36) : (i64, i64) -> i64
+      "braid.setf"(%bb20_38) {flag = "zf"} : (i64) -> ()
+      %bb20_39 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
+      %bb20_40 = "braid.and"(%bb20_16, %bb20_39) : (i64, i64) -> i64
+      "braid.setf"(%bb20_40) {flag = "sf"} : (i64) -> ()
+      "braid.set"(%bb20_16) {reg = "rdx"} : (i64) -> ()
+      "braid.br"()[^bb25] : () -> ()
     ^bb25:  // 0x401045
       %bb25_0 = "braid.get"() {reg = "rdx"} : () -> i64
       %bb25_8 = "braid.get"() {reg = "rax"} : () -> i64
