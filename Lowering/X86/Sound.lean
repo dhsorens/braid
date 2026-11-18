@@ -22,6 +22,7 @@ public import Lowering.X86.ShiftCl
 public import Lowering.X86.Carry
 public import Lowering.X86.Mul
 public import Lowering.X86.DShift
+public import Lowering.X86.Rotate
 
 @[expose] public section
 
@@ -149,6 +150,14 @@ theorem lowerOp_sound {w : Width} (i : Operation w) : OpSound p i := by
   case bswap dst => exact bswap_sound dst
   case mul src => exact mul_sound src
   case imul1 src => exact imul1_sound src
+  case rol dst c =>
+    cases c with
+    | cl => intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl
+    | imm8 c => exact rol_sound dst c
+  case ror dst c =>
+    cases c with
+    | cl => intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl
+    | imm8 c => exact ror_sound dst c
   case shld dst src c =>
     cases c with
     | cl => intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl

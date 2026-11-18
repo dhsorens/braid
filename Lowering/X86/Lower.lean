@@ -385,6 +385,36 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
         (if k = 1 then [.bin 21 .xor v 0, .const 22 (signBit w), .bin 23 .and 21 22, .setf 5 23]
         else [.havoc 23, .setf 5 23]) ++
         afOps 24 ++ pzsOps 32 w v ++ writeRM p 48 dst v)
+  | .rol dst (.imm8 c) =>
+    let k := immCount p w c
+    match w with
+    | .W8 | .W16 => none
+    | _ =>
+      if k = 0 then fin (readRM p 0 dst ++ writeRM p 8 dst 0) else
+      let (ct, v) := cut 17 w 16
+      fin (readRM p 0 dst ++
+        [.const 12 (k.zeroExtend 64), .bin 13 .shl 0 12,
+          .const 14 (BitVec.ofNat 64 w.bits - k.zeroExtend 64), .bin 15 .lshr 0 14,
+          .bin 16 .or 13 15] ++ ct ++
+        [.const 18 1, .bin 19 .and v 18, .setf 0 19] ++
+        (if k = 1 then [.bin 21 .xor v 0, .const 22 (signBit w), .bin 23 .and 21 22, .setf 5 23]
+        else [.havoc 23, .setf 5 23]) ++
+        writeRM p 48 dst v)
+  | .ror dst (.imm8 c) =>
+    let k := immCount p w c
+    match w with
+    | .W8 | .W16 => none
+    | _ =>
+      if k = 0 then fin (readRM p 0 dst ++ writeRM p 8 dst 0) else
+      let (ct, v) := cut 17 w 16
+      fin (readRM p 0 dst ++
+        [.const 12 (k.zeroExtend 64), .bin 13 .lshr 0 12,
+          .const 14 (BitVec.ofNat 64 w.bits - k.zeroExtend 64), .bin 15 .shl 0 14,
+          .bin 16 .or 13 15] ++ ct ++
+        [.const 18 (signBit w), .bin 19 .and v 18, .setf 0 19] ++
+        (if k = 1 then [.bin 21 .xor v 0, .const 22 (signBit w), .bin 23 .and 21 22, .setf 5 23]
+        else [.havoc 23, .setf 5 23]) ++
+        writeRM p 48 dst v)
   | .imul dst src1 src2 =>
     let (c, v) := cut 17 w 16
     fin (readRM p 0 src1 ++ readOp p 8 src2 ++ [.bin 16 .mul 0 8] ++ c ++

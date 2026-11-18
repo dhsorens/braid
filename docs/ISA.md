@@ -116,9 +116,9 @@ disassembler printed. Checking them against the bytes of the binary is later wor
 
 The lowering covers the moves, `lea`, the stack, the conditional moves and sets, addition and
 subtraction with and without carry, comparison, the bitwise operations, shifts by an
-immediate and by `cl`, `imul`, the widening `mul`, `bswap`, and every jump, call and return.
-It does not yet cover the double shifts and rotates, one-operand `imul`, the string
-instructions, a 32-bit address size, or the vector instructions. On a complete Go binary
+immediate and by `cl`, double shifts and rotations by an immediate, `imul`, the widening
+multiplications, `bswap`, and every jump, call and return. It does not yet cover rotations
+through carry, the string instructions, a 32-bit address size, or the vector instructions. On a complete Go binary
 (113,547 instructions, padding left out), 95% of the instructions lower to something other
 than `trap`. Of the rest, three quarters are instructions the model's parser does not read
 (moves through `xmm` registers, `lock`-prefixed and atomic instructions, bit tests), and

@@ -26,8 +26,9 @@ In rough order of what they would buy.
 
 ### Coverage
 
-1. **What is left of the x86-64 integer core**: the rotates, one-operand `imul`, the double
-   shifts by `cl`, and `mul` at 8 and 16 bits: 15 instructions of a Go binary.
+1. **What is left of the x86-64 integer core**: rotations through carry, rotations and double
+   shifts by `cl`, and the widening multiplications at 8 and 16 bits: five instructions of a
+   Go binary.
 2. **The exact overflow flag of `imul`, `adc` and `sbb`**. It is a `havoc` today, which is
    sound and loses the `jo` after a checked multiplication.
 3. **AArch64 `CLZ`, `RBIT`, and the atomics**, which are what is left of a Go binary there.
