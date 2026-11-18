@@ -55,6 +55,15 @@ In rough order of what they would buy.
    works on them. Triples are not yet Iris weakest preconditions; making them so would bring
    invariants and ghost state.
 
+5. **Shorter theorems about the machine.** Every example ends in a theorem about its machine
+   model, and writing those showed what the library lacks. A precondition with an array has
+   to be written out by hand before `machine_sound_flat` takes it; `braid_disj` gives up when
+   two memory atoms are present; scratch stack words are quantified one by one where "these
+   bytes may be written" would do; and the predicates the statements use (`HasBytes`, and
+   `Apart` for regions that do not overlap) are defined once per instruction set, in three
+   slightly different places. One set of these in the logic, and a tactic for the side
+   conditions, would cut the longest statements by half.
+
 ### The dialect
 
 1. **A simplifier across blocks.** `Block.dce` removes dead operations within a block and is
