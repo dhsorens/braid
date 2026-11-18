@@ -175,4 +175,9 @@ macro "braid_forget " r:term : tactic =>
   `(tactic| (apply Triple.forget_reg (r := $r)
              case hupd => braid_upd))
 
+/-- Forget the value of a flag: `braid_forget_flag f`. -/
+macro "braid_forget_flag " f:term : tactic =>
+  `(tactic| (apply Triple.forget_flag (f := $f)
+             case hupd => braid_upd))
+
 end Braid

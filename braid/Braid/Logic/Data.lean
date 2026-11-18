@@ -8,7 +8,7 @@
   ## Main definitions
 
   * `wordsAt`, `bytesAt`: an array of 64-bit words, and of bytes
-  * `regAny`: a register holding some value
+  * `regAny`, `flagAny`: a register, or a flag, holding some value
 
   ## Main results
 
@@ -39,6 +39,9 @@ def bytesAt (p : Word) : List (BitVec 8) → SProp
 
 /-- Register `r` holds some value. -/
 def regAny (r : Reg) : SProp := iprop(∃ v, regIs r v)
+
+/-- Flag `f` holds some value. -/
+def flagAny (f : Flag) : SProp := iprop(∃ b, flagIs f b)
 
 theorem wordsAt_nil (p : Word) : (Atom.prop (wordsAt p [])).interp = Atoms.interp [] := rfl
 
@@ -75,6 +78,21 @@ theorem Triple.forget_reg {P : Program} {as as' : Atoms} {r : Reg} {v : Word} {Q
   obtain ⟨F, e, e'⟩ := hupd.split
   rw [e]; rw [e'] at h
   exact h.conseq (sep_mono_left (fun _ hv => ⟨_, ⟨v, rfl⟩, hv⟩)) .rfl
+
+/-- Forget the value of a flag. -/
+theorem Triple.forget_flag {P : Program} {as as' : Atoms} {f : Flag} {b : Bool} {Q : SProp}
+    (hupd : as.Upd (.flag f b) (.prop (flagAny f)) as')
+    (h : Triple P (Atoms.interp as') Q) : Triple P (Atoms.interp as) Q := by
+  obtain ⟨F, e, e'⟩ := hupd.split
+  rw [e]; rw [e'] at h
+  exact h.conseq (sep_mono_left (fun _ hv => ⟨_, ⟨b, rfl⟩, hv⟩)) .rfl
+
+/-- Name the value of a flag that holds some value. -/
+theorem Triple.flag_any {P : Program} {as rest : Atoms} {f : Flag} {Q : SProp}
+    (hext : as.Extract (.prop (flagAny f)) rest)
+    (h : ∀ b, Triple P (Atoms.interp (.flag f b :: rest)) Q) : Triple P (Atoms.interp as) Q := by
+  rw [hext.interp]
+  exact (Triple.exists_pre h).conseq sep_exists_right.1 .rfl
 
 /-- Name the value of a register that holds some value. -/
 theorem Triple.reg_any {P : Program} {as rest : Atoms} {r : Reg} {Q : SProp}

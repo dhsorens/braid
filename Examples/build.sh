@@ -47,7 +47,7 @@ link_and_lower() {
   extra=""
   case $isa in
     rv) "$RV_LD" -Ttext=0x10000 --no-relax -e "$1" "$obj" -o "$elf" ;;
-    arm) "$LLD" -flavor gnu -Ttext=0x10000 -e "$1" "$obj" -o "$elf" ;;
+    arm) "$LLD" -flavor gnu --image-base=0 -Ttext=0x10000 -e "$1" "$obj" -o "$elf" ;;
     x86)
       "$LLD" -flavor gnu -Ttext=0x401000 -e "$1" "$obj" -o "$elf"
       "$OBJDUMP" -d "$elf" > "Examples/bin/$name.x86.dis"

@@ -8,6 +8,7 @@
 -/
 
 import Tools.RiscV
+import Tools.Arm
 
 open Tools
 
@@ -101,6 +102,25 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile out <|
         leanHeader opts.module ["Lowering.RiscV.Sound"] ["RiscvZkvm.Rv64"] ++
         "\n".intercalate (decoded.map fun (f, (code, _)) => RiscV.leanSource f.name f.addr code) ++
+        s!"\nend {opts.module}\n"
+    return 0
+  | .aarch64 =>
+    let decoded := fs.map fun f => (f, Arm.decodeFunction f.addr (Elf.words32 f.bytes))
+    unless opts.stats do
+      for (f, (_, bad)) in decoded do
+        for (a, w) in bad do
+          IO.eprintln s!"warning: {f.name}: 0x{Braid.hex a}: the word 0x{Braid.hex w.toNat} does not decode"
+    let funcs := decoded.map fun (f, (ws, _)) => Arm.toFunc f.name f.addr ws
+    if opts.stats then
+      printStats funcs (decoded.foldl (fun n (_, (_, bad)) => n + bad.length) 0)
+    if let some out := opts.mlir then
+      IO.FS.writeFile out (Braid.Module.toMlir Lowering.Arm.arch { arch := "aarch64", funcs })
+    if let some out := opts.norm then
+      IO.FS.writeFile out (Braid.Module.toNorm Lowering.Arm.arch { arch := "aarch64", funcs })
+    if let some out := opts.lean then
+      IO.FS.writeFile out <|
+        leanHeader opts.module ["Lowering.Arm.Logic"] [] ++
+        "\n".intercalate (decoded.map fun (f, (ws, _)) => Arm.leanSource f.name f.addr ws) ++
         s!"\nend {opts.module}\n"
     return 0
   | m =>
