@@ -48,6 +48,9 @@ abbrev Env := Var → Word
 def Env.set (ρ : Env) (x : Var) (v : Word) : Env :=
   fun y => if y = x then v else ρ y
 
+theorem Env.set_apply (ρ : Env) (x y : Var) (v : Word) :
+    ρ.set x v y = if y = x then v else ρ y := rfl
+
 @[simp] theorem Env.set_same (ρ : Env) (x : Var) (v : Word) : ρ.set x v x = v := by
   simp [Env.set]
 
@@ -103,10 +106,10 @@ def ofBool (b : Bool) : Word := if b then 1 else 0
 @[simp] theorem ofBool_true : ofBool true = 1 := rfl
 @[simp] theorem ofBool_false : ofBool false = 0 := rfl
 
-@[simp] theorem ofBool_ne_zero (b : Bool) : (ofBool b ≠ 0) = (b = true) := by
+@[simp] theorem ofBool_eq_zero (b : Bool) : (ofBool b = 0#64) = (b = false) := by
   cases b <;> simp [ofBool]
 
-@[simp] theorem ofBool_eq_zero (b : Bool) : (ofBool b = 0) = (b = false) := by
+@[simp] theorem ofBool_bne_zero (b : Bool) : (ofBool b != 0#64) = b := by
   cases b <;> simp [ofBool]
 
 /-- The bytes of a word in reverse order. -/
@@ -151,22 +154,58 @@ def BinOp.eval : BinOp → Word → Word → Word
   | .slt, a, b => ofBool (a.slt b)
   | .sle, a, b => ofBool (a.sle b)
 
+/-! One equation for each operation, so that `simp` evaluates an operation it knows and
+leaves an unknown one alone. -/
+
+@[simp] theorem BinOp.eval_add (a b : Word) : BinOp.add.eval a b = a + b := rfl
+@[simp] theorem BinOp.eval_sub (a b : Word) : BinOp.sub.eval a b = a - b := rfl
+@[simp] theorem BinOp.eval_mul (a b : Word) : BinOp.mul.eval a b = a * b := rfl
+@[simp] theorem BinOp.eval_mulhu (a b : Word) : BinOp.mulhu.eval a b = ((a.zeroExtend 128 * b.zeroExtend 128) >>> 64).truncate 64 := rfl
+@[simp] theorem BinOp.eval_mulhs (a b : Word) : BinOp.mulhs.eval a b = ((a.signExtend 128 * b.signExtend 128) >>> 64).truncate 64 := rfl
+@[simp] theorem BinOp.eval_mulhsu (a b : Word) : BinOp.mulhsu.eval a b = ((a.signExtend 128 * b.zeroExtend 128) >>> 64).truncate 64 := rfl
+@[simp] theorem BinOp.eval_udiv (a b : Word) : BinOp.udiv.eval a b = a / b := rfl
+@[simp] theorem BinOp.eval_urem (a b : Word) : BinOp.urem.eval a b = a % b := rfl
+@[simp] theorem BinOp.eval_sdiv (a b : Word) : BinOp.sdiv.eval a b = a.sdiv b := rfl
+@[simp] theorem BinOp.eval_srem (a b : Word) : BinOp.srem.eval a b = a.srem b := rfl
+@[simp] theorem BinOp.eval_and (a b : Word) : BinOp.and.eval a b = a &&& b := rfl
+@[simp] theorem BinOp.eval_or (a b : Word) : BinOp.or.eval a b = a ||| b := rfl
+@[simp] theorem BinOp.eval_xor (a b : Word) : BinOp.xor.eval a b = a ^^^ b := rfl
+@[simp] theorem BinOp.eval_shl (a b : Word) : BinOp.shl.eval a b = a <<< b := rfl
+@[simp] theorem BinOp.eval_lshr (a b : Word) : BinOp.lshr.eval a b = a >>> b := rfl
+@[simp] theorem BinOp.eval_ashr (a b : Word) : BinOp.ashr.eval a b = a.sshiftRight' b := rfl
+@[simp] theorem BinOp.eval_rotr (a b : Word) : BinOp.rotr.eval a b = a.rotateRight b.toNat := rfl
+@[simp] theorem BinOp.eval_eq (a b : Word) : BinOp.eq.eval a b = ofBool (a == b) := rfl
+@[simp] theorem BinOp.eval_ne (a b : Word) : BinOp.ne.eval a b = ofBool (a != b) := rfl
+@[simp] theorem BinOp.eval_ult (a b : Word) : BinOp.ult.eval a b = ofBool (a.ult b) := rfl
+@[simp] theorem BinOp.eval_ule (a b : Word) : BinOp.ule.eval a b = ofBool (a.ule b) := rfl
+@[simp] theorem BinOp.eval_slt (a b : Word) : BinOp.slt.eval a b = ofBool (a.slt b) := rfl
+@[simp] theorem BinOp.eval_sle (a b : Word) : BinOp.sle.eval a b = ofBool (a.sle b) := rfl
+@[simp] theorem UnOp.eval_not (a : Word) : UnOp.not.eval a = ~~~a := rfl
+@[simp] theorem UnOp.eval_neg (a : Word) : UnOp.neg.eval a = -a := rfl
+@[simp] theorem UnOp.eval_clz (a : Word) : UnOp.clz.eval a = a.clz := rfl
+@[simp] theorem UnOp.eval_popcnt (a : Word) : UnOp.popcnt.eval a = a.cpop := rfl
+@[simp] theorem UnOp.eval_rbit (a : Word) : UnOp.rbit.eval a = a.reverse := rfl
+@[simp] theorem UnOp.eval_bswap (a : Word) : UnOp.bswap.eval a = Braid.bswap a := rfl
+@[simp] theorem UnOp.eval_sext (n : Nat) (a : Word) :
+    (UnOp.sext n).eval a = (a.truncate n).signExtend 64 := rfl
+@[simp] theorem UnOp.eval_zext (n : Nat) (a : Word) :
+    (UnOp.zext n).eval a = (a.truncate n).zeroExtend 64 := rfl
+
 /-- The weakest precondition of an operation: it runs without fault from `ρ` and `σ`, and
 every outcome satisfies `Q`. -/
-def Op.wp (op : Op) (ρ : Env) (σ : State) (Q : Env → State → Prop) : Prop :=
-  match op with
-  | .const d v => Q (ρ.set d v) σ
-  | .un d op a => Q (ρ.set d (op.eval (ρ a))) σ
-  | .bin d op a b => Q (ρ.set d (op.eval (ρ a) (ρ b))) σ
-  | .select d c a b => Q (ρ.set d (if ρ c ≠ 0 then ρ a else ρ b)) σ
-  | .get d r => Q (ρ.set d (σ.regs r)) σ
-  | .set r a => Q ρ (σ.setReg r (ρ a))
-  | .getf d f => Q (ρ.set d (ofBool (σ.flags f))) σ
-  | .setf f a => Q ρ (σ.setFlag f (ρ a != 0))
-  | .load d w a => ∃ v, σ.mem.load (ρ a) w = some v ∧ Q (ρ.set d v) σ
-  | .store w a v => ∃ m, σ.mem.store (ρ a) w (ρ v) = some m ∧ Q ρ { σ with mem := m }
-  | .havoc d => ∀ v, Q (ρ.set d v) σ
-  | .guard c => ρ c ≠ 0 ∧ Q ρ σ
+def Op.wp : Op → Env → State → (Env → State → Prop) → Prop
+  | .const d v, ρ, σ, Q => Q (ρ.set d v) σ
+  | .un d op a, ρ, σ, Q => Q (ρ.set d (op.eval (ρ a))) σ
+  | .bin d op a b, ρ, σ, Q => Q (ρ.set d (op.eval (ρ a) (ρ b))) σ
+  | .select d c a b, ρ, σ, Q => Q (ρ.set d (if ρ c ≠ 0 then ρ a else ρ b)) σ
+  | .get d r, ρ, σ, Q => Q (ρ.set d (σ.regs r)) σ
+  | .set r a, ρ, σ, Q => Q ρ (σ.setReg r (ρ a))
+  | .getf d f, ρ, σ, Q => Q (ρ.set d (ofBool (σ.flags f))) σ
+  | .setf f a, ρ, σ, Q => Q ρ (σ.setFlag f (ρ a != 0))
+  | .load d w a, ρ, σ, Q => ∃ v, σ.mem.load (ρ a) w = some v ∧ Q (ρ.set d v) σ
+  | .store w a v, ρ, σ, Q => ∃ m, σ.mem.store (ρ a) w (ρ v) = some m ∧ Q ρ { σ with mem := m }
+  | .havoc d, ρ, σ, Q => ∀ v, Q (ρ.set d v) σ
+  | .guard c, ρ, σ, Q => ρ c ≠ 0 ∧ Q ρ σ
 
 /-- The weakest precondition of a list of operations, in order. -/
 def wpOps : List Op → Env → State → (Env → State → Prop) → Prop
@@ -174,12 +213,11 @@ def wpOps : List Op → Env → State → (Env → State → Prop) → Prop
   | op :: ops, ρ, σ, Q => op.wp ρ σ fun ρ' σ' => wpOps ops ρ' σ' Q
 
 /-- The weakest precondition of a terminator: where the program counter goes. -/
-def Term.wp (t : Term) (ρ : Env) (σ : State) (Q : State → Prop) : Prop :=
-  match t with
-  | .jump a => Q (σ.setPc a)
-  | .branch c t f => Q (σ.setPc (if ρ c ≠ 0 then t else f))
-  | .jumpInd a => Q (σ.setPc (ρ a))
-  | .trap _ => False
+def Term.wp : Term → Env → State → (State → Prop) → Prop
+  | .jump a, _, σ, Q => Q (σ.setPc a)
+  | .branch c t f, ρ, σ, Q => Q (σ.setPc (if ρ c ≠ 0 then t else f))
+  | .jumpInd a, ρ, σ, Q => Q (σ.setPc (ρ a))
+  | .trap _, _, _, _ => False
 
 /-- The weakest precondition of a block. Its SSA values start out as zero. -/
 def Block.wp (b : Block) (σ : State) (Q : State → Prop) : Prop :=
