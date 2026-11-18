@@ -405,6 +405,21 @@ def lowerOp {w : Width} (i : Operation w) : Option (List Op × Term) :=
         [.bin 16 .mul 0 8, .un 20 (.zext 32) 16, .const 21 32, .bin 17 .lshr 16 21] ++ flags ++
         writeReg 24 (.low .rax w) 20 ++ writeReg 32 (.low .rdx w) 17)
     | _ => none
+  | .imul1 src =>
+    let flags : List Op :=
+      [.havoc 39, .setf 0 39, .setf 5 39, .havoc 40, .setf 4 40, .havoc 41, .setf 3 41,
+        .havoc 42, .setf 2 42, .havoc 43, .setf 1 43]
+    match w with
+    | .W64 =>
+      fin (readReg 0 (.low .rax w) ++ readRM p 8 src ++
+        [.bin 16 .mul 0 8, .bin 17 .mulhs 0 8] ++ flags ++
+        writeReg 24 (.low .rax w) 16 ++ writeReg 32 (.low .rdx w) 17)
+    | .W32 =>
+      fin (readReg 0 (.low .rax w) ++ readRM p 8 src ++
+        [.un 18 (.sext 32) 0, .un 19 (.sext 32) 8, .bin 16 .mul 18 19, .un 20 (.zext 32) 16,
+          .const 21 32, .bin 17 .lshr 16 21] ++ flags ++
+        writeReg 24 (.low .rax w) 20 ++ writeReg 32 (.low .rdx w) 17)
+    | _ => none
   | .bswap dst =>
     match w with
     | .W64 => fin (readReg 0 dst ++ [.un 8 .bswap 0] ++ writeReg 16 dst 8)

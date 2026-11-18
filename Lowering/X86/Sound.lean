@@ -148,6 +148,7 @@ theorem lowerOp_sound {w : Width} (i : Operation w) : OpSound p i := by
   case sbb dst src => exact sbb_sound dst src
   case bswap dst => exact bswap_sound dst
   case mul src => exact mul_sound src
+  case imul1 src => exact imul1_sound src
   case shld dst src c =>
     cases c with
     | cl => intro s σ ρ Q ops t h hl hw; simp [lowerOp] at hl

@@ -304,6 +304,11 @@ theorem umul_ne {n : Nat} (a b : BitVec n) :
       omega
     rw [bne_iff_ne.2 e2, bne_iff_ne.2 e1]
 
+/-- A signed product at a wider width, as the model computes it in integers. -/
+theorem ofInt_mul_toInt {n : Nat} (a b : BitVec n) (m : Nat) :
+    BitVec.ofInt m (a.toInt * b.toInt) = a.signExtend m * b.signExtend m := by
+  simp [BitVec.ofInt_mul, BitVec.signExtend]
+
 theorem cpop_eq {w : Nat} (x : BitVec w) : x.cpop_ = x.cpop := by
   have key : ∀ pos acc, x.cpopNatRec_ pos acc = x.cpopNatRec pos acc := by
     intro pos
