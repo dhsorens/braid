@@ -94,6 +94,15 @@ inductive Atoms.At : Atoms → Atom → Prop where
   | here {a : Atom} {as : Atoms} : At (a :: as) a
   | there {a b : Atom} {as : Atoms} : At as a → At (b :: as) a
 
+/-- An atom that is a member of the list is in it. -/
+theorem Atoms.At.of_mem {as : Atoms} {a : Atom} (h : a ∈ as) : as.At a := by
+  induction as with
+  | nil => cases h
+  | cons b as ih =>
+    rcases List.mem_cons.1 h with rfl | h
+    · exact .here
+    · exact .there (ih h)
+
 /-- The second list is the first with one occurrence of `a` replaced by `a'`. -/
 inductive Atoms.Upd : Atoms → Atom → Atom → Atoms → Prop where
   | here {a a' : Atom} {as : Atoms} : Upd (a :: as) a a' (a' :: as)

@@ -192,15 +192,6 @@ theorem machine_sound_flat {code : List (Word × Instr)} {blocks : List (Word ×
 /-! ## Out of the logic, for memory -/
 
 
-/-- An atom that is a member of a list is at a place in it. -/
-theorem at_of_mem {as : Atoms} {a : Atom} (h : a ∈ as) : as.At a := by
-  induction as with
-  | nil => cases h
-  | cons b as ih =>
-    rcases List.mem_cons.1 h with rfl | h
-    · exact .here
-    · exact .there (ih h)
-
 /-- **Out of the logic, for memory.** A machine related to a state of which a writable memory
 atom holds has the bytes of that atom. -/
 theorem hasBytes_of_holds {as : Atoms} {R : SProp} {s : MachineState} {σ : State}
@@ -216,7 +207,7 @@ theorem hasBytes_of_holds_words {l₁ l₂ : Atoms} {R : SProp} {s : MachineStat
     (h : (Atoms.interp (l₁ ++ .prop (wordsAt p xs) :: l₂)).holds R σ) (i : Nat)
     (hi : i < xs.length) : HasBytes s (p + BitVec.ofNat 64 (8 * i)) 8 xs[i] := by
   rw [wordsAt_eq_interp, Atoms.interp_flatten] at h
-  exact hasBytes_of_holds hr h (at_of_mem (List.mem_append_left _
+  exact hasBytes_of_holds hr h (Atoms.At.of_mem (List.mem_append_left _
     (List.mem_append_right _ (mem_wordsAtoms.2 ⟨i, hi, rfl⟩))))
 
 /-- A machine related to a state of which an array of bytes holds has each of the bytes. -/
@@ -225,7 +216,7 @@ theorem hasBytes_of_holds_bytes {l₁ l₂ : Atoms} {R : SProp} {s : MachineStat
     (h : (Atoms.interp (l₁ ++ .prop (bytesAt p bs) :: l₂)).holds R σ) (i : Nat)
     (hi : i < bs.length) : HasBytes s (p + BitVec.ofNat 64 i) 1 (bs[i].zeroExtend 64) := by
   rw [bytesAt_eq_interp, Atoms.interp_flatten] at h
-  exact hasBytes_of_holds hr h (at_of_mem (List.mem_append_left _
+  exact hasBytes_of_holds hr h (Atoms.At.of_mem (List.mem_append_left _
     (List.mem_append_right _ (mem_bytesAtoms.2 ⟨i, hi, rfl⟩))))
 
 end Lowering.RiscV

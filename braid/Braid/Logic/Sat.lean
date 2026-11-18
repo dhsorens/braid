@@ -266,4 +266,11 @@ theorem Atom.disj_mem_mem {a a' v v' : Word} {n n' : Nat} {w w' : Bool}
     · exact .inl (by simp only [h1, ↓reduceIte])
   | _ => exact .inl rfl
 
+/-- Two memory atoms are disjoint when each starts at or beyond the end of the other, going
+round the address space. -/
+theorem Atom.disj_mem_mem_of_apart {a b v v' : Word} {n k : Nat} {w w' : Bool}
+    (h : k ≤ (a - b).toNat ∧ n ≤ (b - a).toNat) :
+    Atom.Disj (.mem a n v w) (.mem b k v' w') :=
+  Atom.disj_mem_mem fun x hx => by bv_omega
+
 end Braid
