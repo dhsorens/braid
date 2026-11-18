@@ -116,7 +116,7 @@ logic with it:
 ```toml
 [[require]]
 name = "machine-checked-mlir"
-git = "<this repository>"
+git = "https://github.com/dhsorens/braid"
 ```
 
 ```lean

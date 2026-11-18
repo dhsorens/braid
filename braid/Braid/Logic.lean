@@ -14,4 +14,5 @@ public import Braid.Logic.Triple
 public import Braid.Logic.Exec
 public import Braid.Logic.Sat
 public import Braid.Logic.Data
+public import Braid.Logic.Flat
 public import Braid.Logic.Tactic

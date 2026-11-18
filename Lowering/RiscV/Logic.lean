@@ -162,4 +162,31 @@ theorem machine_sound {code : List (Word × Instr)} {blocks : List (Word × Bloc
     ∃ n s' σ', stepN n s = some s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' :=
   triple_sound hlow ht hcode (rel_abs s) (Atoms.holds_of_sat hpt hdisj hsat)
 
+/-- The machine has the low `n` bytes of `v` in valid memory at `a`, little-endian. -/
+def HasBytes (s : MachineState) (a : Word) (n : Nat) (v : Word) : Prop :=
+  ∀ x : Word, (x - a).toNat < n →
+    isValidMemAddr x = true ∧ s.getByte x = (v >>> ((x - a) <<< 3)).truncate 8
+
+/-- A writable memory atom is true of the state of a machine exactly when the machine has its
+bytes. -/
+theorem sat_mem_abs {s : MachineState} {a v : Word} {n : Nat} :
+    (Atom.mem a n v true).sat (abs s) ↔ HasBytes s a n v := by
+  rw [Atom.sat_mem]
+  refine forall_congr' fun x => imp_congr_right fun _ => ?_
+  simp only [abs]
+  cases isValidMemAddr x <;> simp
+
+/-- `machine_sound`, for a precondition with arrays in it: `flat` is the precondition with
+each array written out as its memory atoms (`Atoms.interp_flatten`). -/
+theorem machine_sound_flat {code : List (Word × Instr)} {blocks : List (Word × Block)}
+    {pre flat post : Atoms} {s : MachineState}
+    (hlow : blocks = code.map fun p => (p.1, lower p.1 p.2))
+    (ht : Triple (Program.ofList blocks) (Atoms.interp pre) (Atoms.interp post))
+    (hcode : ∀ p ∈ code, s.code p.1 = some p.2)
+    (heq : Atoms.interp pre = Atoms.interp flat)
+    (hpt : ∀ a ∈ flat, a.IsPointsTo) (hdisj : flat.Pairwise Atom.Disj)
+    (hsat : ∀ a ∈ flat, a.sat (abs s)) :
+    ∃ n s' σ', stepN n s = some s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' :=
+  triple_sound hlow ht hcode (rel_abs s) (Atoms.holds_of_sat_flat heq hpt hdisj hsat)
+
 end Lowering.RiscV

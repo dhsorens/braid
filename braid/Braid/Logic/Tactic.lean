@@ -19,6 +19,7 @@ module
 public import Braid.Logic.Exec
 public import Braid.Logic.Sat
 public import Braid.Logic.Data
+public import Braid.Logic.Flat
 public import Std.Tactic.BVDecide
 
 public section
@@ -149,7 +150,7 @@ macro "braid_call " t:term : tactic =>
 /-- Prove that the atoms of a precondition are pairwise disjoint. Registers, flags and the
 program counter are decided; two memory atoms leave a goal about their addresses. -/
 macro "braid_disj" : tactic =>
-  `(tactic| (simp only [List.pairwise_cons, List.mem_cons, List.not_mem_nil, or_false,
+  `(tactic| (simp only [List.cons_append, List.nil_append, List.pairwise_cons, List.mem_cons, List.not_mem_nil, or_false,
       forall_eq_or_imp, forall_eq, false_imp_iff, implies_true, List.Pairwise.nil, and_true,
       Atom.disj_reg_reg, Atom.disj_flag_flag, Atom.disj_reg_flag, Atom.disj_flag_reg,
       Atom.disj_reg_pc, Atom.disj_pc_reg, Atom.disj_flag_pc, Atom.disj_pc_flag,
@@ -193,5 +194,17 @@ macro "braid_name_flag " f:term : tactic =>
   `(tactic| (apply Triple.flag_any (f := $f)
              case hext => braid_extract
              intro _))
+
+/-- Prove that each register, flag and program-counter atom of a state is disjoint from the
+atoms of an array written out in it (`Atoms.pairwise_flat`). A memory atom leaves a goal. -/
+macro "braid_disj_array" : tactic =>
+  `(tactic| (simp only [List.cons_append, List.nil_append, List.forall_mem_cons,
+               List.not_mem_nil, false_imp_iff, implies_true, and_true]
+             repeat' constructor
+             all_goals first
+               | exact disj_reg_wordsAtoms | exact disj_pc_wordsAtoms
+               | exact disj_flag_wordsAtoms | exact disj_reg_bytesAtoms
+               | exact disj_pc_bytesAtoms | exact disj_flag_bytesAtoms
+               | skip))
 
 end Braid

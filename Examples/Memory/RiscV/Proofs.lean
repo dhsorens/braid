@@ -134,4 +134,34 @@ theorem sum_array_spec (p r t2 t3 : Word) (xs : List Word) (hp : p &&& 7#64 = 0#
       braid_forget 12
       braid_done
 
+/-- **`sum_array` on the machine.** A machine that holds the code of `sum_array`, is at its
+entry, and has the words `xs` in memory where `a0` points, with their number in `a1`, runs to
+the return address with their sum in `a0`. -/
+theorem sum_array_correct (s : MachineState) (xs : List Word)
+    (hcode : ∀ p ∈ sum_array_code, s.code p.1 = some p.2) (hpc : s.pc = 0x10014#64)
+    (hp : s.getReg .x10 &&& 7#64 = 0#64) (hl : xs.length < 2 ^ 61)
+    (hn : s.getReg .x11 = BitVec.ofNat 64 xs.length)
+    (hmem : ∀ (i : Nat) (hi : i < xs.length),
+      HasBytes s (s.getReg .x10 + BitVec.ofNat 64 (8 * i)) 8 xs[i]) :
+    ∃ n s', stepN n s = some s' ∧ s'.pc = s.getReg .x1 &&& ~~~1#64 ∧
+      s'.getReg .x10 = wsum xs 0#64 := by
+  obtain ⟨n, s', σ', hn', hr, hq⟩ := machine_sound_flat sum_array_lowered
+    (sum_array_spec (s.getReg .x10) (s.getReg .x1) (s.getReg .x12) (s.getReg .x13) xs hp hl) hcode
+    (flat := [.pc 0x10014#64, .reg a0 (s.getReg .x10), .reg a1 (BitVec.ofNat 64 xs.length),
+      .reg a2 (s.getReg .x12), .reg a3 (s.getReg .x13)] ++ wordsAtoms (s.getReg .x10) xs ++
+      [.reg ra (s.getReg .x1)])
+    (by rw [wordsAt_eq_interp]
+        exact Atoms.interp_flatten [.pc 0x10014#64, .reg a0 (s.getReg .x10),
+          .reg a1 (BitVec.ofNat 64 xs.length), .reg a2 (s.getReg .x12), .reg a3 (s.getReg .x13)]
+          [.reg ra (s.getReg .x1)] _)
+    (Atoms.forall_flat (by simp [Atom.IsPointsTo]) wordsAtoms_isPointsTo)
+    (Atoms.pairwise_flat (by braid_disj) (wordsAtoms_pairwise (by omega))
+      (by braid_disj_array))
+    (Atoms.forall_flat (by simp [Atom.sat_reg, Atom.sat_pc, abs, regOfNat, hpc, hn])
+      (wordsAtoms_sat fun i hi => sat_mem_abs.2 (hmem i hi)))
+  refine ⟨n, s', hn', ?_, ?_⟩
+  · rw [← hr.pc]; exact Atoms.pc_of_holds hq (by braid_at)
+  · rw [← hr.getReg (r := .x10) (by decide)]
+    exact Atoms.reg_of_holds (r := 10) (v := wsum _ _) hq (by braid_at)
+
 end Examples.Memory.RiscV

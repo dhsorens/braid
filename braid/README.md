@@ -30,7 +30,7 @@ To use it from another project:
 ```toml
 [[require]]
 name = "braid"
-git = "<this repository>"
+git = "https://github.com/dhsorens/braid"
 subDir = "braid"
 ```
 
