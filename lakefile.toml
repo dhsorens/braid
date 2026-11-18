@@ -1,6 +1,6 @@
 name = "machine-checked-mlir"
 version = "0.1.0"
-defaultTargets = ["Lowering", "braid-lower"]
+defaultTargets = ["Lowering", "braid-lower", "braid-difftest"]
 moreLeanArgs = ["--tstack=400000"]
 
 # The dialect and the separation logic, as a package of their own (`braid/README.md`).
@@ -42,6 +42,11 @@ globs = ["Tools.+"]
 [[lean_exe]]
 name = "braid-lower"
 root = "Tools.Main"
+supportInterpreter = true
+
+[[lean_exe]]
+name = "braid-difftest"
+root = "Tools.DiffTest"
 supportInterpreter = true
 
 # The example corpus: lowered binaries and the proofs about them.
