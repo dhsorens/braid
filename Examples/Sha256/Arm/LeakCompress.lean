@@ -28,7 +28,7 @@ module
 public import Examples.Sha256.Arm.Compress
 public import Examples.Sha256.Arm.LeakBase
 
-public section
+@[expose] public section
 
 namespace Examples.Sha256.Arm
 

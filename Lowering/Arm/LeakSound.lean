@@ -634,5 +634,7 @@ theorem RunL.steps {prog : Arm64.Program} {s s' : Arm64.State} {tr : Trace}
   induction h with
   | refl s => exact .refl s
   | step hs hf _ _ ih => exact .step (.exec hs hf) ih
+  | svc hs hf _ _ _ ih => exact .step (.exec hs hf) ih
+  | exited _ _ ih => exact ih
 
 end Lowering.Arm

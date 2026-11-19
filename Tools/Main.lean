@@ -132,12 +132,16 @@ def main (args : List String) : IO UInt32 := do
         s!"\nend {opts.module}\n"
     return 0
   | .aarch64 =>
+    let env := opts.image.isSome
+    -- An entry point written in assembly may be a label and not a function symbol.
+    let fs := if opts.fns.isEmpty then fs else
+      opts.fns.filterMap fun n => (all.find? (·.name == n)).or (Arm.labelCode img n)
     let decoded := fs.map fun f => (f, Arm.decodeFunction f.addr (Elf.words32 f.bytes))
     unless opts.stats do
       for (f, (_, bad)) in decoded do
         for (a, w) in bad do
           IO.eprintln s!"warning: {f.name}: 0x{Braid.hex a}: the word 0x{Braid.hex w.toNat} does not decode"
-    let funcs := decoded.map fun (f, (ws, _)) => Arm.toFunc f.name f.addr ws
+    let funcs := decoded.map fun (f, (ws, _)) => Arm.toFunc f.name f.addr ws env
     if opts.stats then
       printStats funcs (decoded.foldl (fun n (_, (_, bad)) => n + bad.length) 0)
     if let some out := opts.mlir then
@@ -146,8 +150,12 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile out (Braid.Module.toNorm Lowering.Arm.arch { arch := "aarch64", funcs := view funcs })
     if let some out := opts.lean then
       IO.FS.writeFile out <|
-        leanHeader opts.module ["Lowering.Arm.Logic"] [] ++
-        "\n".intercalate (decoded.map fun (f, (ws, _)) => Arm.leanSource f.name f.addr ws) ++
+        leanHeader opts.module [if env then "Lowering.Arm.Program" else "Lowering.Arm.Logic"] [] ++
+        "\n".intercalate (decoded.map fun (f, (ws, _)) => Arm.leanSource f.name f.addr ws env) ++
+        (match opts.image with
+          | some n => "\n" ++ Arm.imageSource n img.entry (fs.map fun f => (f.name, f.addr))
+              img.dataSections img.zeroSections
+          | none => "") ++
         s!"\nend {opts.module}\n"
     return 0
   | .x86_64 =>

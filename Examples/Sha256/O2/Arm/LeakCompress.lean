@@ -43,7 +43,7 @@ public import Examples.Sha256.O2.Arm.Compress
 public import Examples.Sha256.Arm.LeakBase
 import Iris.BI.DerivedLaws
 
-public section
+@[expose] public section
 
 namespace Examples.Sha256.O2.Arm
 

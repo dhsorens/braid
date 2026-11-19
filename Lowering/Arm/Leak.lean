@@ -8,6 +8,11 @@
   integer arithmetic, logic, shifts, multiplications and conditional selects reveal nothing:
   with `PSTATE.DIT` set they take a time that does not depend on their operands.
 
+  It also reads the two events of the environment off the model's supervisor call, `SVC #0`
+  under the model's Linux system calls (`Arm64.Syscall.standard`): `write` to the standard
+  output is the event of writing those bytes, and a machine whose status is `Exited` has
+  exited with that code.
+
   This file is trusted: a theorem about what an AArch64 program leaks says so in these terms
   (`docs/Trust.md`). It is definitions only.
 
@@ -48,11 +53,25 @@
     should be checked against it before it is relied on.
   * **Hooked functions.** A step of the model that is a call to a hooked function
     (`Arm64.Step.extern`) has no labels here, and `RunL` has no such step.
+  * **Supervisor calls.** `leak` is `none` for `SVC`; `svcLeak` speaks of `SVC #0`, and only
+    in a program whose handler is the model's `Arm64.Syscall.standard`, and only of two
+    calls. With `x8 = 64` (`write`) it speaks of the case in which the model writes every
+    byte asked for to the standard output: the descriptor in `w0` is 1, the count in `x2` is
+    not zero and at most the model's bound on one transfer (`MAX_RW_COUNT`), the buffer at
+    `x1` ends within the model's user address space (`USER_VA_LIMIT`), and the model may
+    read all of it. The model then appends those bytes to its own trace of output, puts the
+    count in `x0` and goes on (`Arm64.execWrite`), and the label is the event of writing
+    them. With `x8 = 93` (`exit`) the model sets its status to `Exited` with the code in
+    `x0` and does nothing else (`Arm64.execExit`); the step has no label.
+  * **The exit.** A machine whose status is `Exited c` takes no step. A run that is there
+    may record the event of exiting with the code `c`, and stays where it is.
 
   ## Main definitions
 
   * `leak`: the labels of one instruction, from the state it runs in
+  * `svcLeak`: the labels of `SVC #0`, for the two calls this file speaks of
   * `RunL`: a run of the machine, with its trace
+  * `Reachable`: the states a machine passes through
 -/
 
 module
@@ -165,13 +184,40 @@ def leak (s : Arm64.State) : Instr → Option Trace
   -- Everything else: this file does not say.
   | _ => none
 
+/-- What `SVC #0` reveals when it runs in the state `s` under the model's Linux system calls,
+or `none` if this file does not say. The exit (`x8 = 93`) has no label: the step leaves the
+status `Exited`, and `RunL` records the event there. The write (`x8 = 64`) of every byte
+asked for to the standard output is the event of writing the bytes the model reads from the
+buffer and appends to its output. -/
+def svcLeak (s : Arm64.State) : Option Trace :=
+  if s.readReg64 .x8 = 93#64 then some []
+  else if s.readReg64 .x8 = 64#64 ∧ s.readReg32 .x0 = 1#32 ∧ s.readReg64 .x2 ≠ 0#64 ∧
+      (s.readReg64 .x2).toNat ≤ Arm64.MAX_RW_COUNT ∧
+      (s.readReg64 .x1).toNat + (s.readReg64 .x2).toNat ≤ Arm64.USER_VA_LIMIT ∧
+      s.mem.canRead (s.readReg64 .x1) (s.readReg64 .x2).toNat = true then
+    some [.event (.write (s.mem.readBytes (s.readReg64 .x1) (s.readReg64 .x2).toNat))]
+  else none
+
 /-- A run of the machine `prog` from `s` to `s'`, with its trace: the labels of each
-instruction it executes, in order. Each step is the execution of an instruction fetched from
-memory in a running state, `Arm64.Step.exec`, of an instruction `leak` speaks of. -/
+instruction it executes, in order, and the exit event where it has exited. A step is the
+execution of an instruction fetched from memory in a running state, `Arm64.Step.exec`: of an
+instruction `leak` speaks of (`step`), or of `SVC #0` in a case `svcLeak` speaks of, in a
+program whose supervisor calls are the model's Linux system calls (`svc`). A machine that
+has exited takes no step: `exited` records its exit with the code of its status and leaves
+it where it is. -/
 inductive RunL (prog : Arm64.Program) : Arm64.State → Trace → Arm64.State → Prop where
   | refl (s : Arm64.State) : RunL prog s [] s
   | step {s s' : Arm64.State} {i : Instr} {ls tr : Trace} :
       s.status = .Running → prog.fetchMem s.mem s.pc = some i → leak s i = some ls →
       RunL prog (prog.evalInst i s) tr s' → RunL prog s (ls ++ tr) s'
+  | svc {s s' : Arm64.State} {ls tr : Trace} :
+      s.status = .Running → prog.fetchMem s.mem s.pc = some (.system false 0#16) →
+      prog.svc = Arm64.Syscall.standard → svcLeak s = some ls →
+      RunL prog (prog.evalInst (.system false 0#16) s) tr s' → RunL prog s (ls ++ tr) s'
+  | exited {s s' : Arm64.State} {c : Word} {tr : Trace} :
+      s.status = .Exited c → RunL prog s tr s' → RunL prog s (.event (.exit c) :: tr) s'
+
+/-- The states the machine `prog` passes through, running from `s`. -/
+def Reachable (prog : Arm64.Program) (s s' : Arm64.State) : Prop := ∃ tr, RunL prog s tr s'
 
 end Lowering.Arm
