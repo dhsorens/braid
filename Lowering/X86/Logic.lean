@@ -16,11 +16,14 @@
 
   * `triple_sound`: a triple about the lowered code of a function, for the machine
   * `machine_sound`: the same, from facts about the machine state alone
+  * `tripleT_sound`, `machine_soundT`: the same for a traced triple, with the trace of the
+    run
 -/
 
 module
 
 public import Lowering.X86.Sound
+public import Lowering.X86.LeakSound
 public import Lowering.X86.Layout
 public import Braid.Logic
 import Iris.BI.DerivedLaws
@@ -232,5 +235,35 @@ macro "x86_forget_flags" : tactic =>
 macro "x86_name_flags" : tactic =>
   `(tactic| (braid_name_flag 0; braid_name_flag 1; braid_name_flag 2
              braid_name_flag 3; braid_name_flag 4; braid_name_flag 5))
+
+/-! ## Traces -/
+
+/-- **A traced triple about lowered x86-64 code holds of the machine.** Every run of the
+executable from the machine state, after the trace `t`, reaches a state related to one part
+of which satisfies `post`, and the trace, with the labels of the run added, is `t'`. -/
+theorem tripleT_sound [Layout] {e : Executable} {blocks : List (Word × Block)}
+    {pre post : SProp} {t t' : Trace} {m : MachineState} {σ : State}
+    (hcode : ∀ p ∈ blocks, lowerProgram e p.1 = some p.2)
+    (ht : TripleT (Program.ofList blocks) pre t post t') (h : Rel m σ)
+    (hp : (iprop(pre ∗ True) : SProp) σ.heap) :
+    RunL e (fun m' u => ∃ σ', Rel m' σ' ∧ (iprop(post ∗ True) : SProp) σ'.heap ∧ u = t') m t :=
+  lowerProgram_soundL h ((ht.sound hp).of_le (ofList_le_lowerProgram hcode))
+
+/-- **A specification of leakage about lowered x86-64 code, as a theorem about the
+machine.** If the blocks are blocks of the lowering of an executable and the machine state
+satisfies the atoms `flat`, which are the precondition `pre` with its arrays written out,
+every run of the executable from it reaches, with the trace `ls`, a state related to one
+that satisfies the atoms `post`. -/
+theorem machine_soundT [Layout] {e : Executable} {blocks : List (Word × Block)}
+    {pre flat post : Atoms} {ls : Trace} {m : MachineState}
+    (hcode : ∀ p ∈ blocks, lowerProgram e p.1 = some p.2)
+    (ht : TripleT (Program.ofList blocks) (Atoms.interp pre) [] (Atoms.interp post) ls)
+    (heq : Atoms.interp pre = Atoms.interp flat)
+    (hpt : ∀ a ∈ flat, a.IsPointsTo) (hdisj : flat.Pairwise Atom.Disj)
+    (hsat : ∀ a ∈ flat, a.sat (abs m)) :
+    RunL e (fun m' u => u = ls ∧ ∃ σ', Rel m' σ' ∧ (Atoms.interp post).holds iprop(True) σ')
+      m [] :=
+  (tripleT_sound hcode ht (rel_abs m) (Atoms.holds_of_sat_flat heq hpt hdisj hsat)).mono
+    fun _ _ ⟨σ', hr, hq, e⟩ => ⟨e, σ', hr, hq⟩
 
 end Lowering.X86
