@@ -12,7 +12,10 @@
     built directly;
   * a new value is put in normal form by a simplifier call that sees only the top few
     levels of the term (`norm`): deeper subterms are replaced by variables first;
-  * the block at an address is found in a table built once for a run.
+  * the block at an address is found in a table built once for a run, and when the blocks
+    are in address order, as a lowered function's are, the proof that the program has the
+    block there is that the block is in the list (`Rule.Table`), which the kernel checks
+    without searching.
 
   The kernel checks the term at the end, so nothing here is trusted.
 
@@ -56,6 +59,7 @@ def normStx : CoreM Syntax :=
     BitVec.zero_or, BitVec.or_zero, BitVec.xor_zero, BitVec.zero_xor,
     ne_eq, ofBool_eq_zero, ofBool_bne_zero, Bool.not_eq_false, beq_iff_eq, bne_iff_ne,
     beq_eq_false_iff_ne, bne_eq_false_iff_eq, BitVec.reduceEq, BitVec.reduceNe,
+    BitVec.reduceBEq, BitVec.reduceBNe,
     BitVec.reduceULT, BitVec.reduceULE, BitVec.reduceSLT, BitVec.reduceSLE, reduceCtorEq,
     not_true_eq_false, not_false_eq_true, Decidable.not_not])
 
@@ -207,25 +211,97 @@ end AtomList
 
 /-! ## Blocks -/
 
-/-- The blocks of a program given by a list, by address. -/
-partial def blockTable (P : Expr) : MetaM (Std.HashMap Nat Expr) := do
+/-- The blocks of a program given by a list. -/
+structure BlockTable where
+  P : Expr
+  /-- The list, as the program has it. -/
+  l : Expr
+  /-- By address: the entry of the list, and a proof that it is in the list. -/
+  entries : Std.HashMap Nat (Expr × (Unit → Expr))
+  /-- A proof of `Rule.Table P l`, when the list is in address order. -/
+  table? : Option Expr
+
+def pairTy : Expr :=
+  mkApp2 (mkConst ``Prod [0, 0]) (mkConst ``Braid.Word) (mkConst ``Braid.Block)
+
+/-- Unfold a list until it is a `::`, a `[]` or a `++`. -/
+partial def exposeList (e : Expr) : MetaM Expr := do
+  let e ← whnfCore e
+  if e.isAppOf ``List.cons || e.isAppOf ``List.nil || e.isAppOfArity ``HAppend.hAppend 6 then
+    return e
+  if let .proj _ i s := e then
+    let s ← whnf s
+    let some name := s.getAppFn.constName? | return e
+    let some (.ctorInfo c) := (← getEnv).find? name | return e
+    return ← exposeList (s.getArg! (c.numParams + i))
+  match ← unfoldDefinition? e with
+  | some e' => exposeList e'
+  | none => return e
+
+/-- The entries of a list of blocks, in order: address, entry, and how to prove the entry is
+in the whole list, given `wrap`, which says so for an entry of this part of it. -/
+partial def collectBlocks (l : Expr) (wrap : Expr → Expr → Expr)
+    (acc : Array (Nat × Expr × (Unit → Expr))) :
+    MetaM (Array (Nat × Expr × (Unit → Expr))) := do
+  let e ← exposeList l
+  match_expr e with
+  | List.cons _ hd tl =>
+    let hd' ← whnf hd
+    unless hd'.isAppOfArity ``Prod.mk 4 do throwError "braid_sym: not a block entry: {hd}"
+    let some ⟨_, a⟩ ← getBitVecValue? (hd'.getArg! 2)
+      | throwError "braid_sym: the address of a block is not a literal: {hd}"
+    let here := fun _ => wrap hd (mkApp3 (mkConst ``List.Mem.head [0]) pairTy hd tl)
+    collectBlocks tl
+      (fun x h => wrap x (mkApp5 (mkConst ``List.Mem.tail [0]) pairTy x hd tl h))
+      (acc.push (a.toNat, hd, here))
+  | List.nil _ => return acc
+  | HAppend.hAppend _ _ _ _ as bs =>
+    let acc ← collectBlocks as
+      (fun x h => wrap x (mkApp5 (mkConst ``List.mem_append_left [0]) pairTy x as bs h)) acc
+    collectBlocks bs
+      (fun x h => wrap x (mkApp5 (mkConst ``List.mem_append_right [0]) pairTy x as bs h)) acc
+  | _ => throwError "braid_sym: not a list of blocks written out: {e}"
+
+def boolTrueRefl : Expr :=
+  mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true)
+
+/-- Read the blocks of a program. -/
+partial def BlockTable.build (P : Expr) : MetaM BlockTable := do
   let mut e := P
   while !e.isAppOfArity ``Braid.Program.ofList 1 do
     let some e' ← unfoldDefinition? e
       | throwError "braid_sym: the program is not given by a list of blocks: {P}"
     e := e'
-  let mut l ← whnf e.appArg!
-  let mut tbl : Std.HashMap Nat Expr := {}
-  repeat
-    match_expr l with
-    | List.cons _ hd tl =>
-      let hd ← whnf hd
-      if hd.isAppOfArity ``Prod.mk 4 then
-        if let some ⟨_, a⟩ ← getBitVecValue? (hd.getArg! 2) then
-          unless tbl.contains a.toNat do tbl := tbl.insert a.toNat (hd.getArg! 3)
-      l ← whnf tl
-    | _ => break
-  return tbl
+  let l := e.appArg!
+  let all ← collectBlocks l (fun _ h => h) #[]
+  let mut entries : Std.HashMap Nat (Expr × (Unit → Expr)) := {}
+  let mut sorted := true
+  let mut last : Option Nat := none
+  for (a, hd, pf) in all do
+    if let some b := last then
+      unless b < a do sorted := false
+    last := some a
+    unless entries.contains a do entries := entries.insert a (hd, pf)
+  let table? :=
+    if sorted then
+      some (mkApp4 (mkConst ``Rule.Table.intro) P l
+        (mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Braid.Program) P) boolTrueRefl)
+    else none
+  return { P, l, entries, table? }
+
+/-- The block at an address, and a proof that the program has it there. -/
+def BlockTable.get (T : BlockTable) (a : Nat) : MetaM (Option (Expr × Expr × Expr)) := do
+  let some (hd, pf) := T.entries[a]? | return none
+  let hd' ← whnf hd
+  let b ← whnf (hd'.getArg! 3)
+  let_expr Braid.Block.mk ops t := b
+    | throwError "braid_sym: not a block written out: {b}"
+  let blockTy := mkConst ``Braid.Block
+  let hb := match T.table? with
+    | some tbl => mkApp5 (mkConst ``Rule.Table.get) T.P T.l hd tbl (pf ())
+    | none => mkApp2 (mkConst ``Eq.refl [1]) (mkApp (mkConst ``Option [0]) blockTy)
+        (mkApp2 (mkConst ``Option.some [0]) blockTy b)
+  return some (ops, t, hb)
 
 /-! ## The stepper -/
 
@@ -279,6 +355,60 @@ def normHyp (N : Norm) (g : MVarId) (fv : FVarId) : MetaM (Option MVarId) := g.w
   if r.expr == ty then return some g
   if r.expr.isTrue then return some (← g.clear fv)
   return some (← g.replaceLocalDecl fv r.expr (← eqProof r)).mvarId
+
+/-- The atom of flag `fn`: its index, the flag as the atom names it, and its value if the
+atom gives one (`none` for `flagAny`). -/
+def findFlag (A : AtomList) (fn : Nat) : MetaM (Nat × Expr × Option Expr) := do
+  for i in [0:A.atoms.size] do
+    let mut a := A.atoms[i]!
+    unless a.getAppFn.isConst do a ← whnfR a
+    match_expr a with
+    | Braid.Atom.flag f b => if (← natLit? f) == some fn then return (i, f, some b)
+    | Braid.Atom.prop q =>
+      if q.isAppOfArity ``Braid.flagAny 1 then
+        if (← natLit? q.appArg!) == some fn then return (i, q.appArg!, none)
+    | _ => pure ()
+  throwError "braid_sym: the symbolic state has no atom for flag {fn}"
+
+/-- The SSA values an operation reads, and the one it defines. -/
+def opUses (op : Expr) : Array Expr × Option Expr :=
+  let a := op.getAppArgs
+  match op.getAppFn.constName? with
+  | some ``Braid.Op.const => (#[], a[0]?)
+  | some ``Braid.Op.un => (#[a[2]!], a[0]?)
+  | some ``Braid.Op.bin => (#[a[2]!, a[3]!], a[0]?)
+  | some ``Braid.Op.select => (#[a[1]!, a[2]!, a[3]!], a[0]?)
+  | some ``Braid.Op.get => (#[], a[0]?)
+  | some ``Braid.Op.set => (#[a[1]!], none)
+  | some ``Braid.Op.getf => (#[], a[0]?)
+  | some ``Braid.Op.setf => (#[a[1]!], none)
+  | some ``Braid.Op.load => (#[a[2]!], a[0]?)
+  | some ``Braid.Op.store => (#[a[1]!, a[2]!], none)
+  | some ``Braid.Op.havoc => (#[], a[0]?)
+  | some ``Braid.Op.guard => (#[a[0]!], none)
+  | _ => (#[], none)
+
+/-- Whether the rest of a block, `ops` and then `t`, never reads SSA value `d`. -/
+partial def deadIn (d : Nat) (ops t : Expr) : MetaM Bool := do
+  match_expr ops with
+  | List.cons _ op rest =>
+    let (uses, def?) := opUses op
+    for u in uses do
+      if (← natLit? u) == some d then return false
+    if let some x := def? then
+      if (← natLit? x) == some d then return true
+    deadIn d rest t
+  | List.nil _ =>
+    let uses := match t.getAppFn.constName? with
+      | some ``Braid.Term.branch => #[t.getArg! 0]
+      | some ``Braid.Term.jumpInd => #[t.getArg! 0]
+      | some ``Braid.Term.jump => #[]
+      | _ => #[t]
+    for u in uses do
+      if (← natLit? u) != none && (← natLit? u) != some d then continue
+      return false
+    return true
+  | _ => return false
 
 /-- Run a terminator. The goals left are triples from the states it leads to. -/
 def runTerm (c : Ctx) (g : MVarId) (t ρ : Expr) (A : AtomList) : TacticM (List MVarId) := do
@@ -384,9 +514,9 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
       next m rest ρ A'
     | Braid.Op.getf d f =>
       let fn ← natLit f
-      let some (i, args) ← A.find ``Braid.Atom.flag fun args => return (← natLit? args[0]!) == some fn
-        | throwError "braid_sym: the symbolic state has no atom for flag {fn}"
-      let b := args[1]!
+      let (i, _, b?) ← findFlag A fn
+      let some b := b?
+        | throwError "braid_sym: flag {fn} is read while it holds no known value"
       let r ← norm c.N (mkApp (mkConst ``Braid.ofBool) b)
       let ρ' := mkSet ρ d r.expr
       let m ← cont ρ' A
@@ -395,13 +525,17 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
     | Braid.Op.setf f a =>
       let fn ← natLit f
       let (va, ha) ← lookupVar ρ a
-      let some (i, args) ← A.find ``Braid.Atom.flag fun args => return (← natLit? args[0]!) == some fn
-        | throwError "braid_sym: the symbolic state has no atom for flag {fn}"
+      let (i, fa, b?) ← findFlag A fn
       let r ← norm c.N (mkApp (mkConst ``Rule.bnz) va)
-      let A' := A.set i (mkApp2 (mkConst ``Braid.Atom.flag) args[0]! r.expr)
+      let A' := A.set i (mkApp2 (mkConst ``Braid.Atom.flag) fa r.expr)
       let m ← cont ρ A'
-      g.assign (rule ``Rule.setf
-        #[A'.expr, c.Φ, a, f, va, args[1]!, r.expr, ha, ← eqProof r, A.updProof A' i, m])
+      match b? with
+      | some b₀ =>
+        g.assign (rule ``Rule.setf
+          #[A'.expr, c.Φ, a, f, va, b₀, r.expr, ha, ← eqProof r, A.updProof A' i, m])
+      | none =>
+        g.assign (rule ``Rule.setf_any
+          #[A'.expr, c.Φ, a, f, va, r.expr, ha, ← eqProof r, A.updProof A' i, m])
       next m rest ρ A'
     | Braid.Op.load d W a =>
       let (addr, ha) ← lookupVar ρ a
@@ -429,6 +563,25 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
         A.updProof A' i, ← mkEqRefl n, m])
       next m rest ρ A'
     | Braid.Op.havoc d =>
+      -- An undefined flag: `havoc d`, `setf f d`, and `d` not read again.
+      let t := c.Φ.bindingBody!.bindingBody!.getArg! 0
+      if rest.isAppOfArity ``List.cons 3 then
+        let op₂ := rest.getArg! 1
+        let rest₂ := rest.getArg! 2
+        if op₂.isAppOfArity ``Braid.Op.setf 2 then
+          let dn ← natLit d
+          if (← natLit? (op₂.getArg! 1)) == some dn && (← deadIn dn rest₂ t) then
+            let f := op₂.getArg! 0
+            let (i, fa, b?) ← findFlag A (← natLit f)
+            let hle := match b? with
+              | some b => mkApp2 (mkConst ``Rule.flag_any) fa b
+              | none => mkApp (mkConst ``Rule.any_any) fa
+            let any := mkApp (mkConst ``Braid.Atom.prop) (mkApp (mkConst ``Braid.flagAny) fa)
+            let A' := A.set i any
+            let m ← mkFreshExprSyntheticOpaqueMVar (mkOps c rest₂ ρ A')
+            g.assign (mkAppN (mkConst ``Rule.havoc_setf) #[rest₂, ρ, A.expr, A'.expr, t, c.Ψ,
+              d, f, A.atoms[i]!, hle, boolFalseRefl, A.updProof A' i, m])
+            return ← next m rest₂ ρ A'
       let body := mkApp4 (mkConst ``Braid.OpsSpec) rest (mkSet ρ d (mkBVar 0)) A.expr c.Φ
       let m ← mkFreshExprSyntheticOpaqueMVar (mkForall `v .default (mkConst ``Braid.Word) body)
       g.assign (rule ``Rule.havoc #[c.Φ, d, m])
@@ -443,20 +596,25 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
     | _ => throwError "braid_sym: not an operation written out: {op}"
   | _ => throwError "braid_sym: not a list of operations written out: {ops}"
 
-/-- The tables of blocks of the programs met in a run. -/
-abbrev Tables := IO.Ref (Array (Expr × Std.HashMap Nat Expr))
+/-- The table of blocks of the program of a run. -/
+abbrev Tables := IO.Ref (Option BlockTable)
 
-def tableOf (T : Tables) (P : Expr) : MetaM (Std.HashMap Nat Expr) := do
-  if let some (_, t) := (← T.get).find? (·.1 == P) then return t
-  let t ← blockTable P
-  T.modify (·.push (P, t))
+def tableOf (T : Tables) (P : Expr) : MetaM BlockTable := do
+  if let some t ← T.get then
+    if t.P == P then return t
+  let t ← BlockTable.build P
+  T.set (some t)
   return t
 
-/-- Run the block at the program counter. The goals left are triples. -/
-def stepBlock (N : Norm) (T : Tables) (g : MVarId) : TacticM (List MVarId) := g.withContext do
+def tripleParts (g : MVarId) : MetaM (Expr × Expr × Expr) := do
   let ty ← instantiateMVars (← g.getType)
   let_expr Braid.Triple P pre post := ty
     | throwError "braid_sym: the goal is not a triple"
+  return (P, pre, post)
+
+/-- Run the block at the program counter. The goals left are triples. -/
+def stepBlock (N : Norm) (T : Tables) (g : MVarId) : TacticM (List MVarId) := g.withContext do
+  let (P, pre, post) ← tripleParts g
   let_expr Braid.Atoms.interp as := pre
     | throwError "braid_sym: the precondition is not a list of atoms"
   let A ← AtomList.parse as
@@ -465,11 +623,8 @@ def stepBlock (N : Norm) (T : Tables) (g : MVarId) : TacticM (List MVarId) := g.
   let p := pcArgs[0]!
   let some ⟨_, pv⟩ ← getBitVecValue? p
     | throwError "braid_sym: the program counter is not a literal: {p}"
-  let some b := (← tableOf T P)[pv.toNat]?
+  let some (ops, t, hb) ← (← tableOf T P).get pv.toNat
     | throwError "braid_sym: the program has no block at {p}"
-  let b ← whnf b
-  let_expr Braid.Block.mk ops t := b
-    | throwError "braid_sym: not a block written out: {b}"
   let atoms := mkApp (mkConst ``List [0]) atomTy
   let Ψ := mkLambda `as .default atoms (mkTriple P (mkBVar 0) post)
   let Φ := mkLambda `ρ .default (mkConst ``Braid.Env) <| mkLambda `as .default atoms <|
@@ -477,9 +632,6 @@ def stepBlock (N : Norm) (T : Tables) (g : MVarId) : TacticM (List MVarId) := g.
   let c : Ctx := { N, P, post, Ψ, Φ }
   let zero := mkApp2 (mkConst ``BitVec.ofNat) (mkNatLit 64) (mkNatLit 0)
   let ρ := mkLambda `x .default (mkConst ``Braid.Var) zero
-  let blockTy := mkConst ``Braid.Block
-  let hb := mkApp2 (mkConst ``Eq.refl [1]) (mkApp (mkConst ``Option [0]) blockTy)
-    (mkApp2 (mkConst ``Option.some [0]) blockTy b)
   let m ← mkFreshExprSyntheticOpaqueMVar (mkOps c ops ρ A)
   g.assign (mkAppN (mkConst ``Rule.block) #[P, A.expr, post, p, ops, t, A.atProof i, hb, m])
   runOps c m.mvarId! ops ρ A
@@ -497,7 +649,7 @@ def tryStep (N : Norm) (T : Tables) (g : MVarId) : TacticM (Except Exception (Li
 a goal for each direction the condition allows, with the condition as the hypothesis `hbr`. -/
 elab "braid_sym_step_core" : tactic => do
   let N ← Norm.make
-  let T ← IO.mkRef #[]
+  let T ← IO.mkRef none
   let g ← getMainGoal
   match ← tryStep N T g with
   | .ok gs => replaceMainGoal gs
@@ -507,14 +659,26 @@ elab "braid_sym_step_core" : tactic => do
 one way. It stops, without failing, where a step cannot be taken. -/
 elab "braid_sym_run_core" : tactic => do
   let N ← Norm.make
-  let T ← IO.mkRef #[]
+  let T ← IO.mkRef none
   let mut g ← getMainGoal
+  -- The fact that the blocks are in address order is proved once, as a hypothesis.
+  let mut hyp : Option FVarId := none
+  let tbl? ← try some <$> (do tableOf T (← tripleParts g).1) catch _ => pure none
+  if let some tbl := tbl? then
+    if let some pf := tbl.table? then
+      let ty := mkApp2 (mkConst ``Rule.Table) tbl.P tbl.l
+      let (fv, g') ← (← g.assert `braid_table ty pf).intro1
+      T.set (some { tbl with table? := some (mkFVar fv) })
+      g := g'
+      hyp := some fv
   let mut out := [g]
   repeat
     match ← tryStep N T g with
     | .ok [g'] => g := g'; out := [g']
     | .ok gs => out := gs; break
     | .error _ => break
+  if let some fv := hyp then
+    out ← out.mapM fun g => do try g.clear fv catch _ => pure g
   replaceMainGoal out
 
 /-- Run the block at the program counter on the symbolic state. -/

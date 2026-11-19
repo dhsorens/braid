@@ -13,12 +13,14 @@
 module
 
 public import Braid.Logic.Exec
+public import Braid.Logic.Data
+public import Braid.Pass.Dce
 
 @[expose] public section
 
 namespace Braid.Sym.Rule
 
-open Braid
+open Braid Iris Iris.BI
 
 /-! ## The values the stepper asks for
 
@@ -123,6 +125,91 @@ theorem guard (ops : List Op) (ρ : Env) (as : Atoms) (Φ : Env → Atoms → Pr
     OpsSpec (.guard c :: ops) ρ as Φ := by
   subst hc; exact OpsSpec.guard hne h
 
+/-! ## Flags that hold some value
+
+A flag an instruction leaves undefined is lowered to `havoc d` and `setf f d`. Run by the
+rules above, that puts the rest of the proof under a quantifier over the value of `d`, and
+on x86-64, where most instructions leave a flag undefined, a long proof under thousands of
+quantifiers is slow to assemble. When nothing later in the block reads `d`, the pair is run
+by one rule with no quantifier: the flag holds some value (`flagAny`). -/
+
+theorem flag_any (f : Flag) (b : Bool) : (Atom.flag f b).interp ⊢ flagAny f :=
+  fun _ hv => ⟨_, ⟨b, rfl⟩, hv⟩
+
+theorem any_any (f : Flag) : (Atom.prop (flagAny f)).interp ⊢ flagAny f := .rfl
+
+/-- A flag write, to a flag that holds a known value or some value. -/
+theorem setf_core {ops : List Op} {ρ : Env} {as as' : Atoms} {Φ : Env → Atoms → Prop}
+    {x : Var} {f : Flag} {a : Atom} (ha : a.interp ⊢ flagAny f)
+    (hupd : as.Upd a (.flag f (ρ x != 0#64)) as') (h : OpsSpec ops ρ as' Φ) :
+    OpsSpec (.setf f x :: ops) ρ as Φ := by
+  refine ⟨fun R σ hs => ?_⟩
+  obtain ⟨F, e, e'⟩ := hupd.split
+  obtain ⟨h₁, h₂, eh, d, ⟨_, ⟨b, rfl⟩, hb⟩, hr⟩ :=
+    SProp.holds_mono ha ((holds_split e).1 hs)
+  exact h.run R _ ((holds_split e').2 (flagIs_set _ ⟨h₁, h₂, eh, d, hb, hr⟩))
+
+/-- A symbolic state may forget the value of an atom. -/
+theorem weaken {ops : List Op} {ρ : Env} {as as' : Atoms} {Φ : Env → Atoms → Prop}
+    {a a' : Atom} (ha : a.interp ⊢ a'.interp) (hupd : as.Upd a a' as')
+    (h : OpsSpec ops ρ as' Φ) : OpsSpec ops ρ as Φ := by
+  refine ⟨fun R σ hs => h.run R σ ?_⟩
+  obtain ⟨F, e, e'⟩ := hupd.split
+  exact (holds_split e').2 (SProp.holds_mono ha ((holds_split e).1 hs))
+
+theorem upd_via {as as' : Atoms} {a c : Atom} (b : Atom) (h : as.Upd a c as') :
+    ∃ as₁, as.Upd a b as₁ ∧ as₁.Upd b c as' := by
+  induction h with
+  | here => exact ⟨_, .here, .here⟩
+  | there _ ih => obtain ⟨as₁, h₁, h₂⟩ := ih; exact ⟨_, .there h₁, .there h₂⟩
+
+/-- The SSA values live before a list of operations, given those live after it. -/
+def liveOps : List Op → List Var → List Var
+  | [], live => live
+  | op :: ops, live => op.liveIn (liveOps ops live)
+
+theorem wpOps_agree {ops : List Op} {live : List Var} {ρ ρ' : Env} {σ : State}
+    {Q Q' : Env → State → Prop} (h : AgreeOn (liveOps ops live) ρ ρ')
+    (hQ : ∀ ρ₁ ρ₂ σ', AgreeOn live ρ₁ ρ₂ → Q ρ₁ σ' → Q' ρ₂ σ') (hw : wpOps ops ρ σ Q) :
+    wpOps ops ρ' σ Q' := by
+  induction ops generalizing ρ ρ' σ with
+  | nil => exact hQ _ _ _ h hw
+  | cons op ops ih => exact Op.wp_agree h (fun _ _ _ ha hq => ih ha hq) hw
+
+/-- The rest of a block means the same in two environments that agree on what it reads. -/
+theorem env_agree {ops : List Op} {t : Term} {ρ ρ' : Env} {as : Atoms} {Ψ : Atoms → Prop}
+    (h : AgreeOn (liveOps ops t.uses) ρ ρ')
+    (hs : OpsSpec ops ρ as fun ρ as' => TermSpec t ρ as' Ψ) :
+    OpsSpec ops ρ' as fun ρ as' => TermSpec t ρ as' Ψ := by
+  refine ⟨fun R σ hσ => wpOps_agree h ?_ (hs.run R σ hσ)⟩
+  rintro ρ₁ ρ₂ σ' ha ⟨as', ht, hh⟩
+  exact ⟨as', ⟨fun R σ hσ => Term.wp_agree ha (ht.run R σ hσ)⟩, hh⟩
+
+/-- An undefined flag: `havoc d` and `setf f d`, when the rest of the block does not read
+`d`. The flag holds some value afterwards. `a` is the atom of the flag before. -/
+theorem havoc_setf (ops : List Op) (ρ : Env) (as as' : Atoms) (t : Term) (Ψ : Atoms → Prop)
+    (d : Var) (f : Flag) (a : Atom) (ha : a.interp ⊢ flagAny f)
+    (hdead : (liveOps ops t.uses).contains d = false)
+    (hupd : as.Upd a (.prop (flagAny f)) as')
+    (h : OpsSpec ops ρ as' fun ρ as' => TermSpec t ρ as' Ψ) :
+    OpsSpec (.havoc d :: .setf f d :: ops) ρ as fun ρ as' => TermSpec t ρ as' Ψ := by
+  refine OpsSpec.havoc fun v => ?_
+  obtain ⟨as₁, h₁, h₂⟩ := upd_via (.flag f ((ρ.set d v) d != 0#64)) hupd
+  refine setf_core ha h₁ (weaken (flag_any f _) h₂ (env_agree (fun x hx => ?_) h))
+  have hne : x ≠ d := fun e => by
+    subst e
+    have := List.contains_iff_mem.2 hx
+    rw [hdead] at this
+    cases this
+  exact (Env.set_other ρ v hne).symm
+
+/-- A flag write, to a flag that holds some value. -/
+theorem setf_any (ops : List Op) (ρ : Env) (as as' : Atoms) (Φ : Env → Atoms → Prop) (a : Var)
+    (f : Flag) (va : Word) (b : Bool) (ha : ρ a = va) (hv : bnz va = b)
+    (hupd : as.Upd (.prop (flagAny f)) (.flag f b) as') (h : OpsSpec ops ρ as' Φ) :
+    OpsSpec (.setf f a :: ops) ρ as Φ := by
+  subst ha hv; exact setf_core (any_any f) hupd h
+
 /-! ## Terminators and blocks -/
 
 /-- The end of the operations of a block: its terminator. -/
@@ -153,5 +240,62 @@ theorem block (P : Program) (as : Atoms) (post : SProp) (p : Word) (ops : List O
       TermSpec t ρ as' fun as'' => Triple P (Atoms.interp as'') post) :
     Triple P (Atoms.interp as) post :=
   Triple.step hpc hb (BlockSpec.intro h)
+
+/-! ## Finding a block
+
+`P p = some b` can be proved by evaluating the program, a search down its list of blocks. For
+a list in address order there is a proof that searches nothing: the block is in the list, and
+no other block has its address. -/
+
+/-- The addresses of the blocks are strictly increasing. -/
+def sortedKeys : List (Word × Block) → Bool
+  | a :: b :: l => decide (a.1.toNat < b.1.toNat) && sortedKeys (b :: l)
+  | _ => true
+
+theorem sortedKeys_tail {a : Word × Block} {l : List (Word × Block)}
+    (h : sortedKeys (a :: l) = true) : sortedKeys l = true := by
+  cases l with
+  | nil => rfl
+  | cons b l => simp only [sortedKeys, Bool.and_eq_true] at h; exact h.2
+
+theorem sortedKeys_lt {a : Word × Block} {l : List (Word × Block)}
+    (h : sortedKeys (a :: l) = true) : ∀ x ∈ l, a.1.toNat < x.1.toNat := by
+  induction l generalizing a with
+  | nil => intro x hx; cases hx
+  | cons b l ih =>
+    intro x hx
+    simp only [sortedKeys, Bool.and_eq_true, decide_eq_true_eq] at h
+    rcases List.mem_cons.1 hx with rfl | hx
+    · exact h.1
+    · exact Nat.lt_trans h.1 (ih h.2 x hx)
+
+theorem sortedKeys_nodup {l : List (Word × Block)} (h : sortedKeys l = true) :
+    (l.map (·.1)).Nodup := by
+  induction l with
+  | nil => simp
+  | cons a l ih =>
+    rw [List.map_cons, List.nodup_cons]
+    refine ⟨fun hmem => ?_, ih (sortedKeys_tail h)⟩
+    obtain ⟨x, hx, e⟩ := List.mem_map.1 hmem
+    have := sortedKeys_lt h x hx
+    rw [e] at this
+    exact Nat.lt_irrefl _ this
+
+/-- The program `P` is given by the list `l`, whose blocks are in address order. -/
+structure Table (P : Program) (l : List (Word × Block)) : Prop where
+  eq : P = Program.ofList l
+  sorted : sortedKeys l = true
+
+theorem Table.intro (P : Program) (l : List (Word × Block)) (eq : P = Program.ofList l)
+    (sorted : sortedKeys l = true) : Table P l :=
+  ⟨eq, sorted⟩
+
+/-- A block in the list is the block of the program at its address. -/
+theorem Table.get (P : Program) (l : List (Word × Block)) (e : Word × Block) (T : Table P l)
+    (hm : e ∈ l) : P e.1 = some e.2 := by
+  rw [T.eq]
+  refine Program.ofList_mono (l := [e]) (fun p hp => ?_) (sortedKeys_nodup T.sorted) e.1 e.2 ?_
+  · rw [List.mem_singleton.1 hp]; exact hm
+  · simp [Program.ofList]
 
 end Braid.Sym.Rule

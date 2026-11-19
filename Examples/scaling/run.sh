@@ -7,8 +7,8 @@
 #   Examples/scaling/run.sh "10 100"        other sizes
 #   TACTIC=braid_run Examples/scaling/run.sh   the tactic that runs the function
 #
-# Prints one line for each run: instruction set, N, seconds for the image alone, seconds for
-# the image with the proof, and the difference per instruction in milliseconds.
+# Prints one line for each run: instruction set, N, processor seconds for the image alone,
+# processor seconds for the image with the proof, and the difference per instruction in milliseconds.
 set -eu
 cd "$(dirname "$0")/../.."
 
@@ -22,10 +22,16 @@ TACTIC=${TACTIC:-braid_run}
 OUT=Examples/bin/scaling
 mkdir -p "$OUT"
 
-seconds() { # run a command, print the wall-clock seconds it took
-  start=$(python3 -c 'import time; print(time.time())')
-  "$@" > "$OUT/last.log" 2>&1 || { cat "$OUT/last.log" | head -20 >&2; echo "FAILED" >&2; }
-  python3 -c "import time,sys; print(f'{time.time()-float(sys.argv[1]):.1f}')" "$start"
+seconds() { # run a command, print the processor seconds (user and system) it took
+  python3 - "$OUT/last.log" "$@" <<'PY'
+import resource, subprocess, sys
+with open(sys.argv[1], "w") as log:
+    code = subprocess.call(sys.argv[2:], stdout=log, stderr=subprocess.STDOUT)
+if code != 0:
+    sys.stderr.write("".join(open(sys.argv[1]).readlines()[:20]) + "FAILED\n")
+u = resource.getrusage(resource.RUSAGE_CHILDREN)
+print(f"{u.ru_utime + u.ru_stime:.1f}")
+PY
 }
 
 printf '%-5s %6s %10s %10s %12s\n' isa N image_s proof_s ms_per_instr

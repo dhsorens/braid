@@ -27,6 +27,7 @@ Braid/
     Data.lean        arrays, unknown registers, fold and unfold
     Sat.lean         between atoms and plain facts about a state
     Flat.lean        arrays written out as memory atoms, for theorems about a machine
+    Cells.lean       arrays of cells of any size, read-only or writable; indexed access
     Tactic.lean      braid_step, braid_run, braid_call, ...
     Sym/             the stepper: braid_sym_step and braid_sym_run, symbolic execution as
                      a metaprogram, for code too long for braid_run (docs/Scaling.md)

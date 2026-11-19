@@ -22,8 +22,9 @@ The values in the registers grow as the function runs: after N instructions a re
 a term about N operations deep. That is deliberate. It is what a hash function does to a
 proof, and it is where the first version of the tactics fell over.
 
-Times are wall-clock seconds on one machine (an Apple M-series laptop), so read them for
-their shape, not their last digit.
+Times are processor seconds (user and system), not wall-clock, so that they do not depend on
+what else the machine is doing. Read them for their shape, not their last digit: starting
+Lean costs about a second, and at N = 10 the proof costs less than the noise in that.
 
 ## Results
 
@@ -31,18 +32,26 @@ Milliseconds per instruction, and in brackets the seconds for the whole proof.
 
 | | N = 10 | N = 100 | N = 1000 |
 | --- | --- | --- | --- |
-| AArch64, `braid_run` (before) | 50 (0.5) | 83 (8.3) | fails after 65 minutes |
-| AArch64, `braid_sym_run` | under 5 (0.0) | 2 (0.2) | 30 (30) |
-| x86-64, `braid_run` (before) | 240 (2.4) | 344 (34) | fails after 160 minutes |
-| x86-64, `braid_sym_run` | under 5 (0.0) | 6 (0.5) | 55 (55) |
+| AArch64, `braid_run` (before) | 60 (0.6) | 94 (9.4) | does not finish |
+| AArch64, `braid_sym_run` | under 10 | 3 (0.3) | 2 (2) |
+| x86-64, `braid_run` (before) | 270 (2.7) | 346 (35) | does not finish |
+| x86-64, `braid_sym_run` | under 10 | 7 (0.7) | 11 (11) |
 
-At N = 10 the proof takes less time than the noise in starting Lean. An x86-64 instruction
-costs more than an AArch64 one because it lowers to more operations: most of them write six
-flags.
+An x86-64 instruction costs more than an AArch64 one because it lowers to more operations:
+most of them write six flags.
 
-Before, the image of the 1000-instruction function did not check either: Lean's elaborator
-ran out of recursion depth on a list of a thousand blocks, and on the `decide` that certifies
-it.
+Before, the 1000-instruction case failed in three places. Lean's elaborator ran out of
+recursion depth on a list of a thousand blocks, and on the `decide` that certifies it, so the
+image did not check; and `braid_run` on it ran for more than an hour and then ran out of
+recursion depth too.
+
+The steps between the two rows, on the 1000-instruction case:
+
+| Change | AArch64 | x86-64 |
+| --- | --- | --- |
+| The stepper, with blocks found by evaluating the program | 28 s | 49 s |
+| Blocks found in a sorted table | 1.1 s | 26 s |
+| Undefined flags without a quantifier | 2 s | 11 s |
 
 ## What was superlinear, and why
 
@@ -73,8 +82,7 @@ how large the state or its values are:
 - A new value is normalized by a simplifier call that sees only the top few levels of the
   term. Deeper subterms are replaced by variables first, and put back after. Addresses and
   constants are still folded, which is all later steps need; a deep value is never traversed.
-- The blocks of the program are read into a table once for a run. The kernel still checks
-  each lookup by evaluation, which it does far faster than the elaborator.
+- The blocks of the program are read into a table once for a run.
 
 The rules it applies are restatements of the rules of the logic (`Sym/Rule.lean`), and the
 kernel checks the finished term, so the stepper adds nothing to what is trusted.
@@ -87,11 +95,41 @@ The older tactics remain, and the proofs of the first examples still use them.
 each, appended, and certifies it with `decide +kernel`, which asks the kernel alone. Shorter
 functions are written exactly as before.
 
+### Finding a block without a search
+
+With the stepper in place, nearly all the time left was the kernel's: of 28 seconds for the
+AArch64 run, under one was spent building the proof. The kernel was checking each
+`P p = some b` by evaluating the program, which compares `p` with the address of each block
+in turn, and a comparison of two 64-bit words by `decide` is slow in the kernel.
+
+A lowered function's blocks are in address order. `Rule.Table P l` says that `P` is the
+program of the list `l` and that the addresses in `l` are strictly increasing, and it is
+proved once for a run, by evaluation, which is linear. From it, `P e.1 = some e.2` follows
+for any entry `e` that is in `l`, and membership is a short proof term, not a search: a few
+steps to the part of the list the entry is in, and at most 128 within the part.
+
+### Undefined flags without a quantifier
+
+An instruction that leaves a flag undefined lowers to `havoc d`, `setf f d`. The rule for
+`havoc` puts the rest of the proof under a quantifier over the value of `d`. On x86-64 most
+instructions leave a flag undefined, so the proof of a long run sat under thousands of
+quantifiers, and Lean abstracts the whole of the rest of the proof once for each: quadratic.
+When nothing later in the block reads `d`, `Rule.havoc_setf` runs the pair with no
+quantifier, and the flag holds some value (`flagAny`) afterwards. The stepper's loop itself
+took 4 of the 20 seconds; the rest was assembling the proof.
+
+### Arrays (`braid/Braid/Logic/Cells.lean`)
+
+`cellsAt k w p vs` is an array of cells of `k` bytes, writable or read-only, which covers
+arrays of 32-bit values and tables in read-only data. `cellsAt_index` opens an array at an
+index that need not be a literal, into the cells before, the cell itself as a memory atom,
+and the cells after, so a loop can read or write `a[i]`. `Flat` writes out a state with
+several arrays in it as points-to atoms, which is what a theorem about a machine starts from.
+
 ## What is still superlinear
 
-The cost of an instruction still rises with N: 2 ms at N = 100 and 30 ms at N = 1000 on
-AArch64. What is left is under measurement; the suspect is the kernel's check of each block
-lookup, a linear search, and the next change is to look blocks up by address.
+On x86-64 the cost of an instruction still rises a little with N (7 ms at N = 100 and 11 ms
+at N = 1000). It is not yet profiled.
 
 ## Limits met in the instruction-set models
 

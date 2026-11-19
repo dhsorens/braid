@@ -170,6 +170,16 @@ lower_go() {
   done
 }
 
+# A C source of the scaling ladder (docs/Scaling.md): name, source, module, functions. The
+# ladder is for AArch64 and x86-64: its sources use 32-bit arithmetic, which the RISC-V model
+# does not have yet.
+lower_ladder() {
+  all=$ISAS; ISAS=""
+  for isa in $all; do case $isa in arm|x86) ISAS="$ISAS $isa" ;; esac; done
+  lower_c "$@"
+  ISAS=$all
+}
+
 want() { [ -z "${ONLY:-}" ] || [ "$ONLY" = "$1" ]; }
 ONLY=${1:-}
 
@@ -193,4 +203,12 @@ if want jsbasic; then
 fi
 if want gobasic; then
   lower_go gobasic Examples/src/go/basic.go GoBasic main.Add3 main.MaxU64 main.SumSlice
+fi
+if want mem; then lower_ladder mem Examples/src/c/mem.c Mem copy_bytes equal_bytes; fi
+if want limbs; then lower_ladder limbs Examples/src/c/limbs.c Limbs add_limbs; fi
+if want chacha20; then
+  lower_ladder chacha20 Examples/src/c/chacha20.c ChaCha20 quarter_round chacha20_block
+fi
+if want sha256; then
+  lower_ladder sha256 Examples/src/c/sha256.c Sha256 sha256_round sha256_schedule sha256_compress
 fi
