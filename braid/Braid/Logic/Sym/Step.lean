@@ -29,6 +29,7 @@
 module
 
 public import Braid.Logic.Sym.Rule
+public import Braid.Logic.Sym.RuleT
 public import Braid.Logic.Tactic
 public meta import Lean.Elab.Tactic
 
@@ -321,14 +322,43 @@ structure Ctx where
   Ψ : Expr
   /-- `fun ρ as => TermSpec t ρ as Ψ`. -/
   Φ : Expr
+  /-- The terminator of the block. -/
+  tm : Expr
+  /-- Whether the goal is a traced triple. `Ψ` and `Φ` then take the trace as well. -/
+  lab : Bool := false
+  /-- The trace a traced triple ends with. -/
+  tEnd : Expr := mkNatLit 0
 
 def mkTriple (P as post : Expr) : Expr :=
   mkApp3 (mkConst ``Braid.Triple) P (mkApp (mkConst ``Braid.Atoms.interp) as) post
 
 def mkSet (ρ d v : Expr) : Expr := mkApp3 (mkConst ``Braid.Env.set) ρ d v
 
-def mkOps (c : Ctx) (ops ρ : Expr) (A : AtomList) : Expr :=
-  mkApp4 (mkConst ``Braid.OpsSpec) ops ρ A.expr c.Φ
+/-- The rule of the same name for a traced triple, if the goal is one. -/
+def Ctx.nm (c : Ctx) (n : Name) : Name :=
+  if c.lab then Name.mkStr `Braid.Sym.RuleT n.getString! else n
+
+/-- The trace so far, as an argument of a rule, if the goal is a traced triple. -/
+def Ctx.tr (c : Ctx) (u : Expr) : Array Expr := if c.lab then #[u] else #[]
+
+/-- The triple from the atoms `as`, after the trace `u`. -/
+def Ctx.goal (c : Ctx) (as u : Expr) : Expr :=
+  if c.lab then
+    mkApp5 (mkConst ``Braid.TripleT) c.P (mkApp (mkConst ``Braid.Atoms.interp) as) u c.post c.tEnd
+  else mkTriple c.P as c.post
+
+def labelTy : Expr := mkConst ``Braid.Label
+
+/-- The trace `u` with the label `l` added. -/
+def snoc (u l : Expr) : Expr :=
+  let ty := mkApp (mkConst ``List [0]) labelTy
+  mkApp6 (mkConst ``HAppend.hAppend [0, 0, 0]) ty ty ty
+    (mkApp2 (mkConst ``instHAppendOfAppend [0]) ty (mkApp (mkConst ``List.instAppend [0]) labelTy))
+    u (mkApp3 (mkConst ``List.cons [0]) labelTy l (mkApp (mkConst ``List.nil [0]) labelTy))
+
+def mkOps (c : Ctx) (ops ρ : Expr) (A : AtomList) (u : Expr) : Expr :=
+  if c.lab then mkApp5 (mkConst ``Braid.OpsSpecT) ops ρ A.expr u c.Φ
+  else mkApp4 (mkConst ``Braid.OpsSpec) ops ρ A.expr c.Φ
 
 /-- Prove a proposition the code must satisfy: by simplification, from a hypothesis, or
 with `bv_decide`. -/
@@ -417,22 +447,25 @@ partial def deadIn (d : Nat) (ops t : Expr) : MetaM Bool := do
   | _ => return false
 
 /-- Run a terminator. The goals left are triples from the states it leads to. -/
-def runTerm (c : Ctx) (g : MVarId) (t ρ : Expr) (A : AtomList) : TacticM (List MVarId) := do
+def runTerm (c : Ctx) (g : MVarId) (t ρ : Expr) (A : AtomList) (u : Expr) :
+    TacticM (List MVarId) := do
   let some (i, pcArgs) ← A.find ``Braid.Atom.pc fun _ => pure true
     | throwError "braid_sym: the symbolic state has no program counter"
   let p := pcArgs[0]!
   let goto (a : Expr) : AtomList := A.set i (mkApp (mkConst ``Braid.Atom.pc) a)
-  let rule (n : Name) (args : Array Expr) := mkAppN (mkConst n) (#[ρ, A.expr] ++ args)
+  let rule (n : Name) (args : Array Expr) :=
+    mkAppN (mkConst (c.nm n)) (#[ρ, A.expr] ++ c.tr u ++ args)
   match_expr t with
   | Braid.Term.jump a =>
     let A' := goto a
-    let m ← mkFreshExprSyntheticOpaqueMVar (mkTriple c.P A'.expr c.post)
+    let m ← mkFreshExprSyntheticOpaqueMVar (c.goal A'.expr u)
     g.assign (rule ``Rule.jump #[A'.expr, c.Ψ, p, a, A.updProof A' i, m])
     return [m.mvarId!]
   | Braid.Term.jumpInd a =>
     let (v, ha) ← lookupVar ρ a
     let A' := goto v
-    let m ← mkFreshExprSyntheticOpaqueMVar (mkTriple c.P A'.expr c.post)
+    let m ← mkFreshExprSyntheticOpaqueMVar
+      (c.goal A'.expr (snoc u (mkApp (mkConst ``Braid.Label.jump) v)))
     g.assign (rule ``Rule.jumpInd #[A'.expr, c.Ψ, p, v, a, ha, A.updProof A' i, m])
     return [m.mvarId!]
   | Braid.Term.branch cv tt ff =>
@@ -440,9 +473,11 @@ def runTerm (c : Ctx) (g : MVarId) (t ρ : Expr) (A : AtomList) : TacticM (List 
     let A₁ := goto tt
     let A₂ := goto ff
     let m₁ ← mkFreshExprSyntheticOpaqueMVar
-      (← mkArrow (mkApp (mkConst ``Rule.nz) vc) (mkTriple c.P A₁.expr c.post))
+      (← mkArrow (mkApp (mkConst ``Rule.nz) vc)
+        (c.goal A₁.expr (snoc u (mkApp (mkConst ``Braid.Label.jump) tt))))
     let m₂ ← mkFreshExprSyntheticOpaqueMVar
-      (← mkArrow (mkApp (mkConst ``Rule.isz) vc) (mkTriple c.P A₂.expr c.post))
+      (← mkArrow (mkApp (mkConst ``Rule.isz) vc)
+        (c.goal A₂.expr (snoc u (mkApp (mkConst ``Braid.Label.jump) ff))))
     g.assign (rule ``Rule.branch #[A₁.expr, A₂.expr, c.Ψ, p, tt, ff, cv, vc, hc,
       A.updProof A₁ i, A.updProof A₂ i, m₁, m₂])
     let mut out := []
@@ -455,69 +490,82 @@ def runTerm (c : Ctx) (g : MVarId) (t ρ : Expr) (A : AtomList) : TacticM (List 
   | _ => throwError "braid_sym: not a terminator written out: {t}"
 
 /-- Run the operations of a block, then its terminator. -/
-partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
+partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) (u : Expr) :
     TacticM (List MVarId) := g.withContext do
-  let next (g' : Expr) (rest ρ' : Expr) (A' : AtomList) := runOps c g'.mvarId! rest ρ' A'
+  let next (g' : Expr) (rest ρ' : Expr) (A' : AtomList) (u' : Expr) :=
+    runOps c g'.mvarId! rest ρ' A' u'
   match_expr ops with
   | List.nil _ =>
-    let Φb := c.Φ.bindingBody!.bindingBody!
-    let t := Φb.getArg! 0
-    let m ← mkFreshExprSyntheticOpaqueMVar (mkApp4 (mkConst ``Braid.TermSpec) t ρ A.expr c.Ψ)
-    g.assign (mkApp5 (mkConst ``Rule.nil) ρ A.expr t c.Ψ m)
-    runTerm c m.mvarId! t ρ A
+    let t := c.tm
+    let m ← mkFreshExprSyntheticOpaqueMVar <|
+      if c.lab then mkApp5 (mkConst ``Braid.TermSpecT) t ρ A.expr u c.Ψ
+      else mkApp4 (mkConst ``Braid.TermSpec) t ρ A.expr c.Ψ
+    g.assign (mkAppN (mkConst (c.nm ``Rule.nil)) (#[ρ, A.expr] ++ c.tr u ++ #[t, c.Ψ, m]))
+    runTerm c m.mvarId! t ρ A u
   | List.cons _ op rest =>
     let rule (n : Name) (args : Array Expr) :=
-      mkAppN (mkConst n) (#[rest, ρ, A.expr] ++ args)
-    let cont (ρ' : Expr) (A' : AtomList) := mkFreshExprSyntheticOpaqueMVar (mkOps c rest ρ' A')
+      mkAppN (mkConst (c.nm n)) (#[rest, ρ, A.expr] ++ c.tr u ++ args)
+    let cont (ρ' : Expr) (A' : AtomList) (u' : Expr) :=
+      mkFreshExprSyntheticOpaqueMVar (mkOps c rest ρ' A' u')
     match_expr op with
     | Braid.Op.const d v =>
       let ρ' := mkSet ρ d v
-      let m ← cont ρ' A
+      let m ← cont ρ' A u
       g.assign (rule ``Rule.const #[c.Φ, d, v, m])
-      next m rest ρ' A
+      next m rest ρ' A u
     | Braid.Op.un d o a =>
       let (va, ha) ← lookupVar ρ a
       let r ← norm c.N (mkApp2 (mkConst ``Braid.UnOp.eval) o va)
       let ρ' := mkSet ρ d r.expr
-      let m ← cont ρ' A
+      let m ← cont ρ' A u
       g.assign (rule ``Rule.un #[c.Φ, d, a, o, va, r.expr, ha, ← eqProof r, m])
-      next m rest ρ' A
+      next m rest ρ' A u
     | Braid.Op.bin d o a b =>
       let (va, ha) ← lookupVar ρ a
       let (vb, hb) ← lookupVar ρ b
       let r ← norm c.N (mkApp3 (mkConst ``Braid.BinOp.eval) o va vb)
       let ρ' := mkSet ρ d r.expr
-      let m ← cont ρ' A
+      if c.lab then
+        let leaks := (← whnf (mkApp (mkConst ``Braid.BinOp.leaks) o)).isConstOf ``Bool.true
+        let u' := if leaks then snoc u (mkApp2 (mkConst ``Braid.Label.operands) va vb) else u
+        let m ← cont ρ' A u'
+        let hl := mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool)
+          (mkConst (if leaks then ``Bool.true else ``Bool.false))
+        g.assign (mkAppN (mkConst (if leaks then ``RuleT.binLeak else ``RuleT.bin))
+          (#[rest, ρ, A.expr, u] ++
+          #[c.Φ, d, a, b, o, va, vb, r.expr, hl, ha, hb, ← eqProof r, m]))
+        return ← next m rest ρ' A u'
+      let m ← cont ρ' A u
       g.assign (rule ``Rule.bin #[c.Φ, d, a, b, o, va, vb, r.expr, ha, hb, ← eqProof r, m])
-      next m rest ρ' A
+      next m rest ρ' A u
     | Braid.Op.select d cv a b =>
       let (vc, hc) ← lookupVar ρ cv
       let (va, ha) ← lookupVar ρ a
       let (vb, hb) ← lookupVar ρ b
       let r ← norm c.N (mkApp3 (mkConst ``Rule.sel) vc va vb)
       let ρ' := mkSet ρ d r.expr
-      let m ← cont ρ' A
+      let m ← cont ρ' A u
       g.assign (rule ``Rule.select
         #[c.Φ, d, cv, a, b, vc, va, vb, r.expr, hc, ha, hb, ← eqProof r, m])
-      next m rest ρ' A
+      next m rest ρ' A u
     | Braid.Op.get d r =>
       let rn ← natLit r
       let some (i, args) ← A.find ``Braid.Atom.reg fun args => return (← natLit? args[0]!) == some rn
         | throwError "braid_sym: the symbolic state has no atom for register {rn}"
       let v := args[1]!
       let ρ' := mkSet ρ d v
-      let m ← cont ρ' A
+      let m ← cont ρ' A u
       g.assign (rule ``Rule.get #[c.Φ, d, r, v, A.atProof i, m])
-      next m rest ρ' A
+      next m rest ρ' A u
     | Braid.Op.set r a =>
       let rn ← natLit r
       let (v, ha) ← lookupVar ρ a
       let some (i, args) ← A.find ``Braid.Atom.reg fun args => return (← natLit? args[0]!) == some rn
         | throwError "braid_sym: the symbolic state has no atom for register {rn}"
       let A' := A.set i (mkApp2 (mkConst ``Braid.Atom.reg) args[0]! v)
-      let m ← cont ρ A'
+      let m ← cont ρ A' u
       g.assign (rule ``Rule.set #[A'.expr, c.Φ, a, r, args[1]!, v, ha, A.updProof A' i, m])
-      next m rest ρ A'
+      next m rest ρ A' u
     | Braid.Op.getf d f =>
       let fn ← natLit f
       let (i, _, b?) ← findFlag A fn
@@ -525,16 +573,16 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
         | throwError "braid_sym: flag {fn} is read while it holds no known value"
       let r ← norm c.N (mkApp (mkConst ``Braid.ofBool) b)
       let ρ' := mkSet ρ d r.expr
-      let m ← cont ρ' A
+      let m ← cont ρ' A u
       g.assign (rule ``Rule.getf #[c.Φ, d, f, b, r.expr, A.atProof i, ← eqProof r, m])
-      next m rest ρ' A
+      next m rest ρ' A u
     | Braid.Op.setf f a =>
       let fn ← natLit f
       let (va, ha) ← lookupVar ρ a
       let (i, fa, b?) ← findFlag A fn
       let r ← norm c.N (mkApp (mkConst ``Rule.bnz) va)
       let A' := A.set i (mkApp2 (mkConst ``Braid.Atom.flag) fa r.expr)
-      let m ← cont ρ A'
+      let m ← cont ρ A' u
       match b? with
       | some b₀ =>
         g.assign (rule ``Rule.setf
@@ -542,7 +590,7 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
       | none =>
         g.assign (rule ``Rule.setf_any
           #[A'.expr, c.Φ, a, f, va, r.expr, ha, ← eqProof r, A.updProof A' i, m])
-      next m rest ρ A'
+      next m rest ρ A' u
     | Braid.Op.load d W a =>
       let (addr, ha) ← lookupVar ρ a
       let some (i, args) ←
@@ -555,10 +603,11 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
       let v := args[2]!
       let r ← norm c.N (mkApp2 (mkConst ``Rule.ld) W v)
       let ρ' := mkSet ρ d r.expr
-      let m ← cont ρ' A
+      let u' := if c.lab then snoc u (mkApp2 (mkConst ``Braid.Label.read) addr n) else u
+      let m ← cont ρ' A u'
       g.assign (rule ``Rule.load #[c.Φ, d, a, W, addr, v, r.expr, n, args[3]!, ha,
         A.atProof i, ← mkEqRefl n, ← eqProof r, m])
-      next m rest ρ' A
+      next m rest ρ' A u'
     | Braid.Op.store W a x =>
       let (addr, ha) ← lookupVar ρ a
       let (xv, hx) ← lookupVar ρ x
@@ -575,13 +624,14 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
       let n := args[1]!
       let tt := mkConst ``Bool.true
       let A' := A.set i (mkApp4 (mkConst ``Braid.Atom.mem) addr n xv tt)
-      let m ← cont ρ A'
+      let u' := if c.lab then snoc u (mkApp2 (mkConst ``Braid.Label.write) addr n) else u
+      let m ← cont ρ A' u'
       g.assign (rule ``Rule.store #[A'.expr, c.Φ, a, x, W, addr, args[2]!, xv, n, ha, hx,
         A.updProof A' i, ← mkEqRefl n, m])
-      next m rest ρ A'
+      next m rest ρ A' u'
     | Braid.Op.havoc d =>
       -- An undefined flag: `havoc d`, `setf f d`, and `d` not read again.
-      let t := c.Φ.bindingBody!.bindingBody!.getArg! 0
+      let t := c.tm
       if rest.isAppOfArity ``List.cons 3 then
         let op₂ := rest.getArg! 1
         let rest₂ := rest.getArg! 2
@@ -595,26 +645,28 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
               | none => mkApp (mkConst ``Rule.any_any) fa
             let any := mkApp (mkConst ``Braid.Atom.prop) (mkApp (mkConst ``Braid.flagAny) fa)
             let A' := A.set i any
-            let m ← mkFreshExprSyntheticOpaqueMVar (mkOps c rest₂ ρ A')
-            g.assign (mkAppN (mkConst ``Rule.havoc_setf) #[rest₂, ρ, A.expr, A'.expr, t, c.Ψ,
-              d, f, A.atoms[i]!, hle, boolFalseRefl, A.updProof A' i, m])
-            return ← next m rest₂ ρ A'
-      let body := mkApp4 (mkConst ``Braid.OpsSpec) rest (mkSet ρ d (mkBVar 0)) A.expr c.Φ
+            let m ← mkFreshExprSyntheticOpaqueMVar (mkOps c rest₂ ρ A' u)
+            g.assign (mkAppN (mkConst (c.nm ``Rule.havoc_setf)) (#[rest₂, ρ, A.expr] ++ c.tr u ++
+              #[A'.expr, t, c.Ψ, d, f, A.atoms[i]!, hle, boolFalseRefl, A.updProof A' i, m]))
+            return ← next m rest₂ ρ A' u
+      let body :=
+        if c.lab then mkApp5 (mkConst ``Braid.OpsSpecT) rest (mkSet ρ d (mkBVar 0)) A.expr u c.Φ
+        else mkApp4 (mkConst ``Braid.OpsSpec) rest (mkSet ρ d (mkBVar 0)) A.expr c.Φ
       let m ← mkFreshExprSyntheticOpaqueMVar (mkForall `v .default (mkConst ``Braid.Word) body)
       g.assign (rule ``Rule.havoc #[c.Φ, d, m])
       let (fv, g') ← m.mvarId!.intro1
-      runOps c g' rest (mkSet ρ d (mkFVar fv)) A
+      runOps c g' rest (mkSet ρ d (mkFVar fv)) A u
     | Braid.Op.guard cv =>
       let (vc, hc) ← lookupVar ρ cv
       let hne ← discharge c.N (mkApp (mkConst ``Rule.nz) vc)
-      let m ← cont ρ A
+      let m ← cont ρ A u
       g.assign (rule ``Rule.guard #[c.Φ, cv, vc, hc, hne, m])
-      next m rest ρ A
+      next m rest ρ A u
     | _ => throwError "braid_sym: not an operation written out: {op}"
   | _ =>
     -- A long list is written in parts: a `have` for each stretch of it, or parts appended.
     let ops' ← whnf ops
-    if ops'.isAppOf ``List.cons || ops'.isAppOf ``List.nil then runOps c g ops' ρ A
+    if ops'.isAppOf ``List.cons || ops'.isAppOf ``List.nil then runOps c g ops' ρ A u
     else throwError "braid_sym: not a list of operations written out: {ops}"
 
 /-- The table of blocks of the program of a run. -/
@@ -627,15 +679,18 @@ def tableOf (T : Tables) (P : Expr) : MetaM BlockTable := do
   T.set (some t)
   return t
 
-def tripleParts (g : MVarId) : MetaM (Expr × Expr × Expr) := do
+/-- The program, precondition and postcondition of a triple, and for a traced triple the
+trace before and the trace after. -/
+def tripleParts (g : MVarId) : MetaM (Expr × Expr × Expr × Option (Expr × Expr)) := do
   let ty ← instantiateMVars (← g.getType)
-  let_expr Braid.Triple P pre post := ty
-    | throwError "braid_sym: the goal is not a triple"
-  return (P, pre, post)
+  match_expr ty with
+  | Braid.Triple P pre post => return (P, pre, post, none)
+  | Braid.TripleT P pre t post t' => return (P, pre, post, some (t, t'))
+  | _ => throwError "braid_sym: the goal is not a triple"
 
 /-- Run the block at the program counter. The goals left are triples. -/
 def stepBlock (N : Norm) (T : Tables) (g : MVarId) : TacticM (List MVarId) := g.withContext do
-  let (P, pre, post) ← tripleParts g
+  let (P, pre, post, tr?) ← tripleParts g
   let_expr Braid.Atoms.interp as := pre
     | throwError "braid_sym: the precondition is not a list of atoms"
   let A ← AtomList.parse as
@@ -647,15 +702,30 @@ def stepBlock (N : Norm) (T : Tables) (g : MVarId) : TacticM (List MVarId) := g.
   let some (ops, t, hb) ← (← tableOf T P).get pv.toNat
     | throwError "braid_sym: the program has no block at {p}"
   let atoms := mkApp (mkConst ``List [0]) atomTy
-  let Ψ := mkLambda `as .default atoms (mkTriple P (mkBVar 0) post)
-  let Φ := mkLambda `ρ .default (mkConst ``Braid.Env) <| mkLambda `as .default atoms <|
-    mkApp4 (mkConst ``Braid.TermSpec) t (mkBVar 1) (mkBVar 0) Ψ
-  let c : Ctx := { N, P, post, Ψ, Φ }
   let zero := mkApp2 (mkConst ``BitVec.ofNat) (mkNatLit 64) (mkNatLit 0)
   let ρ := mkLambda `x .default (mkConst ``Braid.Var) zero
-  let m ← mkFreshExprSyntheticOpaqueMVar (mkOps c ops ρ A)
-  g.assign (mkAppN (mkConst ``Rule.block) #[P, A.expr, post, p, ops, t, A.atProof i, hb, m])
-  runOps c m.mvarId! ops ρ A
+  match tr? with
+  | none =>
+    let Ψ := mkLambda `as .default atoms (mkTriple P (mkBVar 0) post)
+    let Φ := mkLambda `ρ .default (mkConst ``Braid.Env) <| mkLambda `as .default atoms <|
+      mkApp4 (mkConst ``Braid.TermSpec) t (mkBVar 1) (mkBVar 0) Ψ
+    let c : Ctx := { N, P, post, Ψ, Φ, tm := t }
+    let m ← mkFreshExprSyntheticOpaqueMVar (mkOps c ops ρ A zero)
+    g.assign (mkAppN (mkConst ``Rule.block) #[P, A.expr, post, p, ops, t, A.atProof i, hb, m])
+    runOps c m.mvarId! ops ρ A zero
+  | some (u, tEnd) =>
+    let trace := mkApp (mkConst ``List [0]) labelTy
+    let Ψ := mkLambda `as .default atoms <| mkLambda `u .default trace <|
+      mkApp5 (mkConst ``Braid.TripleT) P (mkApp (mkConst ``Braid.Atoms.interp) (mkBVar 1))
+        (mkBVar 0) post tEnd
+    let Φ := mkLambda `ρ .default (mkConst ``Braid.Env) <| mkLambda `as .default atoms <|
+      mkLambda `u .default trace <|
+        mkApp5 (mkConst ``Braid.TermSpecT) t (mkBVar 2) (mkBVar 1) (mkBVar 0) Ψ
+    let c : Ctx := { N, P, post, Ψ, Φ, tm := t, lab := true, tEnd }
+    let m ← mkFreshExprSyntheticOpaqueMVar (mkOps c ops ρ A u)
+    g.assign (mkAppN (mkConst ``RuleT.block)
+      #[P, A.expr, u, post, tEnd, p, ops, t, A.atProof i, hb, m])
+    runOps c m.mvarId! ops ρ A u
 
 /-- Run the block at the program counter, or change nothing and say why not. -/
 def tryStep (N : Norm) (T : Tables) (g : MVarId) : TacticM (Except Exception (List MVarId)) := do

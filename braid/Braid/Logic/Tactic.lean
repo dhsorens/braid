@@ -11,6 +11,7 @@
   * `braid_norm`: put values and addresses in normal form
   * `braid_block`, `braid_step`, `braid_run`: run a block, one block of a program, a program
   * `braid_done`: finish, when the symbolic state is the postcondition
+  * `braid_trace`: the trace a run has left is the trace a specification gives
   * `braid_forget`, `braid_name_reg`: forget the value of a register, and name it again
 -/
 
@@ -20,6 +21,7 @@ public import Braid.Logic.Exec
 public import Braid.Logic.Sat
 public import Braid.Logic.Data
 public import Braid.Logic.Flat
+public import Braid.Logic.Trace
 public import Std.Tactic.BVDecide
 
 public section
@@ -131,19 +133,32 @@ macro "braid_step" : tactic =>
 macro "braid_run" : tactic =>
   `(tactic| repeat braid_step)
 
+/-- Prove that the trace a run has left is the trace a specification gives: the two are the
+same once the labels added one at a time are gathered into one list. -/
+macro "braid_trace" : tactic =>
+  `(tactic| first
+      | rfl
+      | (simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil]; done)
+      | (simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil]
+         rfl))
+
 /-- Finish: the symbolic state is the postcondition. -/
 macro "braid_done" : tactic =>
   `(tactic| (braid_norm
              first
                | exact Triple.done_eq rfl
                | (apply Triple.done_split; braid_split; done)
-               | (apply Triple.done_eq; simp_all; done)))
+               | (apply Triple.done_eq; simp_all; done)
+               | exact TripleT.done_eq rfl (by braid_trace)
+               | (refine TripleT.done_split ?_ (by braid_trace); braid_split; done)))
 
 /-- Use a triple already proved, such as the specification of a function being called. It
 takes its precondition out of the symbolic state and puts its postcondition back. -/
 macro "braid_call " t:term : tactic =>
   `(tactic| (braid_norm
-             apply Triple.call (hcallee := $t)
+             first
+               | apply Triple.call (hcallee := $t)
+               | apply TripleT.call (hcallee := $t)
              case hsplit => (braid_norm; braid_split)
              braid_norm))
 
@@ -161,7 +176,7 @@ macro "braid_disj" : tactic =>
 `wordsAt_cons`. -/
 macro "braid_unfold " t:term : tactic =>
   `(tactic| (braid_norm
-             apply Triple.unfold (heq := $t)
+             first | apply Triple.unfold (heq := $t) | apply TripleT.unfold (heq := $t)
              case hext => (braid_norm; braid_extract)
              braid_norm))
 
@@ -169,29 +184,29 @@ macro "braid_unfold " t:term : tactic =>
 as `wordsAt_cons`. -/
 macro "braid_fold " t:term : tactic =>
   `(tactic| (braid_norm
-             apply Triple.fold (heq := $t)
+             first | apply Triple.fold (heq := $t) | apply TripleT.fold (heq := $t)
              case hsplit => (braid_norm; braid_split)
              braid_norm))
 
 /-- Forget the value of a register: `braid_forget r`. -/
 macro "braid_forget " r:term : tactic =>
-  `(tactic| (apply Triple.forget_reg (r := $r)
+  `(tactic| (first | apply Triple.forget_reg (r := $r) | apply TripleT.forget_reg (r := $r)
              case hupd => braid_upd))
 
 /-- Forget the value of a flag: `braid_forget_flag f`. -/
 macro "braid_forget_flag " f:term : tactic =>
-  `(tactic| (apply Triple.forget_flag (f := $f)
+  `(tactic| (first | apply Triple.forget_flag (f := $f) | apply TripleT.forget_flag (f := $f)
              case hupd => braid_upd))
 
 /-- Name the value of a register that holds some value: `braid_name_reg r`. -/
 macro "braid_name_reg " r:term : tactic =>
-  `(tactic| (apply Triple.reg_any (r := $r)
+  `(tactic| (first | apply Triple.reg_any (r := $r) | apply TripleT.reg_any (r := $r)
              case hext => braid_extract
              intro _))
 
 /-- Name the value of a flag that holds some value: `braid_name_flag f`. -/
 macro "braid_name_flag " f:term : tactic =>
-  `(tactic| (apply Triple.flag_any (f := $f)
+  `(tactic| (first | apply Triple.flag_any (f := $f) | apply TripleT.flag_any (f := $f)
              case hext => braid_extract
              intro _))
 
