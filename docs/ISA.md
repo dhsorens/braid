@@ -28,7 +28,11 @@ How the lowering sees it:
 - An access must be aligned and inside the model's valid ranges. The lowering emits a
   `guard` for the alignment; the range is which bytes are mapped.
 - Code is a separate map, so stores cannot change it.
-- `ECALL`, `EBREAK` and the accelerator instructions lower to `trap`.
+- `ECALL`, `EBREAK` and the accelerator instructions lower to `trap` when a function is
+  lowered. When a whole binary is ([`Programs.md`](Programs.md)), `ECALL` is lowered to the
+  two calls the model gives a meaning that a program can use: with `t0 = 0x10` it writes
+  bytes out, and with `t0 = 0` it halts with the code in `a0`. Those are the dialect's
+  `out` and `exit`, and the events of a labelled run.
 
 ### What we would like from it
 
@@ -145,5 +149,17 @@ nearly all the others are vector instructions.
 5. **`ret` with an operand** (`ret 0x20`), which V8's code uses to pop its arguments.
 6. **Bytes.** An encoder checked against the bytes of a binary, or a decoder, so that a
    theorem need not trust a disassembler.
+7. **A system call.** The model has no `syscall` instruction and no environment, so a
+   program on x86-64 cannot write bytes out or exit, and a run has no events. This is the
+   one gap that changes a statement of the whole program
+   ([`Programs.md`](Programs.md)): on x86-64 `sha256_main` leaves the digest in memory
+   and ends in a jump to itself, and `sha256_main_correct` says the machine gets there
+   with `sha256` of the message at the address of `digest`, where on the other two it
+   says the bytes were written and the program exited. What the run reveals and the
+   safety property are proved as on the other two.
+8. **An index with no base.** The parser does not read `lea 0x0(,%rax,8),%rdx`, which
+   clang emits for a multiplication by eight. The whole program's source hides that one
+   product from the compiler on x86-64 (`BITS` in `Examples/src/c/sha256_main.c`), which
+   then shifts; nothing else in the examples met it.
 
 Instructions the model lacks are contributed to Kraken, not added here.

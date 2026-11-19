@@ -10,19 +10,33 @@ see [`ISA.md`](ISA.md).
 | --- | --- |
 | The `braid` dialect | syntax, a weakest-precondition semantics, a functional reading proved equivalent to it, MLIR and Lean printers, an IRDL definition, three proved simplification passes |
 | The logic | heaps and assertions as an Iris BI, atoms, triples with the frame rule built in, symbolic execution rules for every operation, tactics, arrays of words and bytes |
+| Traces | a step of the dialect carries labels: what it reveals, and events of the environment; triples that state the trace of a run, produced by the stepper; a trusted reading of each machine model's labels, which each lowering is proved to preserve ([`Leakage.md`](Leakage.md)) |
+| Whole programs | a loaded binary as an object (code, data sections, entry point) written by the decompiler with a checked certificate; a rule that joins a callee's specification and its trace at a call; safety of every reachable state from the trace of one run ([`Programs.md`](Programs.md)) |
 | RISC-V lowering | every instruction of the model, proved sound |
 | AArch64 lowering | the integer core with load-acquire, store-release and the atomic read-modify-writes, and vector registers with their loads, stores, moves, bitwise operations and lane-wise addition, proved sound |
 | x86-64 lowering | the integer core, and vector registers with their moves at 128, 256 and 512 bits and packed addition, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 88 functions across the three instruction sets (26 on RISC-V, 32 on AArch64, 30 on x86-64), up to the ChaCha20 block function and the SHA-256 compression function, each with a proved specification and a theorem about the machine model alone |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 94 functions across the three instruction sets (28 on RISC-V, 34 on AArch64, 32 on x86-64), up to the ChaCha20 block function and the SHA-256 compression function, each with a proved specification and a theorem about the machine model alone; for the twelve functions of the scaling ladder on each, a theorem of what a run reveals; ChaCha20 and SHA-256 proved a second time at `-O2`; and one whole program on each, SHA-256 of a message, proved from its entry point |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.
 
 ## Next
 
-In rough order of what they would buy.
+The next three goals, in order:
+
+1. **Vector and cryptographic instructions**, with a vectorised ChaCha20 proved correct
+   and constant-time. The theorems about what code reveals are about scalar code
+   compiled with vectorisation off; real libraries are not.
+2. **Proof reuse.** [`Continuity.md`](Continuity.md) measures what of a proof survives a
+   recompile and lists what the decompiler and the logic would have to do for the rest to
+   be regenerated: statements against the image and not against literals, cut points and
+   frames from the code, the function of what a run reveals produced by the stepper.
+3. **Concurrency**, starting with triples as Iris weakest preconditions and steps of the
+   environment, before any model of several cores.
+
+The rest, in rough order of what it would buy.
 
 ### Coverage
 
@@ -96,9 +110,12 @@ In rough order of what they would buy.
 1. **x86-64 from bytes.** A theorem about x86-64 is about the instructions the disassembler
    printed. A verified decoder, or a check of Kraken's encoder against the bytes of the
    binary, would remove the disassembler from what is trusted ([`Trust.md`](Trust.md)).
-2. **Whole programs.** A theorem is about the functions it names. Linking specifications
-   across a binary, with its data sections as initial memory, is the step from functions to
-   programs.
+2. **Whole programs, further.** One program is proved from its entry point on each
+   instruction set ([`Programs.md`](Programs.md)). Not done: a callee proved at other
+   addresses than it is linked at, position-independent code, a program that reads input,
+   and anything of a loader. The first is the same work as the first item of
+   [`Continuity.md`](Continuity.md). On x86-64 the program cannot exit, for want of a
+   system call in the model ([`ISA.md`](ISA.md)).
 
 ### The corpus
 

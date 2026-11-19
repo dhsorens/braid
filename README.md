@@ -140,8 +140,12 @@ requires the `braid` package in the `braid/` subdirectory ([`braid/README.md`](b
 - [`Examples/README.md`](Examples/README.md): the example corpus.
 - [`docs/Trust.md`](docs/Trust.md): what is trusted and what is not.
 - [`docs/ISA.md`](docs/ISA.md): the instruction-set models, and what we would like from them.
+- [`docs/Leakage.md`](docs/Leakage.md): what a run reveals: the leakage model, traces, and
+  what the model does not cover.
+- [`docs/Programs.md`](docs/Programs.md): whole programs: a loaded binary, calls within
+  it, and SHA-256 of a message proved from the entry point.
 - [`docs/Continuity.md`](docs/Continuity.md): how much the lowered code changes when the
-  source changes a little.
+  source changes a little, and how much of a proof survives a recompile.
 - [`docs/Scaling.md`](docs/Scaling.md): how proofs scale with the size of the code, measured.
 - [`docs/RELATED.md`](docs/RELATED.md): related work.
 - [`docs/Roadmap.md`](docs/Roadmap.md): where the code stands and what is next.

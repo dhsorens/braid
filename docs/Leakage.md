@@ -115,8 +115,9 @@ that prove a triple; on a traced triple they keep the trace as well.
 ## On a machine
 
 For each instruction set, a file says what each instruction of the machine model reveals
-(`Lowering/RiscV/Leak.lean`), and a run of the machine with its trace (`RunL`) is the labels
-of the instructions it executes, in order. That file is trusted ([`Trust.md`](Trust.md)).
+and which of the model's system calls are which events (`Lowering/RiscV/Leak.lean`), and a
+run of the machine with its trace (`RunL`) is the labels of the instructions it executes, in
+order. That file is trusted ([`Trust.md`](Trust.md)).
 The lowering is proved to preserve traces: the labels the block of an instruction emits are
 those of the instruction (`leak_lower`), so a traced triple about lowered code is a theorem
 about a run of the machine and its trace (`machine_soundT`).
@@ -124,6 +125,22 @@ about a run of the machine and its trace (`machine_soundT`).
 The proof does not redo the proof that the lowering is sound. The labels a block emits are a
 function of the state it starts from (`Block.leak`, with `Block.wp_of_wpL`), and that function
 is compared with the instruction's labels by evaluation, one instruction at a time.
+
+## Events of the environment
+
+The fifth label is not something a step reveals. It is something the program does to the
+world: `write bs`, the bytes `bs` written out, or `exit code`. A system call is lowered to
+the dialect's `out` and `exit` when a whole binary is lowered ([`Programs.md`](Programs.md)),
+and each emits its event. A trace then has two readings. `Trace.events` is what the program
+did: the theorem that a program is correct says its events are the right output and then the
+exit. `Trace.leakage` is the trace without its events: the theorem about what a program
+reveals says its leakage is a function of public inputs. The digest a program writes out
+depends on every byte of the message and is in the trace; it is not in the leakage.
+
+The same trace gives a safety property. It records every store, so a trace of a complete run
+in which every `write` is inside a region says that no state on the run has a byte changed
+outside the region; and where the machine is deterministic, every state the machine can reach
+is on that run (`RunL.safe`, `sha256_main_safe`).
 
 ## Not covered
 

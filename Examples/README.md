@@ -14,6 +14,9 @@ mlir/          the lowered code of each example, as MLIR text
 Spec.lean      functions the specifications share (umax, wsum, wgcd, ones)
 Spec/          specifications in plain Lean: CRC-32, ChaCha20 (RFC 8439), SHA-256 (FIPS 180-4)
 <Module>/Common.lean         what a module's proofs share on every instruction set
+<Module>/<ISA>/Leak*.lean    what a function reveals (docs/Leakage.md)
+<Module>/O2/<ISA>/           the same source compiled at -O2, lowered and proved again
+Sha256Main/                  a whole program, proved from its entry point (docs/Programs.md)
 scaling/       the scaling benchmark (docs/Scaling.md)
 ArmMachine.lean  what the AArch64 machine theorems are stated with (HasBytes, Apart)
 continuity/    the continuity experiment (docs/Continuity.md)
@@ -34,7 +37,7 @@ theorem about the machine model alone (`<function>_correct`).
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64, SumSlice |
 | `python/basic.py` | py_add3, py_max_u64, py_gcd | py_add3, py_max_u64 | py_add3, py_max_u64 |
 | `js/basic.js` | | js_add3 | js_add3 (to its return instruction) |
-| `c/mem.c` | copy_bytes, equal_bytes | copy_bytes, equal_bytes | copy_bytes, equal_bytes |
+| `c/mem.c` | copy_bytes, equal_bytes, equal_bytes_ct | copy_bytes, equal_bytes, equal_bytes_ct | copy_bytes, equal_bytes, equal_bytes_ct |
 | `c/limbs.c` | add_limbs | add_limbs | add_limbs |
 | `c/crc32.c` | crc32 | crc32 | crc32 |
 | `c/chacha20.c` | quarter_round, chacha20_block | quarter_round, chacha20_block | quarter_round, chacha20_block |
@@ -43,6 +46,45 @@ theorem about the machine model alone (`<function>_correct`).
 The last five sources are the scaling ladder ([`docs/Scaling.md`](../docs/Scaling.md)):
 functions of growing size, up to the SHA-256 compression function, proved against
 definitions in plain Lean (`Spec/`) that are checked on the standards' test vectors.
+
+## What is revealed
+
+Every function of the ladder, and `swap`, also has a theorem about what a run of it reveals
+(`<function>_leakage`, about the machine model alone: the trace is an explicit function of
+named public inputs) and the two-run statement that follows (`<function>_leakage_eq`: runs
+that agree on the public inputs have equal traces). The model is in
+[`docs/Leakage.md`](../docs/Leakage.md). On all three instruction sets:
+
+| Function | What its trace is a function of | Constant-time |
+| --- | --- | --- |
+| `swap` | the two addresses, the return address | yes |
+| `copy_bytes` | the two addresses, the length, the return address | yes |
+| `equal_bytes` | the two addresses, the length, the return address, and the index of the first byte that differs | no: it returns at the first difference, and the theorem says exactly that |
+| `equal_bytes_ct` | the two addresses, the length, the return address | yes |
+| `add_limbs` | the three addresses, the number of limbs, the return address | yes |
+| `crc32` | the address, the length, the return address, and the two four-bit indices at which the table is read for each byte | no: the lookups index on the data, the theorem says exactly which indices, and from one starting value they determine the message (`crcIndices_inj`) |
+| `quarter_round`, `chacha20_block` | the addresses, the stack pointer, the return address | yes |
+| `sha256_round`, `sha256_schedule`, `sha256_compress` | the addresses, the stack pointer, the return address | yes |
+
+## Recompiled
+
+`chacha20.c` and `sha256.c` are compiled a second time, at `-O2`, and their five functions
+are proved again on every instruction set, `_spec`, `_correct` and `_leakage`
+(`<Module>/O2/<ISA>/`), with `Spec/` and `<Module>/Common.lean` as they are. What of each
+proof survived the recompile is measured in [`docs/Continuity.md`](../docs/Continuity.md).
+
+## A whole program
+
+`c/sha256_main.c` is a program: `_start`, and a `main` that computes SHA-256 of a message in
+the binary's data, calling `sha256_compress` for each block, writes the digest out and
+exits. It is lowered as a loaded image (code, data sections, entry point), and
+`Sha256Main/<ISA>/Proofs.lean` proves about the machine model alone, from the entry point and
+with no hypothesis but that the binary is loaded, that it writes out the digest and exits
+(`sha256_main_correct`), that what it reveals is a function of the length of the message
+(`sha256_main_leakage`), and that it never stores outside its stack (`sha256_main_safe`).
+On x86-64, whose model has no system call, the program leaves the digest in memory and
+the first theorem says that.
+See [`docs/Programs.md`](../docs/Programs.md).
 
 What the examples exercise:
 
@@ -88,6 +130,7 @@ registers: `max2_spec` says `umax a b` everywhere, and `sum_array_spec` says `ws
 lake build braid-lower      # the decompiler
 Examples/build.sh           # compile and lower every example, for every instruction set
 Examples/build.sh memory    # one example
+Examples/build.sh sha256main  # the whole program (after sha256)
 ISAS=x86 Examples/build.sh  # one instruction set
 lake build Examples         # check every image and every proof
 ```

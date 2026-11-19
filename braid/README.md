@@ -13,6 +13,7 @@ Braid/
     Mem.lean         loads and stores, byte by byte
     Print.lean       MLIR text, Lean terms, position-independent text
     Trace.lean       labelled steps: what an operation reveals, traces, labelled runs
+    Image.lean       a loaded binary: code, data sections, entry point
   Pass/
     Fuse.lean        fuse a block with the block it jumps to
     DeadFlags.lean   remove flag writes a block overwrites before reading
@@ -32,6 +33,11 @@ Braid/
     Flat.lean        arrays written out as memory atoms, for theorems about a machine
     Cells.lean       arrays of cells of any size, read-only or writable; indexed access
     Trace.lean       traced triples: a triple with the trace before and after
+    Event.lean       the environment's two calls in a traced triple: write and exit
+    Link.lean        a callee's specification and its trace, joined for a caller
+    Bytes.lean       arrays of bytes, and bytes read as cells of a larger size
+    Image.lean       the sections of an image as assertions
+    Any.lean         cells and registers of forgotten contents
     Tactic.lean      braid_step, braid_run, braid_call, ...
     Sym/             the stepper: braid_sym_step and braid_sym_run, symbolic execution as
                      a metaprogram, for code too long for braid_run (docs/Scaling.md)

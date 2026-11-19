@@ -57,6 +57,11 @@ The model is riscv-zkvm's `Rv64`, which is tied to the Sail RISC-V model.
 | `Mem.lean` | the model's doubleword memory, byte by byte |
 | `Sound.lean` | `Rel`, `lower_sound`, `lowerCode_sound` |
 | `Logic.lean` | register names, `triple_sound`, `machine_sound` |
+| `Leak.lean` | trusted: what each instruction reveals, the events of `ECALL`, `RunL` |
+| `LeakSound.lean` | the lowering preserves traces, `lowerCode_soundL` |
+| `Env.lean` | `ECALL` lowered as the environment's write and exit, `lowerEnv` |
+| `Program.lean` | `Loaded`, `program_soundT`: a traced triple about an image, of every machine that has it loaded |
+| `Safety.lean` | a run that halts passes through every reachable state; `RunL.safe` |
 
 Covered: every instruction the model has (RV64IM as far as the model goes), with `ECALL`,
 `EBREAK` and the accelerator instructions lowered to `trap`. The top theorem turns
@@ -75,6 +80,12 @@ the lowering is stated on instruction words.
 | `Simd.lean` | the vector instructions, lowered soundly |
 | `Sound.lean` | the integer instructions, `lower_sound`, `lowerProgram_sound` |
 | `Logic.lean` | register and flag names, `lowerWords`, `triple_sound`, `machine_sound` |
+| `Leak.lean` | trusted: what each instruction reveals, the events of `SVC #0`, `RunL` |
+| `LeakSound.lean` | the lowering preserves traces, `lowerProgram_soundL` |
+| `Env.lean` | `SVC #0` lowered as the environment's write and exit, `lowerEnv`; runs that keep what they do not store to, `RunS` |
+| `ReadOnly.lean` | sections with contents as read-only assertions, zeroed ones as writable |
+| `Program.lean` | `Loaded`, `program_soundT` |
+| `Safety.lean` | no store outside a range, of every reachable state; `RunS.safe` |
 
 How the machine appears in `braid`:
 
@@ -132,6 +143,10 @@ to the model's own `Eventually` with no step count in between.
 | `Sound.lean` | control flow, `lower_sound`, `lowerProgram_sound` |
 | `Layout.lean` | the lines of a binary as an executable of the model |
 | `Logic.lean` | register and flag names, `triple_sound`, `machine_sound` |
+| `Leak.lean`, `LeakOps.lean`, `LeakAvx.lean` | trusted: what each instruction reveals, `RunL` |
+| `LeakSound.lean` | the lowering preserves traces, `lowerProgram_soundL` |
+| `Program.lean` | `Loaded`, `program_soundT` |
+| `Safety.lean` | `Next`, `Reachable`; no store outside a range, of every reachable state; `program_safeT` |
 
 How the machine appears in `braid`:
 

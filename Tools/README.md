@@ -34,7 +34,7 @@ them onto your `PATH`, or run them through `lake exe braid-lower`.
 
 ```
 braid-lower <binary> [--list] [--stats] [--fn <name>]... [--mlir <file>] [--lean <file>]
-                     [--norm <file>] [--module <Name>] [--disasm <file>]
+                     [--norm <file>] [--module <Name>] [--disasm <file>] [--image <name>]
 ```
 
 | Option | What it does |
@@ -48,6 +48,7 @@ braid-lower <binary> [--list] [--stats] [--fn <name>]... [--mlir <file>] [--lean
 | `--simplify` | fuse straight-line blocks and remove dead work (`Func.simplifyBy`, with the plan `Func.fusePlan`) in the MLIR and position-independent text |
 | `--norm <file>` | write position-independent text, for comparing two lowerings |
 | `--disasm <file>` | x86-64 only: the output of `objdump -d` on the binary |
+| `--image <name>` | also write the whole binary as a loaded image named `<name>`: its data sections, its entry point, and the certificates that go with them; system calls are lowered as the environment's write and exit and not as `trap` ([`docs/Programs.md`](../docs/Programs.md)) |
 
 The instruction set is read from the ELF header.
 
@@ -81,6 +82,15 @@ also holds the image:
 | `exe` | the model's executable of the image |
 | `<f> : Braid.Func`, `<f>_lowered` | as above |
 | `<f>_holds` | a theorem: the blocks of `<f>` are blocks of the lowering of `exe`, which is what `machine_sound` asks for |
+
+With `--image <name>` the module also holds the binary as a whole:
+
+| Declaration | What it is |
+| --- | --- |
+| `<name>_section_<section>` | the bytes of a data section |
+| `<name>_image` | the image: the code by address, the sections with their addresses, the zeroed sections with their sizes, and the entry point |
+| `<name>_blocks`, `<name>_lowered` | the lowered blocks of all the code, and the theorem that they are its lowering (`<name>_holds` on x86-64) |
+| `<name>_apart` | a theorem: the sections do not overlap |
 
 A function of more than 128 blocks is written in parts: definitions `<f>_blocks_0`,
 `<f>_blocks_1`, ... of 128 blocks each, which `<f>` appends, and its certificates are checked

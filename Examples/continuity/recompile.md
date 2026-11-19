@@ -9,7 +9,8 @@ Reproduce with
 
 ```sh
 Examples/build.sh chacha20 && Examples/build.sh sha256   # both levels, all three ISAs
-Examples/continuity/recompile.py --time rv x86           # the tables below
+Examples/continuity/recompile.py --time                  # what each function computes
+Examples/continuity/recompile.py --time --leak           # what each function reveals
 ```
 
 ## The second level
@@ -198,16 +199,21 @@ new lines are almost all in two places: the statements of the triples for the pa
 two large functions whose structure changed, and the lists of registers and stack cells in
 the two `_correct` theorems.
 
-## x86-64 and AArch64
+## x86-64
 
-### x86-64: the loop of `chacha20_block` (done), the rest (not done)
+What each function computes:
 
 | function | file | `-O1` | `-O2` | same | renamed | changed | new | imported | dropped | `-O1` s | `-O2` s |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `chacha20_block` | `Round.lean` | 378 | 352 | 113 | 124 | 51 | 64 | 0 | 90 | 6.1 | 6.5 |
+| `quarter_round` | `QuarterRound.lean` | 149 | 97 | 90 | 0 | 7 | 0 | 52 | 0 | 2.2 | 1.7 |
+| `chacha20_block` | `Round.lean` | 378 | 352 | 113 | 124 | 51 | 64 | 0 | 90 | 5.9 | 5.9 |
+| `chacha20_block` | `Block.lean` | 514 | 447 | 347 | 35 | 55 | 10 | 0 | 77 | 9.8 | 6.7 |
+| `sha256_round` | `Round.lean` | 131 | 132 | 128 | 0 | 3 | 1 | 0 | 0 | 5.0 | 5.3 |
+| `sha256_schedule` | `Schedule.lean` | 165 | 166 | 162 | 0 | 3 | 1 | 0 | 0 | 3.4 | 3.5 |
+| `sha256_compress` | `Compress.lean` | 488 | 559 | 309 | 71 | 42 | 137 | 0 | 66 | 13.1 | 17.8 |
 
-`Examples/ChaCha20/O2/X86/Round.lean` checks: `colsCode_eq`, `diagsCode_eq`, `columns_spec`,
-`diagonals_spec`, `double_round_spec`, `rounds_spec`.
+`Examples/ChaCha20/O2/X86/Round.lean`, the loop of `chacha20_block`, was the first file
+proved on x86-64, and it is not like the others.
 
 Here the recompile is not a renaming. At `-O1` the compiler kept three words of the state in
 stack slots and the count of rounds in `edx`; at `-O2` one word is in a slot, the count of
@@ -227,26 +233,73 @@ also closes the decrement in memory.
 So this file is the evidence that the machine-run part can be *generated*: its inputs were
 the binary, the two tables of locations, and the address of the middle of the loop.
 
-Not done on x86-64: `Block.lean` for `chacha20_block` (the entry, the exit, the
-specification and the two theorems about the machine), `quarter_round`, and all of
-`sha256.c`. What is known of them:
 
-- `quarter_round`, `sha256_round` and `sha256_schedule` have the same number of
-  instructions at both levels (21, 51, 25); whether they are the same instructions was
-  checked on RISC-V only.
-- `chacha20_block` at `-O2` pushes the same six registers, keeps `out`, `inp`, the count of
-  rounds and two words in five slots of the red zone (76 bytes below the entry stack
-  pointer, where `-O1` used 148), loads the input straight into registers, and replaces the
-  loop that adds by sixteen `add`-from-memory and store pairs. Its entry and exit triples
-  have to be restated for that frame; the `-O1` proof needed `Triple.restate` in three
-  places for addresses the stepper computes in two forms, and the same is to be expected.
-- `sha256_compress` grows from 118 to 157 instructions.
+## AArch64
 
-### AArch64: not started
+What each function computes:
 
-The images are generated. `chacha20_block` grows from 138 to 162 instructions and
-`sha256_compress` from 90 to 105; the three leaf functions have the same number of
-instructions at both levels.
+| function | file | `-O1` | `-O2` | same | renamed | changed | new | imported | dropped | `-O1` s | `-O2` s |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `quarter_round` | `QuarterRound.lean` | 81 | 65 | 59 | 0 | 6 | 0 | 16 | 0 | 2.4 | 1.6 |
+| `chacha20_block` | `Round.lean` | 332 | 348 | 160 | 144 | 23 | 21 | 0 | 5 | 4.8 | 5.7 |
+| `chacha20_block` | `Block.lean` | 296 | 268 | 209 | 3 | 46 | 10 | 0 | 38 | 8.6 | 5.8 |
+| `sha256_round` | `Round.lean` | 86 | 87 | 83 | 0 | 3 | 1 | 0 | 0 | 4.9 | 4.9 |
+| `sha256_schedule` | `Schedule.lean` | 138 | 140 | 134 | 0 | 4 | 2 | 0 | 0 | 3.1 | 3.2 |
+| `sha256_compress` | `Compress.lean` | 422 | 642 | 266 | 65 | 72 | 239 | 0 | 19 | 16.1 | 22.8 |
+
+`sha256_compress` at `-O2` is proved as a head and a tail and their composition, where at
+`-O1` it is one triple; that, and the flags and registers that have to be named before the
+two are joined, is most of its 239 new lines.
+
+## What each function reveals
+
+The proofs of the traced triples and of `_leakage`, compared in the same way
+(`recompile.py --time --leak`). *On the machine* is `LeakMachine.lean`, which has the
+theorems about the machine for the three functions of `sha256.c`.
+
+RISC-V:
+
+| function | file | `-O1` | `-O2` | same | renamed | changed | new | imported | dropped | `-O1` s | `-O2` s |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `quarter_round` | `LeakQuarterRound.lean` | 96 | 98 | 93 | 0 | 3 | 2 | 0 | 0 | 2.6 | 2.0 |
+| `chacha20_block` | `LeakRound.lean` | 120 | 121 | 71 | 46 | 3 | 1 | 0 | 0 | 5.5 | 6.8 |
+| `chacha20_block` | `LeakBlock.lean` | 381 | 271 | 197 | 8 | 47 | 19 | 0 | 129 | 17.1 | 7.2 |
+| `chacha20_block` | `Leakage.lean` | 134 | 118 | 85 | 4 | 28 | 1 | 0 | 17 | 2.7 | 1.6 |
+| `sha256_round` | `LeakRound.lean` | 62 | 63 | 59 | 0 | 3 | 1 | 0 | 0 | 2.0 | 2.0 |
+| `sha256_schedule` | `LeakSchedule.lean` | 108 | 109 | 105 | 0 | 3 | 1 | 0 | 0 | 3.3 | 3.9 |
+| `sha256_compress` | `LeakCompress.lean` | 475 | 489 | 172 | 29 | 50 | 238 | 0 | 224 | 11.3 | 15.0 |
+| on the machine | `LeakMachine.lean` | 306 | 294 | 228 | 22 | 39 | 5 | 0 | 17 | 4.0 | 4.3 |
+
+x86-64:
+
+| function | file | `-O1` | `-O2` | same | renamed | changed | new | imported | dropped | `-O1` s | `-O2` s |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `quarter_round` | `LeakQuarterRound.lean` | 118 | 119 | 115 | 0 | 3 | 1 | 0 | 0 | 1.7 | 1.8 |
+| `chacha20_block` | `LeakRound.lean` | 248 | 219 | 108 | 48 | 53 | 10 | 0 | 39 | 5.5 | 5.8 |
+| `chacha20_block` | `LeakBlock.lean` | 428 | 320 | 209 | 23 | 81 | 7 | 115 | 0 | 13.4 | 9.1 |
+| `chacha20_block` | `Leakage.lean` | 179 | 179 | 153 | 20 | 6 | 0 | 0 | 0 | 1.6 | 1.7 |
+| `sha256_round` | `LeakRound.lean` | 74 | 75 | 71 | 0 | 3 | 1 | 0 | 0 | 2.3 | 2.4 |
+| `sha256_schedule` | `LeakSchedule.lean` | 126 | 127 | 123 | 0 | 3 | 1 | 0 | 0 | 5.5 | 5.3 |
+| `sha256_compress` | `LeakCompress.lean` | 520 | 523 | 190 | 34 | 32 | 267 | 0 | 264 | 14.7 | 19.5 |
+| on the machine | `LeakMachine.lean` | 370 | 371 | 322 | 35 | 13 | 1 | 0 | 0 | 3.4 | 3.2 |
+
+AArch64:
+
+| function | file | `-O1` | `-O2` | same | renamed | changed | new | imported | dropped | `-O1` s | `-O2` s |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `quarter_round` | `LeakQuarterRound.lean` | 86 | 87 | 83 | 0 | 3 | 1 | 0 | 0 | 2.2 | 1.7 |
+| `chacha20_block` | `LeakRound.lean` | 152 | 161 | 81 | 47 | 24 | 9 | 0 | 0 | 3.7 | 4.3 |
+| `chacha20_block` | `LeakBlock.lean` | 401 | 266 | 172 | 12 | 75 | 7 | 0 | 142 | 9.1 | 5.5 |
+| `chacha20_block` | `Leakage.lean` | 143 | 143 | 101 | 4 | 33 | 5 | 0 | 5 | 2.4 | 2.5 |
+| `sha256_round` | `LeakRound.lean` | 54 | 55 | 51 | 0 | 3 | 1 | 0 | 0 | 1.3 | 1.4 |
+| `sha256_schedule` | `LeakSchedule.lean` | 109 | 110 | 106 | 0 | 3 | 1 | 0 | 0 | 3.0 | 2.8 |
+| `sha256_compress` | `LeakCompress.lean` | 584 | 490 | 213 | 40 | 58 | 179 | 0 | 273 | 8.5 | 12.0 |
+| on the machine | `LeakMachine.lean` | 284 | 291 | 224 | 13 | 40 | 14 | 0 | 7 | 4.3 | 4.8 |
+
+On every instruction set the large numbers are in `LeakCompress.lean`: about half of it is
+new and as much of the `-O1` file is dropped. That is `compressLeak`, the function that says
+what a run of `sha256_compress` reveals, which lists the labels of the code's loads and
+stores in the order the code makes them and is written anew when the compiler reorders them.
 
 ## What the evidence says about regeneration
 

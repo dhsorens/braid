@@ -57,6 +57,32 @@ is stated as the model states runs, of every outcome at once (`RunL e post m t`)
 Kraken's semantics is a set of outcomes. Kraken has no division, so nothing on x86-64
 reveals its operands.
 
+**What the environment sees.** The same three files read the events of a run off each
+model: bytes written out, and the exit with its code. A theorem about a whole program is
+stated with them ([`Programs.md`](Programs.md)).
+
+| ISA | An event is | A run that has exited |
+| --- | --- | --- |
+| RISC-V | the model's `ECALL` with `t0 = 0x10` (the `a1` bytes at `a0` are written) or `t0 = 0` (halt, code in `a0`) | stays at the halting `ECALL`; the run records the exit and stops |
+| AArch64 | `SVC #0` under the model's Linux system calls (`Arm64.Syscall.standard`): `write` (`x8 = 64`) of every byte asked for to the standard output, and `exit` (`x8 = 93`) | has the status `Exited c` and takes no step; the run records the exit with `c` |
+| x86-64 | nothing: Kraken has no system call ([`ISA.md`](ISA.md)) | does not exist; a whole program ends in a jump to itself |
+
+On AArch64 the bytes of a `write` event are the bytes the model itself appends to its
+output, so there the reading adds a name and no meaning. On RISC-V the model gives the two
+calls the meaning of a zkVM's ABI and keeps no output; that `t0 = 0x10` is a write of those
+bytes is this file's reading of it. A system call the files do not speak of has no label,
+and a run with a trace has no step through it.
+
+**What it means for a binary to be loaded.** A theorem about a whole program has one
+hypothesis about the machine, `Loaded s img`, defined once for each instruction set
+(`Lowering/<ISA>/Program.lean`): the code of the image is where the model looks for code,
+every byte of every section is in memory with its contents, and the program counter is the
+entry point. The image is written by `braid-lower --image` from the ELF file. That its
+lowered blocks are the lowering of its code is checked by the kernel; that its sections
+are the bytes of the file's sections is not checked by anything, and neither is the
+loader: nothing here models how an operating system gets a machine into a state where
+`Loaded` holds.
+
 The labels of the dialect are not trusted. They are compared with the machine's by the proof
 that a lowering preserves traces.
 
@@ -94,5 +120,8 @@ does not. It proves nothing and nothing depends on it.
   and whatever an environment call does are outside all three models. Timing is in only as
   far as the leakage model of [`Leakage.md`](Leakage.md) goes, and only in theorems that
   state a trace.
-- **The whole binary.** A theorem is about the functions it names, from their entry to their
-  return, on the states its hypotheses allow.
+- **More than it names.** A theorem about a function is about that function, from its entry
+  to its return, on the states its hypotheses allow. A theorem about a whole program is
+  about one binary from its entry point, on every machine that has it loaded; it says
+  nothing of a binary linked otherwise, or of the same code called from elsewhere.
+- **Input.** The two events are outputs. No example reads from its environment.
