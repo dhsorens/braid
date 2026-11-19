@@ -201,12 +201,14 @@ Labelled steps cost nothing that can be measured: at N = 1000 a triple costs wha
 and a traced triple is within 6% of it on both, well inside the factor of 1.5 that was the
 limit set for the change. The benchmark function reveals little: one load and one jump, at
 its return. A function that touches memory at every other instruction adds a label that
-often, and each is one more node of the trace; the ladder below measures that, function by
-function.
+often, and each is one more node of the trace. For ChaCha20 and SHA-256 the proof of what a
+function reveals is timed beside the proof of what it computes in
+[`Continuity.md`](Continuity.md): it takes about as long, and for the SHA-256 compression
+function between 9 and 15 seconds on each instruction set.
 
 The benchmark is of AArch64 and x86-64, as it was before labelled steps: its generator
 writes assembly for those two, and there is no figure for RISC-V from before to compare
-with. On RISC-V the cost is measured on the ladder.
+with. The times in [`Continuity.md`](Continuity.md) include RISC-V.
 
 ## The ladder
 
