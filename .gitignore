@@ -6,3 +6,4 @@ build/
 Examples/bin/
 GOAL.md
 __pycache__/
+local/
