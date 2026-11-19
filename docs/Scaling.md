@@ -137,12 +137,16 @@ proof should run on the simplified function instead of the lowered one.
 It should not, as things stand. The benchmark function simplifies to one block, and the
 stepper was timed on it, with no certificate that the block is the function simplified:
 
-| Milliseconds per instruction | N = 100 | N = 1000 |
-| --- | --- | --- |
-| AArch64, lowered | 2.0 | 1.8 |
-| AArch64, simplified | 2.2 | 6.5 |
-| x86-64, lowered | 8.0 | 9.5 |
-| x86-64, simplified | 6.2 | stopped after 8 minutes (lowered: 10 seconds) |
+Milliseconds per instruction, and in brackets the seconds to check the whole file, image and
+proof. At N = 10 the proof costs less than the noise in starting Lean, so only the seconds
+are given.
+
+| | N = 10 | N = 100 | N = 1000 |
+| --- | --- | --- | --- |
+| AArch64, lowered | (1.2) | 2.0 (2.1) | 1.8 (6.2) |
+| AArch64, simplified | (1.2) | 2.2 (2.3) | 6.5 (13.0) |
+| x86-64, lowered | (1.3) | 8.0 (2.8) | 9.5 (18.7) |
+| x86-64, simplified | (1.2) | 6.2 (3.0) | stopped after 8 minutes |
 
 Two things are behind this.
 
