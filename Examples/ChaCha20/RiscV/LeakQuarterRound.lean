@@ -1,3 +1,21 @@
+/-
+  Examples.ChaCha20.RiscV.LeakQuarterRound
+
+  What `quarter_round` reveals on RISC-V (`docs/Leakage.md`): the addresses of the four
+  words it works on and the return address, and nothing of the words.
+
+  ## Main definitions
+
+  * `quarterRoundLeak`: what `quarter_round` reveals, from its argument and the return address
+
+  ## Main results
+
+  * `quarter_round_trace`: the traced triple
+  * `quarter_round_leakage`: the same, about the machine alone
+  * `quarter_round_leakage_eq`: two machines that agree on the argument and the return
+    address run with the same trace
+-/
+
 module
 
 public import Examples.ChaCha20.RiscV.Proofs
@@ -15,6 +33,8 @@ def quarterRoundLeak (s r : Word) : Trace :=
     .write s 4, .write (s + 4#64) 4, .write (s + 8#64) 4, .write (s + 12#64) 4,
     .jump (r &&& ~~~1#64)]
 
+/-- `quarter_round` works on the four words its argument points to and reveals
+`quarterRoundLeak` of the argument and the return address. -/
 theorem quarter_round_trace (s r t1 t2 t3 t4 t5 : Word) (a b c d : W32)
     (hs : s &&& 3#64 = 0#64) (t : Trace) :
     TripleT quarter_round.program
@@ -93,9 +113,10 @@ theorem quarter_round_leakage_eq (s₁ s₂ : MachineState) (a₁ b₁ c₁ d₁
     (e10 : s₂.getReg .x10 = s₁.getReg .x10) (e1 : s₂.getReg .x1 = s₁.getReg .x1) :
     ∃ tr s₁' s₂', RunL s₁ tr s₁' ∧ RunL s₂ tr s₂' ∧
       s₁'.pc = s₁.getReg .x1 &&& ~~~1#64 ∧ s₂'.pc = s₁.getReg .x1 &&& ~~~1#64 := by
-  obtain ⟨s₁', h₁, hp₁⟩ := quarter_round_leakage s₁ a₁ b₁ c₁ d₁ hcode₁ hpc₁ hp ha₁ hb₁ hc₁ hd₁
-  obtain ⟨s₂', h₂, hp₂⟩ := quarter_round_leakage s₂ a₂ b₂ c₂ d₂ hcode₂ hpc₂ (e10 ▸ hp) ha₂ hb₂
-    hc₂ hd₂
+  obtain ⟨s₁', h₁, hp₁⟩ :=
+    quarter_round_leakage s₁ a₁ b₁ c₁ d₁ hcode₁ hpc₁ hp ha₁ hb₁ hc₁ hd₁
+  obtain ⟨s₂', h₂, hp₂⟩ :=
+    quarter_round_leakage s₂ a₂ b₂ c₂ d₂ hcode₂ hpc₂ (e10 ▸ hp) ha₂ hb₂ hc₂ hd₂
   simp only [e10, e1] at h₂ hp₂
   exact ⟨_, s₁', s₂', h₁, h₂, hp₁, hp₂⟩
 
