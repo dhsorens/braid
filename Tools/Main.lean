@@ -180,7 +180,13 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile out (Braid.Module.toNorm Lowering.X86.arch { arch := "x86_64", funcs := view funcs })
     if let some out := opts.lean then
       IO.FS.writeFile out <|
-        leanHeader opts.module ["Lowering.X86.Logic"] [] ++ X86.leanSource image ++
+        leanHeader opts.module
+          [if opts.image.isSome then "Lowering.X86.Program" else "Lowering.X86.Logic"] [] ++
+        X86.leanSource image ++
+        (match opts.image with
+          | some n => X86.imageSource n img.entry (image.map (·.1.name)) img.dataSections
+              img.zeroSections
+          | none => "") ++
         s!"\nend {opts.module}\n"
     return 0
   | m =>

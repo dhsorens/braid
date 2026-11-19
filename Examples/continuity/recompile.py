@@ -37,7 +37,7 @@ LEAKS = [
     ("sha256_round", "Sha256", ["LeakRound"]),
     ("sha256_schedule", "Sha256", ["LeakSchedule"]),
     ("sha256_compress", "Sha256", ["LeakCompress"]),
-    ("all of `sha256.c`", "Sha256", ["LeakMachine"]),
+    ("sha256.c, on the machine", "Sha256", ["LeakMachine"]),
 ]
 
 

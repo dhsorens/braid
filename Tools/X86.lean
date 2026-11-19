@@ -189,4 +189,38 @@ def leanSource (img : List (X86Asm.Function × List Line)) : String :=
     s!"    (fun _ h => List.mem_flatten.2 ⟨_, {memProof k}, h⟩) {n}_lowered\n")
   codes ++ "\n" ++ image ++ "\n" ++ funcs
 
+/-- The Lean definitions of a whole binary, after those of its functions `fns`: each data
+section, the image (the lines, every section in address order with a zeroed one as its zeros,
+and the entry point), the blocks of the whole program with the theorem that they are blocks
+of the lowering of the executable, and the fact that its sections do not overlap. -/
+def imageSource (name : String) (entry : Nat) (fns : List String)
+    (data : List (String × Nat × List UInt8)) (zero : List (Nat × Nat)) : String :=
+  let n := ident name
+  let w (a : Nat) := Braid.LeanSrc.word (BitVec.ofNat 64 a)
+  let secName (s : String) := s!"{n}_section_{ident ((s.dropWhile (· == '.')).toString)}"
+  let secs := data.map fun (s, _, bs) =>
+    s!"/-- The bytes of the section `{s}`. -/\n" ++
+    s!"def {secName s} : List (BitVec 8) := [\n  " ++
+      ", ".intercalate (bs.map fun b => s!"{b.toNat}") ++ "]\n\n"
+  let fs := fns.map ident
+  let withData : List (Nat × String) := data.map fun d => (d.2.1, s!"({w d.2.1}, {secName d.1})")
+  let withZero : List (Nat × String) :=
+    zero.map fun z => (z.1, s!"({w z.1}, List.replicate {z.2} 0#8)")
+  let loaded := (withData ++ withZero).mergeSort fun x y => x.1 ≤ y.1
+  "\n" ++ "".intercalate secs ++
+  s!"/-- The binary as it is loaded: its lines, its sections and its entry point. -/\n" ++
+  s!"def {n}_image : Braid.Image Lowering.X86.Line :=\n  \{ entry := {w entry},\n" ++
+    "    code := image.map fun l => (BitVec.ofNat 64 l.addr, l),\n    data := [\n      " ++
+    ",\n      ".intercalate (loaded.map (·.2)) ++ "],\n    zero := [] }\n\n" ++
+  s!"/-- The blocks of the whole program. -/\n" ++
+  s!"def {n}_blocks : List (Braid.Word × Braid.Block) :=\n  " ++
+    " ++ ".intercalate (fs.map (· ++ ".blocks")) ++ "\n\n" ++
+  s!"/-- The blocks of the program are blocks of the lowering of the executable. -/\n" ++
+  s!"theorem {n}_holds :\n    ∀ p ∈ {n}_blocks, Lowering.X86.lowerProgram exe p.1 = some p.2 := by\n" ++
+  s!"  intro p hp\n  simp only [{n}_blocks, List.mem_append] at hp\n" ++
+  s!"  rcases hp with " ++ (fs.drop 1).foldl (fun pat _ => s!"({pat} | hp)") "hp" ++ "\n" ++
+  "".intercalate (fs.map fun f => s!"  · exact {f}_holds p hp\n") ++ "\n" ++
+  s!"/-- The sections of the image do not overlap. -/\n" ++
+  s!"theorem {n}_apart : Braid.Sections.Apart {n}_image.sections := by\n  decide +kernel\n"
+
 end Tools.X86
