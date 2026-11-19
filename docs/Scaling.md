@@ -8,13 +8,13 @@ meant to move them.
 
 `Examples/scaling/gen.py` writes a straight-line function of N instructions: a fixed
 pseudo-random mix of additions, subtractions, bitwise operations and rotations over eight
-registers, then a return. `Examples/scaling/run.sh` assembles it for AArch64 and x86-64,
+registers, then a return. `Examples/scaling/run.sh` assembles it for each instruction set,
 lowers it with `braid-lower`, and times Lean on two files: the lowered image alone, and the
 image with one theorem, a symbolic execution of the function from its entry to its return.
 The difference, divided by N, is the cost of one instruction.
 
 ```sh
-Examples/scaling/run.sh                        # N = 10 100 1000, both instruction sets
+Examples/scaling/run.sh                        # N = 10 100 1000, all three instruction sets
 TACTIC=braid_run Examples/scaling/run.sh "10 100"   # the older tactic
 TRACED=1 Examples/scaling/run.sh                 # a traced triple (below)
 ```
@@ -182,33 +182,59 @@ operation that reveals nothing is the same as before, with one more argument to 
 
 Milliseconds per instruction, and in brackets the seconds to check the whole file. At
 N = 10 the proof costs less than the noise in starting Lean, and at N = 100 the difference
-of two measurements of about two seconds is noise within a factor of two. *Before* is the
-benchmark before a step of the dialect carried a label. *After* is the benchmark as it is
-now, with labels of both kinds (what a step reveals, and events of the environment) and
-with `Eventually` and `Triple` derived from the labelled step: the same theorem as before,
-and the same function proved with a traced triple.
+of two measurements of under two seconds is mostly noise; N = 1000 is the figure to read.
+*Before* is the commit just before a step of the dialect carried a label (`d68af2f`),
+built again and measured with the benchmark as it is now. *After* is the present code,
+with labels of both kinds (what a step reveals, and events of the environment) and with
+`Eventually` and `Triple` derived from the labelled step: the same theorem as before, and
+the same function proved with a traced triple. The three rows of each instruction set were
+measured one after another on the same machine.
 
 | | N = 10 | N = 100 | N = 1000 |
 | --- | --- | --- | --- |
-| AArch64, triple, before | (1.1) | 2.0 (2.1) | 1.7 (5.9) |
-| AArch64, triple, after | (1.0) | 1.0 (1.8) | 1.7 (5.5) |
-| AArch64, traced triple, after | (1.1) | 2.0 (1.9) | 1.6 (5.6) |
-| x86-64, triple, before | (1.2) | 13.0 (3.4) | 9.6 (18.1) |
-| x86-64, triple, after | (1.1) | 4.0 (2.6) | 8.6 (16.5) |
-| x86-64, traced triple, after | (1.1) | 7.0 (2.6) | 9.1 (17.2) |
+| RISC-V, triple, before | (1.0) | 2.0 (1.4) | 2.6 (5.8) |
+| RISC-V, triple, after | (1.0) | 2.0 (1.4) | 1.5 (4.7) |
+| RISC-V, traced triple, after | (1.1) | 1.0 (1.4) | 1.4 (4.6) |
+| AArch64, triple, before | (1.1) | 2.0 (1.9) | 1.6 (5.6) |
+| AArch64, triple, after | (1.1) | 0.0 (1.9) | 1.6 (5.6) |
+| AArch64, traced triple, after | (1.0) | 1.0 (1.8) | 1.6 (5.7) |
+| x86-64, triple, before | (1.1) | 7.0 (2.6) | 8.6 (16.6) |
+| x86-64, triple, after | (1.2) | 7.0 (2.6) | 8.7 (16.7) |
+| x86-64, traced triple, after | (1.1) | 7.0 (2.6) | 8.8 (16.8) |
 
-Labelled steps cost nothing that can be measured: at N = 1000 a triple costs what it did,
-and a traced triple is within 6% of it on both, well inside the factor of 1.5 that was the
-limit set for the change. The benchmark function reveals little: one load and one jump, at
-its return. A function that touches memory at every other instruction adds a label that
-often, and each is one more node of the trace. For ChaCha20 and SHA-256 the proof of what a
-function reveals is timed beside the proof of what it computes in
-[`Continuity.md`](Continuity.md): it takes about as long, and for the SHA-256 compression
-function between 9 and 15 seconds on each instruction set.
+Labelled steps cost nothing that can be measured. At N = 1000 a triple costs what it did
+on AArch64 and x86-64 and a traced triple 2% more at most, against a limit of 1.5 times set
+for the change; on RISC-V both measured faster than before.
+The benchmark function reveals little: one jump at its return, and on x86-64 the load of
+the return address. A function that touches memory at every other instruction adds a label
+that often, and each is one more node of the trace.
 
-The benchmark is of AArch64 and x86-64, as it was before labelled steps: its generator
-writes assembly for those two, and there is no figure for RISC-V from before to compare
-with. The times in [`Continuity.md`](Continuity.md) include RISC-V.
+RISC-V was added to the benchmark with this measurement (RV64IM has no rotation, and a
+shift stands in for it in the generated function), so its *before* row is new and the
+other two replace figures recorded earlier.
+
+### A proof of what a function reveals, beside the proof of what it computes
+
+The SHA-256 compression function is the largest function of the ladder. Processor seconds
+(user and system) of `lake env lean` on the file with the functional proof (`Compress.lean`:
+`sha256_compress_spec` and `_correct`) and on the file with the proof of what it reveals
+(`LeakCompress.lean`: `compressLeak` and `sha256_compress_trace`), at both optimisation
+levels:
+
+| | functional | leakage | ratio |
+| --- | --- | --- | --- |
+| RISC-V, `-O1` | 18.1 | 10.5 | 0.58 |
+| AArch64, `-O1` | 15.9 | 8.5 | 0.53 |
+| x86-64, `-O1` | 12.0 | 12.0 | 1.00 |
+| RISC-V, `-O2` | 21.8 | 14.1 | 0.65 |
+| AArch64, `-O2` | 23.2 | 12.7 | 0.55 |
+| x86-64, `-O2` | 15.4 | 13.8 | 0.90 |
+
+`sha256_compress_leakage`, the theorem about the machine, is in `LeakMachine.lean` with
+those of the round and the schedule; the whole file takes 3 to 5 seconds more
+([`Continuity.md`](Continuity.md)). So the leakage proof checks in under half a minute on
+every instruction set, against a limit of 15 minutes, and in no more than 1.3 times the
+time of the functional proof, against a limit of twice.
 
 ## The ladder
 

@@ -3,7 +3,7 @@
 # instructions take? For each instruction set and each N this assembles a generated program,
 # lowers it, and times Lean checking one symbolic execution of it. See docs/Scaling.md.
 #
-#   Examples/scaling/run.sh                 N = 10 100 1000, both instruction sets
+#   Examples/scaling/run.sh                 N = 10 100 1000, all three instruction sets
 #   Examples/scaling/run.sh "10 100"        other sizes
 #   TACTIC=braid_run Examples/scaling/run.sh   the tactic that runs the function
 #   TRACED=1 Examples/scaling/run.sh        a traced triple: the proof also builds the trace
@@ -16,9 +16,10 @@ cd "$(dirname "$0")/../.."
 CLANG=${CLANG:-/opt/homebrew/opt/llvm/bin/clang}
 OBJDUMP=${OBJDUMP:-/opt/homebrew/opt/llvm/bin/llvm-objdump}
 LLD=${LLD:-$(ls "$(rustc --print sysroot)"/lib/rustlib/*/bin/rust-lld | head -1)}
+RV_LD=${RV_LD:-/opt/homebrew/opt/riscv64-elf-binutils/bin/riscv64-elf-ld}
 LOWER=.lake/build/bin/braid-lower
 SIZES=${1:-"10 100 1000"}
-ISAS=${ISAS:-"arm x86"}
+ISAS=${ISAS:-"arm x86 rv"}
 TACTIC=${TACTIC:-braid_sym_run}
 OUT=${OUT:-build/scaling}
 mkdir -p "$OUT"
@@ -44,6 +45,10 @@ for isa in $ISAS; do
       arm)
         "$CLANG" --target=aarch64-unknown-linux-gnu -c "$b.s" -o "$b.o"
         "$LLD" -flavor gnu --image-base=0 -Ttext=0x10000 -e bench "$b.o" -o "$b.elf"
+        "$LOWER" "$b.elf" --fn bench --lean "$b.image.lean" --module Bench ;;
+      rv)
+        "$CLANG" --target=riscv64-unknown-elf -march=rv64im -mabi=lp64 -c "$b.s" -o "$b.o"
+        "$RV_LD" -Ttext=0x10000 --no-relax -e bench "$b.o" -o "$b.elf"
         "$LOWER" "$b.elf" --fn bench --lean "$b.image.lean" --module Bench ;;
       x86)
         "$CLANG" --target=x86_64-unknown-linux-gnu -c "$b.s" -o "$b.o"

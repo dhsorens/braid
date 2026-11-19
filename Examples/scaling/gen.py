@@ -6,7 +6,8 @@
 
 The program is a function `bench` that mixes additions, exclusive ors, rotations and moves
 over eight registers, and returns. The instructions are chosen by a fixed pseudo-random
-sequence, so the same N gives the same program. `isa` is `arm` or `x86`.
+sequence, so the same N gives the same program. `isa` is `arm`, `x86` or `rv`; RV64IM has
+no rotation, and a shift stands in for it there.
 
 The theorem says the code runs to its return from an arbitrary state of those registers;
 proving it is one symbolic execution of the whole function. With TRACED=1 in the environment
@@ -17,6 +18,7 @@ import sys
 
 ARM_REGS = [f"x{i}" for i in range(8)]
 X86_REGS = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9"]
+RV_REGS = [f"a{i}" for i in range(8)]
 
 
 def choices(n):
@@ -41,6 +43,10 @@ def asm(isa, n):
             a, b = ARM_REGS[d], ARM_REGS[s]
             lines.append("\t" + [f"add {a}, {a}, {b}", f"eor {a}, {a}, {b}", f"ror {a}, {a}, #{k}",
                                  f"and {a}, {a}, {b}", f"sub {a}, {a}, {b}"][op])
+        elif isa == "rv":
+            a, b = RV_REGS[d], RV_REGS[s]
+            lines.append("\t" + [f"add {a}, {a}, {b}", f"xor {a}, {a}, {b}", f"slli {a}, {a}, {k}",
+                                 f"and {a}, {a}, {b}", f"sub {a}, {a}, {b}"][op])
         else:
             a, b = X86_REGS[d], X86_REGS[s]
             lines.append("\t" + [f"addq %{b}, %{a}", f"xorq %{b}, %{a}", f"rolq ${k}, %{a}",
@@ -54,11 +60,16 @@ def theorem(isa, tactic, traced=False):
     """The benchmark theorem; with `traced`, a traced triple, whose proof also builds the trace."""
     vs = " ".join(f"v{i}" for i in range(8))
     if traced:
-        end = "[.jump r]" if isa == "arm" else "[.read s 8, .jump r]"
+        end = {"arm": "[.jump r]", "rv": "[.jump (r &&& ~~~1#64)]"}.get(isa, "[.read s 8, .jump r]")
         return (theorem(isa, tactic)
                 .replace("Triple bench.program", "TripleT bench.program")
                 .replace(" r : Word)", " r : Word) (t : Trace)")
                 .replace("lr r]) iprop(True)", f"lr r]) t iprop(True) (t ++ {end})")
+                .replace("ra r]) iprop(True)", f"ra r]) t iprop(True) (t ++ {end})")
+                .replace("  show Triple _ (Atoms.interp (.pc (r &&& ~~~1#64) :: _)) _\n"
+                         "  exact Triple.done fun _ _ => trivial",
+                         "  show TripleT _ (Atoms.interp (.pc (r &&& ~~~1#64) :: _)) _ _ _\n"
+                         "  exact TripleT.done (fun _ _ => trivial) (by braid_trace)")
                 .replace(")\n      iprop(True)", f") t\n      iprop(True) (t ++ {end})")
                 .replace("  show Triple _ (Atoms.interp (.pc r :: _)) _\n"
                          "  exact Triple.done fun _ _ => trivial",
@@ -76,6 +87,20 @@ theorem bench_run ({vs} r : Word) :
       (Atoms.interp [.pc 0x10000#64, {regs}, .reg lr r]) iprop(True) := by
   {tactic}
   show Triple _ (Atoms.interp (.pc r :: _)) _
+  exact Triple.done fun _ _ => trivial
+"""
+    if isa == "rv":
+        regs = ", ".join(f".reg {r} v{i}" for i, r in enumerate(RV_REGS))
+        return f"""
+open Braid Iris.BI Lowering.RiscV Lowering.RiscV.Regs in
+set_option maxHeartbeats 0 in
+set_option maxRecDepth 100000 in
+/-- The benchmark: one symbolic execution of `bench`, to its return. -/
+theorem bench_run ({vs} r : Word) :
+    Triple bench.program
+      (Atoms.interp [.pc 0x10000#64, {regs}, .reg ra r]) iprop(True) := by
+  {tactic}
+  show Triple _ (Atoms.interp (.pc (r &&& ~~~1#64) :: _)) _
   exact Triple.done fun _ _ => trivial
 """
     regs = ", ".join(f".reg {r} v{i}" for i, r in enumerate(X86_REGS))
@@ -98,6 +123,9 @@ theorem bench_run ({vs} s r : Word) (b0 b1 b2 b3 b4 b5 : Bool) :
 def lean(isa, image, tactic, traced=False):
     text = open(image).read().rstrip("\n").split("\n")
     assert text[-1].startswith("end "), text[-1]
+    if isa == "rv":  # the RISC-V image imports the lowering alone; the proof needs the logic
+        i = text.index("public import Lowering.RiscV.Sound")
+        text.insert(i + 1, "public import Lowering.RiscV.Logic")
     return "\n".join(text[:-1]) + theorem(isa, tactic, traced) + "\n" + text[-1] + "\n"
 
 
