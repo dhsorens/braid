@@ -38,8 +38,13 @@ candidate for a branch of riscv-zkvm.
 
 1. **The RV64 word operations.** `ADDW`, `SLLW`, `SRAW`, `SRAIW`, `MULW`, `DIVW`, `DIVUW`,
    `REMW` and `REMUW` are not in `Instr` (`ADDIW`, `SUBW`, `SRLW`, `SLLIW` and `SRLIW` are).
-   Compilers emit them for every 32-bit `int`. Until they are there, the examples use 64-bit
-   types on RISC-V.
+   Compilers emit them for 32-bit arithmetic whose result has to be in canonical form. The
+   first examples use 64-bit types on RISC-V for that reason. The scaling ladder, CRC-32,
+   ChaCha20 and SHA-256 included, needed neither a change to its sources nor a branch of the
+   model: at `-O1` clang keeps a 32-bit value in a 64-bit register with whatever the
+   additions left above it, adds with `ADD`, and narrows only where it must, with `SLLIW`,
+   `SRLIW` and `SW`, which the model has. So the ladder is lowered and proved on RISC-V from
+   the same C as on the other two, and a register there is specified up to its low half.
 2. **Compressed instructions.** The model steps by four bytes. Go's RISC-V back end and the
    default Rust targets emit the C extension: on a Go binary, more than half the code does
    not decode. The examples are compiled with `-march=rv64im`; Go is lowered for AArch64 and

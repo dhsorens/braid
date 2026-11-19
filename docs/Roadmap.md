@@ -15,7 +15,7 @@ see [`ISA.md`](ISA.md).
 | x86-64 lowering | the integer core, and vector registers with their moves at 128, 256 and 512 bits and packed addition, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 79 functions across the three instruction sets (17 on RISC-V, 32 on AArch64, 30 on x86-64), up to the ChaCha20 block function and the SHA-256 compression function, each with a proved specification and a theorem about the machine model alone |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 88 functions across the three instruction sets (26 on RISC-V, 32 on AArch64, 30 on x86-64), up to the ChaCha20 block function and the SHA-256 compression function, each with a proved specification and a theorem about the machine model alone |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.

@@ -34,16 +34,15 @@ theorem about the machine model alone (`<function>_correct`).
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64, SumSlice |
 | `python/basic.py` | py_add3, py_max_u64, py_gcd | py_add3, py_max_u64 | py_add3, py_max_u64 |
 | `js/basic.js` | | js_add3 | js_add3 (to its return instruction) |
-| `c/mem.c` | | copy_bytes, equal_bytes | copy_bytes, equal_bytes |
-| `c/limbs.c` | | add_limbs | add_limbs |
-| `c/crc32.c` | | crc32 | crc32 |
-| `c/chacha20.c` | | quarter_round, chacha20_block | quarter_round, chacha20_block |
-| `c/sha256.c` | | sha256_round, sha256_schedule, sha256_compress | sha256_round, sha256_schedule, sha256_compress |
+| `c/mem.c` | copy_bytes, equal_bytes | copy_bytes, equal_bytes | copy_bytes, equal_bytes |
+| `c/limbs.c` | add_limbs | add_limbs | add_limbs |
+| `c/crc32.c` | crc32 | crc32 | crc32 |
+| `c/chacha20.c` | quarter_round, chacha20_block | quarter_round, chacha20_block | quarter_round, chacha20_block |
+| `c/sha256.c` | sha256_round, sha256_schedule, sha256_compress | sha256_round, sha256_schedule, sha256_compress | sha256_round, sha256_schedule, sha256_compress |
 
 The last five sources are the scaling ladder ([`docs/Scaling.md`](../docs/Scaling.md)):
 functions of growing size, up to the SHA-256 compression function, proved against
-definitions in plain Lean (`Spec/`) that are checked on the standards' test vectors. They
-are lowered for AArch64 and x86-64.
+definitions in plain Lean (`Spec/`) that are checked on the standards' test vectors.
 
 What the examples exercise:
 
@@ -150,8 +149,7 @@ ones still open are in [`docs/Roadmap.md`](../docs/Roadmap.md); the ones that ar
 of a model are in [`docs/ISA.md`](../docs/ISA.md). `braid-lower --stats` on a whole Go binary
 is the broadest test: 95% of its instructions lower on AArch64, and 95% on x86-64.
 
-Every C function outside the ladder is verified on all three instruction sets, and every
-ladder function on the two it is lowered for. What is not verified, and why:
+Every C function is verified on all three instruction sets. What is not verified, and why:
 `gcd` on x86-64, because the machine model has no `div`; the last instruction of the
 JavaScript function on x86-64, `ret 0x20`, which the model does not have either; and
 JavaScript on RISC-V, for which there was no V8 to run.
