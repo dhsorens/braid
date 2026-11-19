@@ -212,3 +212,4 @@ fi
 if want sha256; then
   lower_ladder sha256 Examples/src/c/sha256.c Sha256 sha256_round sha256_schedule sha256_compress
 fi
+if want crc32; then lower_ladder crc32 Examples/src/c/crc32.c Crc32 crc32; fi

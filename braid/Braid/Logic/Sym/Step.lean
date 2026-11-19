@@ -594,7 +594,11 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
       g.assign (rule ``Rule.guard #[c.Φ, cv, vc, hc, hne, m])
       next m rest ρ A
     | _ => throwError "braid_sym: not an operation written out: {op}"
-  | _ => throwError "braid_sym: not a list of operations written out: {ops}"
+  | _ =>
+    -- A long list is written in parts: a `have` for each stretch of it, or parts appended.
+    let ops' ← whnf ops
+    if ops'.isAppOf ``List.cons || ops'.isAppOf ``List.nil then runOps c g ops' ρ A
+    else throwError "braid_sym: not a list of operations written out: {ops}"
 
 /-- The table of blocks of the program of a run. -/
 abbrev Tables := IO.Ref (Option BlockTable)

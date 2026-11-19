@@ -19,7 +19,7 @@ LOWER=.lake/build/bin/braid-lower
 SIZES=${1:-"10 100 1000"}
 ISAS=${ISAS:-"arm x86"}
 TACTIC=${TACTIC:-braid_run}
-OUT=Examples/bin/scaling
+OUT=${OUT:-build/scaling}
 mkdir -p "$OUT"
 
 seconds() { # run a command, print the processor seconds (user and system) it took
