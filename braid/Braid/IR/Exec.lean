@@ -44,6 +44,7 @@ def Op.exec : Op → Env → State → Option (Env × State)
   | .store w a v, ρ, σ => (σ.mem.store (ρ a) w (ρ v)).map fun m => (ρ, { σ with mem := m })
   | .havoc _, _, _ => none
   | .guard c, ρ, σ => if ρ c ≠ 0#64 then some (ρ, σ) else none
+  | .out a n, ρ, σ => (σ.mem.bytes (ρ a) (ρ n).toNat).map fun _ => (ρ, σ)
 
 /-- A list of operations as a function. -/
 def execOps : List Op → Env → State → Option (Env × State)
@@ -56,6 +57,7 @@ def Term.exec : Term → Env → State → Option State
   | .branch c t f, ρ, σ => some (σ.setPc (if ρ c ≠ 0#64 then t else f))
   | .jumpInd a, ρ, σ => some (σ.setPc (ρ a))
   | .trap _, _, _ => none
+  | .exit c _ t f, ρ, σ => some (σ.setPc (if ρ c ≠ 0#64 then t else f))
 
 /-- The block as a function. -/
 def Block.exec (b : Block) (σ : State) : Option State :=
@@ -86,6 +88,7 @@ theorem Op.wp_of_exec {op : Op} {ρ ρ' : Env} {σ σ' : State} {Q : Env → Sta
     reduceCtorEq] at h <;> simp only [Op.wp]
   case load => obtain ⟨v, hv, rfl, rfl⟩ := h; exact ⟨v, hv, hq⟩
   case store => obtain ⟨m, hm, rfl, rfl⟩ := h; exact ⟨m, hm, hq⟩
+  case out => obtain ⟨bs, hb, rfl, rfl⟩ := h; exact ⟨⟨bs, hb⟩, hq⟩
   case guard =>
     split at h
     · rename_i hc
@@ -98,6 +101,7 @@ theorem Op.exec_of_wp {op : Op} {ρ : Env} {σ : State} {Q : Env → State → P
     (hf : op.HavocFree) (h : op.wp ρ σ Q) : ∃ ρ' σ', op.exec ρ σ = some (ρ', σ') ∧ Q ρ' σ' := by
   cases op <;> simp only [Op.wp] at h <;> simp only [Op.exec]
   case havoc => exact absurd hf id
+  case out => obtain ⟨⟨bs, hb⟩, hq⟩ := h; exact ⟨_, _, by rw [hb]; rfl, hq⟩
   case load => obtain ⟨v, hv, hq⟩ := h; exact ⟨_, _, by rw [hv]; rfl, hq⟩
   case store => obtain ⟨m, hm, hq⟩ := h; exact ⟨_, _, by rw [hm]; rfl, hq⟩
   case guard => exact ⟨_, _, by simp only [h.1, ne_eq, not_false_eq_true, ↓reduceIte], h.2⟩

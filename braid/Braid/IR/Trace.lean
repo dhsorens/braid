@@ -65,6 +65,47 @@ inductive Label where
 /-- The labels of a run, in order. -/
 abbrev Trace := List Label
 
+/-- Whether the label is an event of the environment, and not something a step reveals. -/
+def Label.isEvent : Label → Bool
+  | .event _ => true
+  | _ => false
+
+/-- What a run reveals: its trace without the events of the environment. -/
+def Trace.leakage (t : Trace) : Trace := t.filter (!·.isEvent)
+
+/-- The events of the environment in a run, in order. -/
+def Trace.events (t : Trace) : List Event :=
+  t.filterMap fun | .event e => some e | _ => none
+
+@[simp] theorem Trace.leakage_nil : Trace.leakage [] = [] := rfl
+@[simp] theorem Trace.events_nil : Trace.events [] = [] := rfl
+
+@[simp] theorem Trace.leakage_append (t u : Trace) :
+    Trace.leakage (t ++ u) = Trace.leakage t ++ Trace.leakage u := List.filter_append ..
+
+@[simp] theorem Trace.events_append (t u : Trace) :
+    Trace.events (t ++ u) = Trace.events t ++ Trace.events u := List.filterMap_append ..
+
+@[simp] theorem Trace.leakage_cons_event (e : Event) (t : Trace) :
+    Trace.leakage (.event e :: t) = Trace.leakage t := rfl
+
+@[simp] theorem Trace.events_cons_event (e : Event) (t : Trace) :
+    Trace.events (.event e :: t) = e :: Trace.events t := rfl
+
+/-- A trace with no event in it is what it reveals. -/
+theorem Trace.leakage_eq_self {t : Trace} (h : ∀ l ∈ t, l.isEvent = false) :
+    Trace.leakage t = t :=
+  List.filter_eq_self.2 fun l hl => by simp [h l hl]
+
+/-- A trace with no event in it has no events. -/
+theorem Trace.events_eq_nil {t : Trace} (h : ∀ l ∈ t, l.isEvent = false) :
+    Trace.events t = [] := by
+  induction t with
+  | nil => rfl
+  | cons l t ih =>
+    have := h l List.mem_cons_self
+    cases l <;> simp_all [Trace.events, Label.isEvent]
+
 /-- Whether the time an operation takes depends on its operands: the divisions and
 remainders, which no instruction set promises to run in constant time. -/
 def BinOp.leaks : BinOp → Bool
@@ -77,12 +118,15 @@ def Op.leak : Op → Env → State → Trace
   | .bin _ op a b, ρ, _ => if op.leaks then [.operands (ρ a) (ρ b)] else []
   | .load _ w a, ρ, _ => [.read (ρ a) w.bytes]
   | .store w a _, ρ, _ => [.write (ρ a) w.bytes]
+  | .out a n, ρ, σ =>
+    if ρ n = 0#64 then [] else [.event (.write ((σ.mem.bytes (ρ a) (ρ n).toNat).getD []))]
   | _, _, _ => []
 
 /-- The labels of a terminator: where a conditional branch or a computed jump goes. -/
 def Term.leak : Term → Env → Trace
   | .branch c t f, ρ => [.jump (if ρ c ≠ 0#64 then t else f)]
   | .jumpInd a, ρ => [.jump (ρ a)]
+  | .exit c x _ _, ρ => if ρ c ≠ 0#64 then [.event (.exit (ρ x))] else []
   | _, _ => []
 
 @[simp] theorem Op.leak_const (d : Var) (v : Word) (ρ : Env) (σ : State) : (Op.const d v).leak ρ σ = [] := rfl
@@ -101,12 +145,18 @@ def Term.leak : Term → Env → Trace
 @[simp] theorem Op.leak_havoc (d : Var) (ρ : Env) (σ : State) : (Op.havoc d).leak ρ σ = [] := rfl
 @[simp] theorem Op.leak_guard (c : Var) (ρ : Env) (σ : State) : (Op.guard c).leak ρ σ = [] := rfl
 
+@[simp] theorem Op.leak_out (a n : Var) (ρ : Env) (σ : State) :
+    (Op.out a n).leak ρ σ = if ρ n = 0#64 then [] else
+      [.event (.write ((σ.mem.bytes (ρ a) (ρ n).toNat).getD []))] := rfl
+
 @[simp] theorem Term.leak_jump (a : Word) (ρ : Env) : (Term.jump a).leak ρ = [] := rfl
 @[simp] theorem Term.leak_branch (c : Var) (t f : Word) (ρ : Env) :
     (Term.branch c t f).leak ρ = [.jump (if ρ c ≠ 0#64 then t else f)] := rfl
 @[simp] theorem Term.leak_jumpInd (a : Var) (ρ : Env) :
     (Term.jumpInd a).leak ρ = [.jump (ρ a)] := rfl
 @[simp] theorem Term.leak_trap (r : String) (ρ : Env) : (Term.trap r).leak ρ = [] := rfl
+@[simp] theorem Term.leak_exit (c x : Var) (a b : Word) (ρ : Env) :
+    (Term.exit c x a b).leak ρ = if ρ c ≠ 0#64 then [.event (.exit (ρ x))] else [] := rfl
 
 /-! ## Weakest preconditions, with the trace -/
 
@@ -246,6 +296,7 @@ def Op.next : Op → Env → State → Word → Env × State
   | .store w a v, ρ, σ, _ => (ρ, { σ with mem := (σ.mem.store (ρ a) w (ρ v)).getD σ.mem })
   | .havoc d, ρ, σ, x => (ρ.set d x, σ)
   | .guard _, ρ, σ, _ => (ρ, σ)
+  | .out _ _, ρ, σ, _ => (ρ, σ)
 
 @[simp] theorem Op.next_const (d : Var) (v : Word) (ρ : Env) (σ : State) (x : Word) :
     (Op.const d v).next ρ σ x = (ρ.set d v, σ) := rfl
@@ -272,6 +323,9 @@ def Op.next : Op → Env → State → Word → Env × State
     (Op.havoc d).next ρ σ x = (ρ.set d x, σ) := rfl
 @[simp] theorem Op.next_guard (c : Var) (ρ : Env) (σ : State) (x : Word) :
     (Op.guard c).next ρ σ x = (ρ, σ) := rfl
+
+@[simp] theorem Op.next_out (a n : Var) (ρ : Env) (σ : State) (x : Word) :
+    (Op.out a n).next ρ σ x = (ρ, σ) := rfl
 
 /-- The operations as a function: the SSA values and the state after them, and their labels.
 `hv i` is the value the operation at position `i` takes if it is a `havoc`. -/
@@ -324,6 +378,7 @@ theorem Op.wp_next {op : Op} {ρ : Env} {σ : State} {Q : Env → State → Prop
     exact ⟨m, hm, hq, 0#64, by simp only [Op.next, hm, Option.getD_some]⟩
   case havoc => exact fun v => ⟨h v, v, rfl⟩
   case guard => exact ⟨h.1, h.2, 0#64, rfl⟩
+  case out => exact ⟨h.1, h.2, 0#64, rfl⟩
   all_goals exact ⟨h, 0#64, rfl⟩
 
 /-- The trace of a list of operations is the one `runOps` computes, for some values of its

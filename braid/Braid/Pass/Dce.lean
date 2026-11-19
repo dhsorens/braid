@@ -43,12 +43,13 @@ def Op.uses : Op → List Var
   | .store _ a v => [a, v]
   | .havoc _ => []
   | .guard c => [c]
+  | .out a n => [a, n]
 
 /-- The SSA value an operation defines, if it defines one. -/
 def Op.defs : Op → Option Var
   | .const d _ | .un d _ _ | .bin d _ _ _ | .select d _ _ _ | .get d _ | .getf d _
   | .load d _ _ | .havoc d => some d
-  | .set _ _ | .setf _ _ | .store _ _ _ | .guard _ => none
+  | .set _ _ | .setf _ _ | .store _ _ _ | .guard _ | .out _ _ => none
 
 /-- The operation can be removed when its result is not used: it cannot fault and does not
 change the state. -/
@@ -62,6 +63,7 @@ def Term.uses : Term → List Var
   | .branch c _ _ => [c]
   | .jumpInd a => [a]
   | .trap _ => []
+  | .exit c x _ _ => [c, x]
 
 /-- The values live before an operation, given those live after it. -/
 def Op.liveIn (op : Op) (live : List Var) : List Var :=
@@ -141,6 +143,9 @@ theorem Op.wp_agree {op : Op} {live : List Var} {ρ ρ' : Env} {σ : State}
   case havoc d => exact fun v => hQ _ _ _ (AgreeOn.set v h) (hw v)
   case guard c =>
     exact ⟨by rw [← hu c (by simp)]; exact hw.1,
+      hQ _ _ _ (fun x hx => h x (List.mem_append_right _ hx)) hw.2⟩
+  case out a n =>
+    exact ⟨by rw [← hu a (by simp), ← hu n (by simp)]; exact hw.1,
       hQ _ _ _ (fun x hx => h x (List.mem_append_right _ hx)) hw.2⟩
 
 /-- The value a removable operation binds. -/
@@ -225,6 +230,7 @@ theorem Term.wp_agree {t : Term} {ρ ρ' : Env} {σ : State} {Q : State → Prop
   case jump => exact hw
   case branch c t f => rw [← h c (by simp)]; exact hw
   case jumpInd a => rw [← h a (by simp)]; exact hw
+  case exit c x a b => rw [← h c (by simp)]; exact hw
 
 /-- **Removing dead operations preserves the meaning of a block.** -/
 theorem Block.dce_wp (b : Block) (σ : State) (Q : State → Prop) : b.dce.wp σ Q ↔ b.wp σ Q :=

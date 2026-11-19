@@ -120,6 +120,9 @@ inductive Op where
   | havoc (dst : Var)
   /-- Execution is defined only if `c` is not zero. -/
   | guard (c : Var)
+  /-- Write out the `len` bytes of memory at `addr`: an event of the environment. Every byte
+  must be mapped. Writing no bytes is not an event. -/
+  | out (addr len : Var)
   deriving DecidableEq, Repr, Inhabited
 
 /-- How a block ends. A target is the address of a block. -/
@@ -132,6 +135,10 @@ inductive Term where
   | jumpInd (a : Var)
   /-- Execution is not defined here: an instruction outside the lowering, or a fault. -/
   | trap (reason : String)
+  /-- Go to `t` if `c` is not zero, and to `f` otherwise, as `branch` does; and if `c` is not
+  zero the program exits with `code`: an event of the environment. A lowering gives the
+  address of the block itself for `t`, so that a program that has exited stays where it is. -/
+  | exit (c code : Var) (t f : Word)
   deriving DecidableEq, Repr, Inhabited
 
 /-- A block: operations in order, then a terminator. SSA values are local to the block. -/

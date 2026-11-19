@@ -76,6 +76,7 @@ def op (arch : Arch) (l : String) : Op → String
     s!"\"braid.store\"({val l a}, {val l v}) \{bytes = {w.bytes} : i64} : (i64, i64) -> ()"
   | .havoc d => s!"{val l d} = \"braid.havoc\"() : () -> i64"
   | .guard c => s!"\"braid.guard\"({val l c}) : (i64) -> ()"
+  | .out a n => s!"\"braid.out\"({val l a}, {val l n}) : (i64, i64) -> ()"
 
 /-- The label a jump to `a` uses: the block itself if the function has it, and a block
 standing for the jump out otherwise. -/
@@ -87,6 +88,8 @@ def term (f : Func) (l : String) : Term → String
   | .branch c t e => s!"\"braid_cf.cond_br\"({val l c})[{target f t}, {target f e}] : (i64) -> ()"
   | .jumpInd a => s!"\"braid_cf.br_ind\"({val l a}) : (i64) -> ()"
   | .trap r => s!"\"braid_cf.trap\"() \{reason = {repr r}} : () -> ()"
+  | .exit c x t e =>
+    s!"\"braid_cf.exit\"({val l c}, {val l x})[{target f t}, {target f e}] : (i64, i64) -> ()"
 
 /-- The addresses a terminator may jump to. -/
 def targets : Term → List Word
@@ -142,12 +145,14 @@ def op (arch : Arch) (f : Func) (a : Word) : Op → String
   | .store w x y => s!"store{w.bits} %{x}, %{y}"
   | .havoc d => s!"%{d} = havoc"
   | .guard c => s!"guard %{c}"
+  | .out x n => s!"out %{x}, %{n}"
 
 def term (f : Func) (a : Word) : Term → String
   | .jump t => s!"br {rel f a t}"
   | .branch c t e => s!"cond_br %{c}, {rel f a t}, {rel f a e}"
   | .jumpInd x => s!"br_ind %{x}"
   | .trap r => s!"trap {r}"
+  | .exit c x t e => s!"exit %{c}, %{x}, {rel f a t}, {rel f a e}"
 
 def func (arch : Arch) (f : Func) : String :=
   s!"func {f.name}\n" ++ String.join (f.blocks.map fun (a, b) =>
@@ -193,12 +198,14 @@ def op : Op → String
   | .store w a v => s!".store {width w} {a} {v}"
   | .havoc d => s!".havoc {d}"
   | .guard c => s!".guard {c}"
+  | .out a n => s!".out {a} {n}"
 
 def term : Term → String
   | .jump a => s!".jump {word a}"
   | .branch c t e => s!".branch {c} {word t} {word e}"
   | .jumpInd a => s!".jumpInd {a}"
   | .trap r => s!".trap {repr r}"
+  | .exit c x t e => s!".exit {c} {x} {word t} {word e}"
 
 def block (ab : Word × Block) : String :=
   s!"    ({word ab.1}, \{ ops := [{", ".intercalate (ab.2.ops.map op)}], term := {term ab.2.term} })"

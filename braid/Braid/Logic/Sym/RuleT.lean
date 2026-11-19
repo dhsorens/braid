@@ -27,6 +27,7 @@ theorem Op.leak_agree {op : Op} {ρ ρ' : Env} (σ : State) (h : ∀ x ∈ op.us
   case bin => rw [h.1, h.2]
   case load => rw [h]
   case store => rw [h.1]
+  case out => rw [h.1, h.2]
 
 /-- The labels of a terminator are the same in two environments that agree on what it
 reads. -/
@@ -35,6 +36,7 @@ theorem Term.leak_agree {tm : Term} {ρ ρ' : Env} (h : AgreeOn tm.uses ρ ρ') 
   cases tm <;> simp only [Term.uses] at h <;> simp only [Term.leak]
   case branch c t f => rw [h c (by simp)]
   case jumpInd a => rw [h a (by simp)]
+  case exit c x t f => rw [h c (by simp), h x (by simp)]
 
 namespace Sym.RuleT
 

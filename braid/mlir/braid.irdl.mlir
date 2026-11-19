@@ -5,7 +5,7 @@
 //
 //   mlir-opt --irdl-file=braid/mlir/braid.irdl.mlir --allow-unregistered-dialect f.mlir
 //
-// Every value is `i64`. The terminators (`br`, `cond_br`, `br_ind`, `trap`, `tail`) and the
+// Every value is `i64`. The terminators (`br`, `cond_br`, `br_ind`, `trap`, `exit`, `tail`) and the
 // containers (`func`, `module`) are in a second namespace, `braid_cf`: IRDL cannot yet say
 // that an operation is a terminator or that a region needs none, so those stay unregistered
 // and `--allow-unregistered-dialect` is still needed for them. The meaning of each operation
@@ -234,5 +234,9 @@ irdl.dialect @braid {
   irdl.operation @guard {
     %i64 = irdl.is i64
     irdl.operands(a0: %i64)
+  }
+  irdl.operation @out {
+    %i64 = irdl.is i64
+    irdl.operands(a0: %i64, a1: %i64)
   }
 }

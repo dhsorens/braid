@@ -47,6 +47,7 @@ def Op.shift (k : Nat) : Op → Op
   | .store w a v => .store w (a + k) (v + k)
   | .havoc d => .havoc (d + k)
   | .guard c => .guard (c + k)
+  | .out a n => .out (a + k) (n + k)
 
 /-- The terminator with every SSA value renumbered `k` higher. -/
 def Term.shift (k : Nat) : Term → Term
@@ -54,6 +55,7 @@ def Term.shift (k : Nat) : Term → Term
   | .branch c t f => .branch (c + k) t f
   | .jumpInd a => .jumpInd (a + k)
   | .trap r => .trap r
+  | .exit c x t f => .exit (c + k) (x + k) t f
 
 /-- A number above every SSA value the operations define. -/
 def defBound : List Op → Nat
@@ -85,6 +87,7 @@ theorem Op.wp_of_shift {op : Op} {k : Nat} {ρ ρ' : Env} {σ : State} {Q Q' : E
   case store w a v => obtain ⟨m, hm, hq⟩ := hw; exact ⟨m, hm, hQ _ _ _ h hq⟩
   case havoc d => exact fun v => hQ _ _ _ (h.set d v) (hw v)
   case guard c => exact ⟨hw.1, hQ _ _ _ h hw.2⟩
+  case out a n => exact ⟨hw.1, hQ _ _ _ h hw.2⟩
   case set r a => exact hQ _ _ _ h hw
   case setf f a => exact hQ _ _ _ h hw
   all_goals exact hQ _ _ _ (h.set _ _) hw
@@ -112,6 +115,7 @@ theorem Op.wp_keeps {op : Op} {ρ : Env} {σ : State} {Q : Env → State → Pro
   case store w a v => obtain ⟨m, hm, hq⟩ := hw; exact ⟨m, hm, by simpa using hq⟩
   case havoc d => exact fun v => ⟨hw v, hset d v⟩
   case guard c => exact ⟨hw.1, by simpa using hw.2⟩
+  case out a n => exact ⟨hw.1, by simpa using hw.2⟩
   case set r a => simpa using hw
   case setf f a => simpa using hw
   all_goals exact ⟨hw, hset _ _⟩
@@ -141,6 +145,7 @@ theorem Op.wp_setPc {op : Op} {ρ : Env} {σ : State} {Q : Env → State → Pro
   case store w a v => obtain ⟨m, hm, hq⟩ := hw; exact ⟨m, hm, _, hq, rfl⟩
   case havoc d => exact fun v => ⟨_, hw v, rfl⟩
   case guard c => exact ⟨hw.1, _, hw.2, rfl⟩
+  case out a n => exact ⟨hw.1, _, hw.2, rfl⟩
   all_goals exact ⟨_, hw, rfl⟩
 
 theorem wpOps_setPc {ops : List Op} {ρ : Env} {σ : State} {Q : Env → State → Prop} (p : Word)
@@ -220,6 +225,7 @@ theorem Program.fuseAt_eventually (P : Program) (a : Word) {Q : State → Prop} 
         | branch c t f => simp only [hterm] at hb; exact hplain (Option.some.inj hb).symm
         | jumpInd x => simp only [hterm] at hb; exact hplain (Option.some.inj hb).symm
         | trap r => simp only [hterm] at hb; exact hplain (Option.some.inj hb).symm
+        | exit c x t f => simp only [hterm] at hb; exact hplain (Option.some.inj hb).symm
     · simp only [hx, ↓reduceIte] at hb
       exact .step σ R ⟨blk, hb, hw⟩ ih
 

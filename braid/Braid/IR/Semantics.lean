@@ -92,6 +92,14 @@ def Mem.storeN (m : Mem) (a : Word) (v : Word) : Nat → Option Mem
       else none
     | none => none
 
+/-- The `n` bytes at `a`, in order; `none` if one is unmapped. -/
+def Mem.bytes (m : Mem) (a : Word) : Nat → Option (List (BitVec 8))
+  | 0 => some []
+  | n + 1 =>
+    match m a, m.bytes (a + 1) n with
+    | some c, some bs => some (c.val :: bs)
+    | _, _ => none
+
 /-- A load of width `w` at `a`. -/
 def Mem.load (m : Mem) (a : Word) (w : Width) : Option Word := m.loadN a w.bytes
 
@@ -216,6 +224,7 @@ def Op.wp : Op → Env → State → (Env → State → Prop) → Prop
   | .store w a v, ρ, σ, Q => ∃ m, σ.mem.store (ρ a) w (ρ v) = some m ∧ Q ρ { σ with mem := m }
   | .havoc d, ρ, σ, Q => ∀ v, Q (ρ.set d v) σ
   | .guard c, ρ, σ, Q => ρ c ≠ 0#64 ∧ Q ρ σ
+  | .out a n, ρ, σ, Q => (∃ bs, σ.mem.bytes (ρ a) (ρ n).toNat = some bs) ∧ Q ρ σ
 
 /-- The weakest precondition of a list of operations, in order. -/
 def wpOps : List Op → Env → State → (Env → State → Prop) → Prop
@@ -228,6 +237,7 @@ def Term.wp : Term → Env → State → (State → Prop) → Prop
   | .branch c t f, ρ, σ, Q => Q (σ.setPc (if ρ c ≠ 0#64 then t else f))
   | .jumpInd a, ρ, σ, Q => Q (σ.setPc (ρ a))
   | .trap _, _, _, _ => False
+  | .exit c _ t f, ρ, σ, Q => Q (σ.setPc (if ρ c ≠ 0#64 then t else f))
 
 /-- The weakest precondition of a block. Its SSA values start out as zero. -/
 def Block.wp (b : Block) (σ : State) (Q : State → Prop) : Prop :=
@@ -242,6 +252,7 @@ theorem Op.wp_mono {op : Op} {ρ : Env} {σ : State} {Q Q' : Env → State → P
   case store => obtain ⟨m, hm, h⟩ := h; exact ⟨m, hm, hQ _ _ h⟩
   case havoc => exact fun v => hQ _ _ (h v)
   case guard => exact ⟨h.1, hQ _ _ h.2⟩
+  case out => exact ⟨h.1, hQ _ _ h.2⟩
   all_goals exact hQ _ _ h
 
 theorem wpOps_mono {ops : List Op} {ρ : Env} {σ : State} {Q Q' : Env → State → Prop}

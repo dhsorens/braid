@@ -79,6 +79,7 @@ is a named list of blocks, and prints as one MLIR region.
 | `load` `store` | read and write 1, 2, 4 or 8 bytes of memory, little-endian |
 | `havoc` | any word at all: a value the instruction set leaves undefined |
 | `guard` | execution is defined only if the operand is not zero |
+| `out` | write out the bytes of memory at an address: an event of the environment |
 
 | Terminator | Meaning |
 | --- | --- |
@@ -86,6 +87,7 @@ is a named list of blocks, and prints as one MLIR region.
 | `cond_br` | go to one of two blocks |
 | `br_ind` | go to the address in a value: a return, or a computed jump or call |
 | `trap` | execution is not defined here: an instruction outside the lowering, or a fault |
+| `exit` | a branch on a value; if it is not zero, the program exits with a code: an event of the environment |
 
 Every instruction set lowers into these. What differs between them is which registers and
 flags exist, and those are only names: `Arch` maps the numbers of the dialect to `x10`, `sp`,

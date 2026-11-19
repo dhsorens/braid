@@ -19,3 +19,7 @@ public import Braid.Logic.Tactic
 public import Braid.Logic.Sym.Rule
 public import Braid.Logic.Sym.Step
 public import Braid.Logic.Cells
+public import Braid.Logic.Trace
+public import Braid.Logic.Any
+public import Braid.Logic.Event
+public import Braid.Logic.Link

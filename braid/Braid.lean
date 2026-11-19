@@ -11,6 +11,7 @@ public import Braid.IR.Semantics
 public import Braid.IR.Mem
 public import Braid.IR.Exec
 public import Braid.IR.Trace
+public import Braid.IR.Image
 public import Braid.IR.Print
 public import Braid.Pass.Dce
 public import Braid.Pass.Fuse

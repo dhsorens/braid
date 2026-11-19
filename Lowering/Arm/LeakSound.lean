@@ -39,9 +39,9 @@ variable {s : Arm64.State} {σ : State}
 
 /-! ## Operations without labels -/
 
-/-- The operation has no label: it is not a load, a store or a division. -/
+/-- The operation has no label: it is not a load, a store, a division or an `out`. -/
 def silent : Op → Bool
-  | .load .. | .store .. => false
+  | .load .. | .store .. | .out .. => false
   | .bin _ op _ _ => !op.leaks
   | _ => true
 
@@ -161,9 +161,9 @@ theorem all_silent_addrOps (d : Var) (addr : AddrMode) : (addrOps d addr).all si
 /-! ## The values of operations that cannot fault -/
 
 /-- The operation cannot fault and takes no value from outside: it is not a load, a store, a
-`havoc` or a `guard`. -/
+`havoc`, a `guard` or an `out`. -/
 def total : Op → Bool
-  | .load .. | .store .. | .havoc _ | .guard _ => false
+  | .load .. | .store .. | .havoc _ | .guard _ | .out .. => false
   | _ => true
 
 /-- Operations that cannot fault run, to the values and the state `runOps` computes. -/

@@ -94,6 +94,7 @@ theorem Op.wp_agreeExcept {op : Op} {D : List Flag} {ρ : Env} {σ τ : State}
       hQ _ { σ with mem := m } { τ with mem := m } ⟨hr, rfl, hp, hf⟩ hq⟩
   case havoc d => exact fun v => hQ _ _ _ ⟨hr, hm, hp, hf⟩ (hw v)
   case guard c => exact ⟨hw.1, hQ _ _ _ ⟨hr, hm, hp, hf⟩ hw.2⟩
+  case out a n => exact ⟨hm ▸ hw.1, hQ _ _ _ ⟨hr, hm, hp, hf⟩ hw.2⟩
   all_goals exact hQ _ _ _ ⟨hr, hm, hp, hf⟩ hw
 
 /-- The operations without their overwritten flag writes establish what the operations do,
