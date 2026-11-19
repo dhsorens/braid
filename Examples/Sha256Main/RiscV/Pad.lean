@@ -75,14 +75,14 @@ theorem byte_step (msg : List (BitVec 8)) (k : Nat) (x14 x16 x17 x5 x6 e : Word)
     TripleT program
       (Atoms.interp [.pc 0x105bc#64, .reg a4 x14, .reg a6 x16, .reg a7 x17, .reg t0 x5,
         .reg t1 x6, .reg s0 (BitVec.ofNat 64 msg.length),
-        .reg s3 (BitVec.ofNat 64 (total msg.length - 8)),
-        .reg s4 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64,
+        .reg s4 (BitVec.ofNat 64 (total msg.length - 8)),
+        .reg s3 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64,
         .prop (bytesAt 0x10e48#64 msg)]) t
       (Atoms.interp [.pc e, .reg a4 ((padByte msg k).setWidth 64 ||| x14 <<< 8#64),
         .reg a6 x16, .reg a7 (x17 + 1#64), .reg t0 (x5 - 8#64), .prop (regAny t1),
         .reg s0 (BitVec.ofNat 64 msg.length),
-        .reg s3 (BitVec.ofNat 64 (total msg.length - 8)),
-        .reg s4 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64,
+        .reg s4 (BitVec.ofNat 64 (total msg.length - 8)),
+        .reg s3 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64,
         .prop (bytesAt 0x10e48#64 msg)]) (t ++ byteLeak msg.length k e) := by
   have hT := le_total msg.length
   have hT' := total_lt msg.length
@@ -167,16 +167,16 @@ theorem word_step (msg : List (BitVec 8)) (b j : Nat) (x10 x11 x12 x13 x14 x15 x
       (Atoms.interp [.pc 0x10588#64, .reg a0 x10, .reg a1 x11, .reg a2 x12, .reg a3 x13,
         .reg a4 x14, .reg a5 x15, .reg a6 x16, .reg a7 x17, .reg t0 x5, .reg t1 x6,
         .reg s0 (BitVec.ofNat 64 msg.length),
-        .reg s3 (BitVec.ofNat 64 (total msg.length - 8)),
-        .reg s4 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
+        .reg s4 (BitVec.ofNat 64 (total msg.length - 8)),
+        .reg s3 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
         .reg s8 16#64, .prop (bytesAt 0x10e48#64 msg),
         .prop (cellsAt 4 true 0x10d90#64 done), .prop (cellsAt 4 true q (c :: rest))]) t
       (Atoms.interp [.pc e, .reg a0 (x10 + 1#64), .reg a1 x11, .reg a2 (x12 + 4#64),
         .reg a3 (x13 - 32#64), .prop (regAny a4), .prop (regAny a5), .prop (regAny a6),
         .prop (regAny a7), .prop (regAny t0), .prop (regAny t1),
         .reg s0 (BitVec.ofNat 64 msg.length),
-        .reg s3 (BitVec.ofNat 64 (total msg.length - 8)),
-        .reg s4 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
+        .reg s4 (BitVec.ofNat 64 (total msg.length - 8)),
+        .reg s3 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
         .reg s8 16#64, .prop (bytesAt 0x10e48#64 msg),
         .prop (cellsAt 4 true 0x10d90#64 (done ++ [(blockWord msg b j).setWidth 64])),
         .prop (cellsAt 4 true (q + 4#64) rest)])
@@ -244,8 +244,8 @@ theorem words_loop (msg : List (BitVec 8)) (b : Nat) (x11 : Word)
       (Atoms.interp [.pc 0x10588#64, .reg a0 x10, .reg a1 x11, .reg a2 x12, .reg a3 x13,
         .reg a4 x14, .reg a5 x15, .reg a6 x16, .reg a7 x17, .reg t0 x5, .reg t1 x6,
         .reg s0 (BitVec.ofNat 64 msg.length),
-        .reg s3 (BitVec.ofNat 64 (total msg.length - 8)),
-        .reg s4 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
+        .reg s4 (BitVec.ofNat 64 (total msg.length - 8)),
+        .reg s3 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
         .reg s8 16#64, .prop (bytesAt 0x10e48#64 msg),
         .prop (cellsAt 4 true 0x10d90#64 (w32s ((List.range j).map (blockWord msg b)))),
         .prop (cellsAt 4 true q (c :: rest))]) t
@@ -253,8 +253,8 @@ theorem words_loop (msg : List (BitVec 8)) (b : Nat) (x11 : Word)
         .prop (regAny a3), .prop (regAny a4), .prop (regAny a5), .prop (regAny a6),
         .prop (regAny a7), .prop (regAny t0), .prop (regAny t1),
         .reg s0 (BitVec.ofNat 64 msg.length),
-        .reg s3 (BitVec.ofNat 64 (total msg.length - 8)),
-        .reg s4 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
+        .reg s4 (BitVec.ofNat 64 (total msg.length - 8)),
+        .reg s3 (BitVec.ofNat 64 (8 * msg.length)), .reg s5 0x10e48#64, .reg s6 0x10d90#64,
         .reg s8 16#64, .prop (bytesAt 0x10e48#64 msg),
         .prop (cellsAt 4 true 0x10d90#64 (w32s (block msg b)))])
       (t ++ wordsLeak msg.length b j rest.length) := by

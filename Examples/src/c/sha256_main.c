@@ -55,7 +55,9 @@ static inline void sys_exit(u64 code) {
 #else
 /* x86-64: the pinned model has no system call, so the program ends in a loop with the
    digest in `digest` (docs/ISA.md). */
-__asm__(".globl _start\n_start:\n  lea rsp, [rip + stack + 2048]\n  jmp main\n");
+__asm__(".globl _start\n.type _start, %function\n_start:\n"
+        "  leaq stack+2048(%rip), %rsp\n  jmp main\n"
+        ".size _start, . - _start\n");
 u8 digest[32];
 static inline void sys_write(const u8 *p, u64 n) {
   for (u64 i = 0; i < n; i++) digest[i] = p[i];
@@ -66,12 +68,23 @@ static inline void sys_exit(u64 code) {
 }
 #endif
 
+/* The length in bits. On x86-64 clang would compute it with `lea (,%reg,8)`, an address with
+   no base register, which the pinned model's parser does not read (docs/ISA.md); the empty
+   assembly statement hides the value from the compiler, which then shifts. */
+#if defined(__x86_64__)
+static inline u64 opaque(u64 v) { __asm__("" : "+r"(v)); return v; }
+#define BITS(n) (opaque(n) << 3)
+#else
+#define BITS(n) ((n) * 8)
+#endif
+
 void main(void) {
   u32 h[8];
   u32 m[16];
   u8 out[32];
   u64 n = msg_len;
   u64 total = ((n + 8) / 64 + 1) * 64;
+  u64 nbits = BITS(n);
   h[0] = 0x6a09e667; h[1] = 0xbb67ae85; h[2] = 0x3c6ef372; h[3] = 0xa54ff53a;
   h[4] = 0x510e527f; h[5] = 0x9b05688c; h[6] = 0x1f83d9ab; h[7] = 0x5be0cd19;
   for (u64 off = 0; off < total; off += 64) {
@@ -82,7 +95,7 @@ void main(void) {
         u32 b;
         if (k < n) b = msg[k];
         else if (k == n) b = 0x80;
-        else if (k >= total - 8) b = (u8)((n * 8) >> (8 * (total - 1 - k)));
+        else if (k >= total - 8) b = (u8)(nbits >> (8 * (total - 1 - k)));
         else b = 0;
         w = (w << 8) | b;
       }
