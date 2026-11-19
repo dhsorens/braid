@@ -2,9 +2,10 @@
 """Measure how much of a proof survives a recompile: for each function of chacha20.c and
 sha256.c, compare the proof at -O1 with the proof at -O2 line by line, and time both.
 
-  Examples/continuity/recompile.py [--time] [rv|x86|arm]...
+  Examples/continuity/recompile.py [--time] [--leak] [rv|x86|arm]...
 
-For each pair of files it prints the lines of proof at each level (without the module header
+With --leak it compares the proofs of what each function reveals (the Leak*.lean files and
+Leakage.lean) and not the proofs of what it computes. For each pair of files it prints the lines of proof at each level (without the module header
 and blank lines) and, of the lines at -O2,
   same     lines that are in the -O1 proof word for word
   renamed  lines that differ from one of the -O1 proof only in a register, a number or an
@@ -27,6 +28,16 @@ FUNCS = [
     ("sha256_round", "Sha256", ["Round"]),
     ("sha256_schedule", "Sha256", ["Schedule"]),
     ("sha256_compress", "Sha256", ["Compress"]),
+]
+# the same, for the proofs of what a function reveals; LeakMachine has the theorems about
+# the machine for the three functions of sha256.c
+LEAKS = [
+    ("quarter_round", "ChaCha20", ["LeakQuarterRound"]),
+    ("chacha20_block", "ChaCha20", ["LeakRound", "LeakBlock", "Leakage"]),
+    ("sha256_round", "Sha256", ["LeakRound"]),
+    ("sha256_schedule", "Sha256", ["LeakSchedule"]),
+    ("sha256_compress", "Sha256", ["LeakCompress"]),
+    ("all of `sha256.c`", "Sha256", ["LeakMachine"]),
 ]
 
 
@@ -88,13 +99,13 @@ def main():
     print(head)
     print("|" + " --- |" * head.count("|"))
     for isa in isas:
-        for fn, module, files in FUNCS:
+        for fn, module, files in LEAKS if "--leak" in args else FUNCS:
             for f in files:
                 o1 = f"Examples/{module}/{ISA[isa]}/{f}.lean"
                 o2 = f"Examples/{module}/O2/{ISA[isa]}/{f}.lean"
-                if not os.path.exists(o2):
+                if not os.path.exists(o2) or not os.path.exists(o1):
                     continue
-                row = f"| {ISA[isa]} | `{fn}` | `{f}.lean` | " + " | ".join(map(str, compare(o1, o2))) + " |"
+                row = f"| {ISA[isa]} | `{fn.strip('`')}` | `{f}.lean` | " + " | ".join(map(str, compare(o1, o2))) + " |"
                 if timed:
                     row += f" {seconds(o1):.1f} | {seconds(o2):.1f} |"
                 print(row)
