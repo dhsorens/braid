@@ -38,9 +38,8 @@ def leanSource (name : String) (entry : Nat) (ws : List (BitVec 32)) : String :=
   s!"/-- The instruction words of `{name}`, from `0x{Braid.hex entry}`. -/\n" ++
   s!"def {n}_words : List (BitVec 32) := [\n  " ++
     ", ".intercalate (ws.map word) ++ "]\n\n" ++
-  s!"/-- `{name}`, lowered to `braid`. -/\n" ++
-  s!"def {n} : Braid.Func :=\n{(toFunc name entry ws).toLean}\n\n" ++
+  (toFunc name entry ws).toLeanDef n s!"`{name}`, lowered to `braid`." ++ "\n" ++
   s!"/-- `{n}` is the lowering of `{n}_words`. -/\n" ++
-  s!"theorem {n}_lowered :\n    {n}.blocks = Lowering.Arm.lowerWords 0x{Braid.hex entry}#64 {n}_words := by\n  decide\n"
+  s!"theorem {n}_lowered :\n    {n}.blocks = Lowering.Arm.lowerWords 0x{Braid.hex entry}#64 {n}_words := by\n  {Braid.Func.decideTactic ws.length}\n"
 
 end Tools.Arm

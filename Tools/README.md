@@ -82,6 +82,11 @@ also holds the image:
 | `<f> : Braid.Func`, `<f>_lowered` | as above |
 | `<f>_holds` | a theorem: the blocks of `<f>` are blocks of the lowering of `exe`, which is what `machine_sound` asks for |
 
+A function of more than 128 blocks is written in parts: definitions `<f>_blocks_0`,
+`<f>_blocks_1`, ... of 128 blocks each, which `<f>` appends, and its certificates are checked
+with `decide +kernel`. Lean's elaborator runs out of depth on one long list; the kernel does
+not ([`docs/Scaling.md`](../docs/Scaling.md)).
+
 The module imports the lowering of its instruction set, so a proof that imports it has the
 logic, the lowering's soundness theorem and the function in scope.
 

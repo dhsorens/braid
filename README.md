@@ -142,6 +142,7 @@ requires the `braid` package in the `braid/` subdirectory ([`braid/README.md`](b
 - [`docs/ISA.md`](docs/ISA.md): the instruction-set models, and what we would like from them.
 - [`docs/Continuity.md`](docs/Continuity.md): how much the lowered code changes when the
   source changes a little.
+- [`docs/Scaling.md`](docs/Scaling.md): how proofs scale with the size of the code, measured.
 - [`docs/RELATED.md`](docs/RELATED.md): related work.
 - [`docs/Roadmap.md`](docs/Roadmap.md): where the code stands and what is next.
 

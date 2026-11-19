@@ -212,4 +212,38 @@ end LeanSrc
 /-- The function as a Lean term of type `Braid.Func`. -/
 def Func.toLean (f : Func) : String := LeanSrc.func f
 
+/-- The number of blocks above which a function is written in parts. -/
+def Func.partSize : Nat := 128
+
+/-- Whether a function of this many blocks is written in parts. -/
+def Func.inParts (n : Nat) : Bool := n > Func.partSize
+
+/-- The tactic for a certificate about a list of `n` blocks. Lean's `decide` evaluates the
+claim in the elaborator and again in the kernel; on a long list the elaborator runs out of
+depth, and the kernel alone is asked. -/
+def Func.decideTactic (n : Nat) : String :=
+  if Func.inParts n then "decide +kernel" else "decide"
+
+/-- The definition of the function, named `n`, as Lean source. A long function is written as
+definitions `n_blocks_0`, `n_blocks_1`, ... of `Func.partSize` blocks each, and its blocks
+are these appended, so that Lean never elaborates a long list at once. -/
+def Func.toLeanDef (n doc : String) (f : Func) : String :=
+  if !Func.inParts f.blocks.length then
+    s!"/-- {doc} -/\ndef {n} : Braid.Func :=\n{f.toLean}\n"
+  else
+    let rec parts (bs : List (Word × Block)) (fuel : Nat) : List (List (Word × Block)) :=
+      match fuel, bs with
+      | 0, _ | _, [] => []
+      | fuel + 1, bs => bs.take Func.partSize :: parts (bs.drop Func.partSize) fuel
+    let ps := parts f.blocks f.blocks.length
+    let defs := ps.zipIdx.map fun (bs, k) =>
+      s!"/-- Part {k} of the blocks of `{n}`. -/\n" ++
+      s!"def {n}_blocks_{k} : List (Braid.Word × Braid.Block) := [\n" ++
+        ",\n".intercalate (bs.map LeanSrc.block) ++ "]\n\n"
+    let names := (List.range ps.length).map fun k => s!"{n}_blocks_{k}"
+    "".intercalate defs ++
+    s!"/-- {doc} -/\ndef {n} : Braid.Func :=\n" ++
+    s!"  \{ name := {repr f.name}, entry := {LeanSrc.word f.entry}, blocks :=\n    " ++
+      " ++\n    ".intercalate names ++ " }\n"
+
 end Braid

@@ -174,16 +174,15 @@ def leanSource (img : List (X86Asm.Function × List Line)) : String :=
     "def image : List Lowering.X86.Line :=\n  List.flatten [" ++
       ", ".intercalate (names.map (· ++ "_code")) ++ "]\n\n" ++
     "/-- The lines of the image follow one another. -/\n" ++
-    "theorem image_wf : Lowering.X86.wf image = true := by\n  decide\n\n" ++
+    s!"theorem image_wf : Lowering.X86.wf image = true := by\n  {Braid.Func.decideTactic all.length}\n\n" ++
     "/-- The executable of the image: the program of the machine model. -/\n" ++
     "def exe : Executable := Lowering.X86.exeOf image\n"
   let funcs := "\n".intercalate (img.zipIdx.map fun ((f, ls), k) =>
     let n := ident f.name
-    s!"/-- `{f.name}`, lowered to `braid`. -/\n" ++
-    s!"def {n} : Braid.Func :=\n{(toFunc all f.name f.addr ls).toLean}\n\n" ++
+    (toFunc all f.name f.addr ls).toLeanDef n s!"`{f.name}`, lowered to `braid`." ++ "\n" ++
     s!"/-- `{n}` is the lowering of `{n}_code`. -/\n" ++
     s!"theorem {n}_lowered :\n    {n}.blocks = " ++
-      s!"Lowering.X86.lowerLines (Lowering.X86.labelsOf image) {n}_code := by\n  decide\n\n" ++
+      s!"Lowering.X86.lowerLines (Lowering.X86.labelsOf image) {n}_code := by\n  {Braid.Func.decideTactic all.length}\n\n" ++
     s!"/-- The blocks of `{n}` are blocks of the lowering of the executable. -/\n" ++
     s!"theorem {n}_holds :\n    ∀ p ∈ {n}.blocks, Lowering.X86.lowerProgram exe p.1 = some p.2 :=\n" ++
     s!"  Lowering.X86.holds_exeOf image_wf\n" ++

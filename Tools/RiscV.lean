@@ -41,9 +41,8 @@ def leanSource (name : String) (entry : Nat) (code : List (Braid.Word × Instr))
   s!"/-- The instructions of `{name}`, by address. -/\n" ++
   s!"def {n}_code : List (BitVec 64 × Instr) := [\n" ++
     ",\n".intercalate (code.map instr) ++ "]\n\n" ++
-  s!"/-- `{name}`, lowered to `braid`. -/\n" ++
-  s!"def {n} : Braid.Func :=\n{(toFunc name entry code).toLean}\n\n" ++
+  (toFunc name entry code).toLeanDef n s!"`{name}`, lowered to `braid`." ++ "\n" ++
   s!"/-- `{n}` is the lowering of `{n}_code`. -/\n" ++
-  s!"theorem {n}_lowered :\n    {n}.blocks = {n}_code.map fun p => (p.1, Lowering.RiscV.lower p.1 p.2) := by\n  decide\n"
+  s!"theorem {n}_lowered :\n    {n}.blocks = {n}_code.map fun p => (p.1, Lowering.RiscV.lower p.1 p.2) := by\n  {Braid.Func.decideTactic code.length}\n"
 
 end Tools.RiscV
