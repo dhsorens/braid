@@ -1,0 +1,61 @@
+/- Written by `braid-lower`. Do not edit. -/
+
+module
+
+public import Lowering.RiscV.Sound
+
+@[expose] public section
+
+namespace Examples.Limbs.RiscV
+
+open RiscvZkvm.Rv64
+
+/-- The instructions of `add_limbs`, by address. -/
+def add_limbs_code : List (BitVec 64 × Instr) := [
+  (0x10000#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x0) 0x000#12),
+  (0x10004#64, RiscvZkvm.Rv64.Instr.BEQ (RiscvZkvm.Rv64.Reg.x13) (RiscvZkvm.Rv64.Reg.x0) 0x003c#13),
+  (0x10008#64, RiscvZkvm.Rv64.Instr.SLLI (RiscvZkvm.Rv64.Reg.x13) (RiscvZkvm.Rv64.Reg.x13) 0x03#6),
+  (0x1000c#64, RiscvZkvm.Rv64.Instr.ADD (RiscvZkvm.Rv64.Reg.x13) (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x13)),
+  (0x10010#64, RiscvZkvm.Rv64.Instr.LD (RiscvZkvm.Rv64.Reg.x15) (RiscvZkvm.Rv64.Reg.x11) 0x000#12),
+  (0x10014#64, RiscvZkvm.Rv64.Instr.LD (RiscvZkvm.Rv64.Reg.x16) (RiscvZkvm.Rv64.Reg.x12) 0x000#12),
+  (0x10018#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x12) (RiscvZkvm.Rv64.Reg.x12) 0x008#12),
+  (0x1001c#64, RiscvZkvm.Rv64.Instr.ADD (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x15) (RiscvZkvm.Rv64.Reg.x14)),
+  (0x10020#64, RiscvZkvm.Rv64.Instr.SLTU (RiscvZkvm.Rv64.Reg.x15) (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x15)),
+  (0x10024#64, RiscvZkvm.Rv64.Instr.ADD (RiscvZkvm.Rv64.Reg.x16) (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x16)),
+  (0x10028#64, RiscvZkvm.Rv64.Instr.SLTU (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x16) (RiscvZkvm.Rv64.Reg.x14)),
+  (0x1002c#64, RiscvZkvm.Rv64.Instr.SD (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x16) 0x000#12),
+  (0x10030#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x10) 0x008#12),
+  (0x10034#64, RiscvZkvm.Rv64.Instr.OR (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x15) (RiscvZkvm.Rv64.Reg.x14)),
+  (0x10038#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x11) (RiscvZkvm.Rv64.Reg.x11) 0x008#12),
+  (0x1003c#64, RiscvZkvm.Rv64.Instr.BNE (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x13) 0x1fd4#13),
+  (0x10040#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x14) 0x000#12),
+  (0x10044#64, RiscvZkvm.Rv64.Instr.JALR (RiscvZkvm.Rv64.Reg.x0) (RiscvZkvm.Rv64.Reg.x1) 0x000#12)]
+
+/-- `add_limbs`, lowered to `braid`. -/
+def add_limbs : Braid.Func :=
+  { name := "add_limbs", entry := 0x10000#64, blocks := [
+    (0x10000#64, { ops := [.const 0 0x0#64, .const 1 0x0#64, .bin 2 .add 0 1, .set 14 2], term := .jump 0x10004#64 }),
+    (0x10004#64, { ops := [.get 0 13, .const 1 0x0#64, .bin 2 .eq 0 1], term := .branch 2 0x10040#64 0x10008#64 }),
+    (0x10008#64, { ops := [.get 0 13, .const 1 0x3#64, .bin 2 .shl 0 1, .set 13 2], term := .jump 0x1000c#64 }),
+    (0x1000c#64, { ops := [.get 0 10, .get 1 13, .bin 2 .add 0 1, .set 13 2], term := .jump 0x10010#64 }),
+    (0x10010#64, { ops := [.get 0 11, .const 1 0x0#64, .bin 2 .add 0 1, .const 3 0x7#64, .bin 4 .and 2 3, .const 5 0x0#64, .bin 6 .eq 4 5, .guard 6, .load 7 .w64 2, .un 8 (.zext 64) 7, .set 15 8], term := .jump 0x10014#64 }),
+    (0x10014#64, { ops := [.get 0 12, .const 1 0x0#64, .bin 2 .add 0 1, .const 3 0x7#64, .bin 4 .and 2 3, .const 5 0x0#64, .bin 6 .eq 4 5, .guard 6, .load 7 .w64 2, .un 8 (.zext 64) 7, .set 16 8], term := .jump 0x10018#64 }),
+    (0x10018#64, { ops := [.get 0 12, .const 1 0x8#64, .bin 2 .add 0 1, .set 12 2], term := .jump 0x1001c#64 }),
+    (0x1001c#64, { ops := [.get 0 15, .get 1 14, .bin 2 .add 0 1, .set 14 2], term := .jump 0x10020#64 }),
+    (0x10020#64, { ops := [.get 0 14, .get 1 15, .bin 2 .ult 0 1, .set 15 2], term := .jump 0x10024#64 }),
+    (0x10024#64, { ops := [.get 0 14, .get 1 16, .bin 2 .add 0 1, .set 16 2], term := .jump 0x10028#64 }),
+    (0x10028#64, { ops := [.get 0 16, .get 1 14, .bin 2 .ult 0 1, .set 14 2], term := .jump 0x1002c#64 }),
+    (0x1002c#64, { ops := [.get 0 10, .const 1 0x0#64, .bin 2 .add 0 1, .const 3 0x7#64, .bin 4 .and 2 3, .const 5 0x0#64, .bin 6 .eq 4 5, .guard 6, .get 7 16, .store .w64 2 7], term := .jump 0x10030#64 }),
+    (0x10030#64, { ops := [.get 0 10, .const 1 0x8#64, .bin 2 .add 0 1, .set 10 2], term := .jump 0x10034#64 }),
+    (0x10034#64, { ops := [.get 0 15, .get 1 14, .bin 2 .or 0 1, .set 14 2], term := .jump 0x10038#64 }),
+    (0x10038#64, { ops := [.get 0 11, .const 1 0x8#64, .bin 2 .add 0 1, .set 11 2], term := .jump 0x1003c#64 }),
+    (0x1003c#64, { ops := [.get 0 10, .get 1 13, .bin 2 .ne 0 1], term := .branch 2 0x10010#64 0x10040#64 }),
+    (0x10040#64, { ops := [.get 0 14, .const 1 0x0#64, .bin 2 .add 0 1, .set 10 2], term := .jump 0x10044#64 }),
+    (0x10044#64, { ops := [.get 0 1, .const 1 0x0#64, .bin 2 .add 0 1, .const 3 0xfffffffffffffffe#64, .bin 4 .and 2 3, .const 5 0x10048#64], term := .jumpInd 4 })] }
+
+/-- `add_limbs` is the lowering of `add_limbs_code`. -/
+theorem add_limbs_lowered :
+    add_limbs.blocks = add_limbs_code.map fun p => (p.1, Lowering.RiscV.lower p.1 p.2) := by
+  decide
+
+end Examples.Limbs.RiscV
