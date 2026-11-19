@@ -30,6 +30,8 @@ namespace Tools.Elf
 structure Section where
   name : String
   type : Nat
+  /-- `sh_flags`: bit 1 is allocated, bit 2 is executable. -/
+  flags : Nat
   addr : Nat
   offset : Nat
   size : Nat
@@ -103,7 +105,8 @@ def parse (bs : ByteArray) : Except String Image := do
   for i in [0:shnum] do
     let o := shoff + i * shentsize
     raw := raw.push (← readLE bs o 4, {
-      name := "", type := ← readLE bs (o + 4) 4, addr := ← readLE bs (o + 16) 8,
+      name := "", type := ← readLE bs (o + 4) 4, flags := ← readLE bs (o + 8) 8,
+      addr := ← readLE bs (o + 16) 8,
       offset := ← readLE bs (o + 24) 8, size := ← readLE bs (o + 32) 8,
       link := ← readLE bs (o + 40) 4, entsize := ← readLE bs (o + 56) 8 })
   let strOff := (raw[shstrndx]?.map (·.2.offset)).getD 0
@@ -131,6 +134,20 @@ def Image.functions (img : Image) : Array Function :=
         else none
     else none
   fs.qsort fun a b => a.addr < b.addr
+
+/-- The sections loaded as data: allocated, not executable, with contents in the file. Each
+is its name, its address and its bytes. -/
+def Image.dataSections (img : Image) : List (String × Nat × List UInt8) :=
+  img.sections.toList.filterMap fun s =>
+    if s.type == 1 && s.flags &&& 2 != 0 && s.flags &&& 4 == 0 && s.size > 0 then
+      some (s.name, s.addr, (img.bytes.extract s.offset (s.offset + s.size)).toList)
+    else none
+
+/-- The sections loaded as zeros (`.bss`): allocated, with no contents in the file. Each is
+its address and its size. -/
+def Image.zeroSections (img : Image) : List (Nat × Nat) :=
+  img.sections.toList.filterMap fun s =>
+    if s.type == 8 && s.flags &&& 2 != 0 && s.size > 0 then some (s.addr, s.size) else none
 
 /-- The 32-bit little-endian words of a byte array, with their offsets. -/
 def words32 (bs : ByteArray) : List (Nat × BitVec 32) :=

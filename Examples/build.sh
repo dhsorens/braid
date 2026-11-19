@@ -186,6 +186,65 @@ lower_go() {
 }
 
 
+# The whole program: SHA-256 of a message in the binary's data, written out, then exit. It is
+# linked from sha256.c, sha256_main.c and sha256_msg.c by a linker script that puts the code
+# of sha256.c and its table of round constants where they are in the binary of sha256.c
+# alone, so that the proofs about them hold of this binary as they stand; the step fails if
+# the compression function is not the same there, byte for byte. After them come the code of
+# `_start` and `main`, the stack, the message length, and last the message, so that a binary
+# with another message differs in those two sections only. The binary is lowered as a loaded
+# image: code, data sections and entry point.
+lower_program() {
+  for isa in $ISAS; do
+    dir=Examples/Sha256Main/$(isa_dir "$isa")
+    mkdir -p "$dir"
+    b=Examples/bin/sha256_main.$isa
+    for part in sha256 sha256_main sha256_msg; do
+      # shellcheck disable=SC2046
+      "$CLANG" $(target "$isa") $CFLAGS -c "Examples/src/c/$part.c" -o "$b.$part.o"
+    done
+    case $isa in
+      rv) text=0x10000; table="" ;;
+      arm) text=0x10000; table=". = 0x20228;" ;;
+      x86) text=0x401000; table=". = 0x4022b0;" ;;
+    esac
+    cat > "$b.ld" <<EOF
+SECTIONS {
+  . = $text;
+  .text : { *sha256.o(.text) }
+  $table
+  .rodata : { *sha256.o(.rodata*) }
+  .text.main : { *(.text*) }
+  .bss : { *(.bss*) *(.sbss*) *(COMMON) }
+  .msglen : { *(.msglen) }
+  .msg : { *(.msg) }
+  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) *(.riscv.attributes) }
+}
+EOF
+    extra=""
+    case $isa in
+      rv) "$RV_LD" -T "$b.ld" --no-relax -e _start "$b.sha256.o" "$b.sha256_main.o" \
+            "$b.sha256_msg.o" -o "$b.elf" ;;
+      arm) "$LLD" -flavor gnu --image-base=0 -T "$b.ld" -e _start "$b.sha256.o" \
+            "$b.sha256_main.o" "$b.sha256_msg.o" -o "$b.elf" ;;
+      x86)
+        "$LLD" -flavor gnu -T "$b.ld" -e _start "$b.sha256.o" "$b.sha256_main.o" \
+          "$b.sha256_msg.o" -o "$b.elf"
+        "$OBJDUMP" -d "$b.elf" > "$b.dis"
+        extra="--disasm $b.dis" ;;
+    esac
+    for e in "Examples/bin/sha256.$isa.elf" "$b.elf"; do
+      "$OBJDUMP" -d --disassemble-symbols=sha256_compress "$e" | tail -n +5 > "$e.compress"
+    done
+    cmp "Examples/bin/sha256.$isa.elf.compress" "$b.elf.compress"
+    # shellcheck disable=SC2086
+    "$LOWER" "$b.elf" $extra --fn sha256_compress --fn _start --fn main --image sha256_main \
+      --mlir "Examples/mlir/sha256_main.$isa.mlir" \
+      --lean "$dir/Image.lean" --module "Examples.Sha256Main.$(isa_dir "$isa")"
+  done
+}
+
+
 want() { [ -z "${ONLY:-}" ] || [ "$ONLY" = "$1" ]; }
 ONLY=${1:-}
 
@@ -219,3 +278,4 @@ if want sha256; then
   lower_ladder sha256 Examples/src/c/sha256.c Sha256 sha256_round sha256_schedule sha256_compress
 fi
 if want crc32; then lower_ladder crc32 Examples/src/c/crc32.c Crc32 crc32; fi
+if want sha256main; then lower_program; fi

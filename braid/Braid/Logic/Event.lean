@@ -8,7 +8,7 @@
   ## Main results
 
   * `bytesAt_bytes`: an array of bytes is the bytes of the state's memory
-  * `OpsSpec.out`, `OpsSpecT.out`: `out`, without and with the trace
+  * `OpsSpec.out`, `OpsSpecT.out`, `OpsSpecT.out_nil`: `out`, without and with the trace
   * `TermSpec.exit`, `TermSpecT.exit`: `exit`, without and with the trace
 -/
 
@@ -85,6 +85,14 @@ theorem OpsSpecT.out {ops : List Op} {ρ : Env} {as : Atoms} {t : Trace}
   have e' : (ρ n).toNat = bs.length := by rw [hn]; simp; omega
   simp only [wpOpsL, Op.wpL, Op.wp, Op.leak_out_eq hn hlen hb]
   exact ⟨⟨bs, e' ▸ hb⟩, h.run R σ hs⟩
+
+/-- **`out` of no bytes.** Nothing is written, and nothing is asked of memory. -/
+theorem OpsSpecT.out_nil {ops : List Op} {ρ : Env} {as : Atoms} {t : Trace}
+    {Φ : Env → Atoms → Trace → Prop} {a n : Var} (hn : ρ n = 0#64)
+    (h : OpsSpecT ops ρ as t Φ) : OpsSpecT (.out a n :: ops) ρ as t Φ := by
+  refine ⟨fun R σ hs => ?_⟩
+  simp only [wpOpsL, Op.wpL, Op.wp, Op.leak, hn, ↓reduceIte, List.append_nil]
+  exact ⟨⟨[], rfl⟩, h.run R σ hs⟩
 
 /-- `exit`: a branch on whether the program exits. -/
 theorem TermSpec.exit {ρ : Env} {as : Atoms} {Φ : Atoms → Prop} {p t f : Word} {c x : Var}

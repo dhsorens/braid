@@ -18,6 +18,14 @@
   * `Sha256.round`, `Sha256.rounds`: one round, and the first `n` rounds
   * `Sha256.compress`: the compression function
   * `Sha256.hash`: the hash of a bit string
+  * `Sha256.bytesToBits`, `Sha256.wordBytes`: the bits of a list of bytes, and the bytes of a
+    word
+  * `Sha256.sha256`: the hash of a message of bytes, as the 32 bytes of the digest
+
+  ## Main results
+
+  * `hash_abc`, `hash_448`, `hash_empty`: the examples of the standard, as words
+  * `sha256_abc`, `sha256_448`, `sha256_empty`: the same examples, as bytes
 
   ## References
 
@@ -184,6 +192,50 @@ theorem hash_448 :
 theorem hash_empty : hashWords [] =
     [0xe3b0c442, 0x98fc1c14, 0x9afbf4c8, 0x996fb924,
      0x27ae41e4, 0x649b934c, 0xa495991b, 0x7852b855] := by
+  decide +kernel
+
+/-! ## Bytes
+
+The hash function over bytes, which is how a program meets it: a message is a list of bytes,
+and so is its digest. -/
+
+/-- The bits of a list of bytes, each byte most significant bit first. -/
+def bytesToBits (bs : List (BitVec 8)) : List Bool := bs.flatMap fun b => natToBitsBE 8 b.toNat
+
+/-- The four bytes of a word, most significant first. -/
+def wordBytes (w : W32) : List (BitVec 8) :=
+  [(w >>> 24).setWidth 8, (w >>> 16).setWidth 8, (w >>> 8).setWidth 8, w.setWidth 8]
+
+/-- SHA-256 of a message of bytes: the 32 bytes of the digest. -/
+def sha256 (msg : List (BitVec 8)) : List (BitVec 8) :=
+  (hashWords (bytesToBits msg)).flatMap wordBytes
+
+/-- The bytes of an ASCII string. -/
+def asciiBytes (s : String) : List (BitVec 8) := s.toUTF8.toList.map fun b => b.toBitVec
+
+/-- The digest of the one-block message `"abc"`. -/
+theorem sha256_abc : sha256 (asciiBytes "abc") =
+    [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea,
+     0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
+     0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c,
+     0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad] := by
+  decide +kernel
+
+/-- The digest of the two-block message of 56 bytes. -/
+theorem sha256_448 :
+    sha256 (asciiBytes "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") =
+    [0x24, 0x8d, 0x6a, 0x61, 0xd2, 0x06, 0x38, 0xb8,
+     0xe5, 0xc0, 0x26, 0x93, 0x0c, 0x3e, 0x60, 0x39,
+     0xa3, 0x3c, 0xe4, 0x59, 0x64, 0xff, 0x21, 0x67,
+     0xf6, 0xec, 0xed, 0xd4, 0x19, 0xdb, 0x06, 0xc1] := by
+  decide +kernel
+
+/-- The digest of the empty message. -/
+theorem sha256_empty : sha256 [] =
+    [0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
+     0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+     0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
+     0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55] := by
   decide +kernel
 
 end Examples.Sha256

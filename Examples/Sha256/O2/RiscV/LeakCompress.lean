@@ -41,7 +41,7 @@ module
 public import Examples.Sha256.O2.RiscV.Compress
 public import Examples.Sha256.RiscV.LeakBase
 
-public section
+@[expose] public section
 
 namespace Examples.Sha256.O2.RiscV
 

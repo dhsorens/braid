@@ -23,3 +23,5 @@ public import Braid.Logic.Trace
 public import Braid.Logic.Any
 public import Braid.Logic.Event
 public import Braid.Logic.Link
+public import Braid.Logic.Image
+public import Braid.Logic.Bytes

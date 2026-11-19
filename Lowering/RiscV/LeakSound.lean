@@ -46,10 +46,12 @@ theorem rget_next (h : Rel s σ) (d : Var) (r : Reg) (ρ : Env) (x : Word) :
     (runOps (rset r a) ρ σ hv).2.2 = [] := by
   unfold rset; split <;> rfl
 
-/-- **The labels of a lowered instruction are those of the instruction.** -/
-theorem leak_lower (h : Rel s σ) (i : Instr) (hv : Nat → Word) :
+/-- **The labels of a lowered instruction are those of the instruction.** `ECALL` is apart:
+its block here is a `trap`, and the environment's reading of it is in `Lowering.RiscV.Env`. -/
+theorem leak_lower (h : Rel s σ) (i : Instr) (hi : i ≠ .ECALL) (hv : Nat → Word) :
     (lower s.pc i).leak σ hv = leak s i := by
-  cases i <;>
+  cases i <;> try exact absurd rfl hi
+  all_goals
     simp [lower, binRR, binRI, shiftRR, binW, addrOps, loadI, storeI, branchI, divI,
       Block.leak, runOps_cons, rget_next h, leak, ea, target, BinOp.leaks]
   case BGE rs1 rs2 off => cases (s.getReg rs1).slt (s.getReg rs2) <;> rfl
@@ -68,10 +70,19 @@ theorem lowerCode_soundL {code : Word → Option Instr} {Q : State → Trace →
     simp only [lowerCode, Option.map_eq_some_iff] at hb
     obtain ⟨i, hi, rfl⟩ := hb
     rw [h.pc] at hi hwp
+    have hne : i ≠ .ECALL := by
+      rintro rfl
+      exact absurd (Block.wp_of_wpL hwp) (by simp [lower, Block.wp, wpOps, Term.wp])
     obtain ⟨s₁, σ₁, hstep, h₁, hv, hr⟩ := lower_sound h (hc ▸ hi) (Block.wp_of_wpL hwp)
-    rw [leak_lower h] at hr
+    rw [leak_lower h i hne] at hr
     obtain ⟨s', σ', tr, hrun, h', hq⟩ := ih σ₁ _ hr ((code_step hstep).trans hc) h₁
-    exact ⟨s', σ', leak s i ++ tr, .step (hc ▸ hi) hstep hrun, h',
+    have hcov : covered s i = true := by
+      cases i <;>
+        first
+        | rfl
+        | exact absurd rfl hne
+        | exact absurd (Block.wp_of_wpL hwp) (by simp [lower, Block.wp, wpOps, Term.wp])
+    exact ⟨s', σ', leak s i ++ tr, .step (hc ▸ hi) hcov hstep hrun, h',
       by rw [← List.append_assoc]; exact hq⟩
 
 /-- A run with a trace is a run. -/
@@ -79,8 +90,9 @@ theorem RunL.stepN {s s' : MachineState} {tr : Trace} (h : RunL s tr s') :
     ∃ n, stepN n s = some s' := by
   induction h with
   | refl s => exact ⟨0, rfl⟩
-  | step _ hstep _ ih =>
+  | step _ _ hstep _ ih =>
     obtain ⟨n, hn⟩ := ih
     exact ⟨n + 1, by simp [RiscvZkvm.Rv64.stepN, hstep, hn]⟩
+  | halt _ _ _ ih => exact ih
 
 end Lowering.RiscV

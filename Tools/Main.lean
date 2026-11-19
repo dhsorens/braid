@@ -23,6 +23,7 @@ structure Options where
   norm : Option String := none
   disasm : Option String := none
   module : String := "Image"
+  image : Option String := none
   list : Bool := false
   stats : Bool := false
   simplify : Bool := false
@@ -38,6 +39,8 @@ def usage : String :=
   "  --lean <file>    write the lowered functions as a Lean module\n" ++
   "  --norm <file>    write the lowered functions as position-independent text, for diffing\n" ++
   "  --module <Name>  the namespace of the Lean module (default: Image)\n" ++
+  "  --image <name>   also write the whole binary as a loaded image named <name>: its data\n" ++
+  "                   sections and entry point, with system calls lowered as events\n" ++
   "  --disasm <file>  x86-64 only: the output of `objdump -d` on the binary\n"
 
 def parseArgs : List String → Options → Except String Options
@@ -50,6 +53,7 @@ def parseArgs : List String → Options → Except String Options
   | "--lean" :: f :: rest, o => parseArgs rest { o with lean := some f }
   | "--norm" :: f :: rest, o => parseArgs rest { o with norm := some f }
   | "--module" :: m :: rest, o => parseArgs rest { o with module := m }
+  | "--image" :: n :: rest, o => parseArgs rest { o with image := some n }
   | "--disasm" :: f :: rest, o => parseArgs rest { o with disasm := some f }
   | a :: rest, o =>
     if a.startsWith "--" then .error s!"unknown option {a}\n{usage}"
@@ -107,7 +111,8 @@ def main (args : List String) : IO UInt32 := do
       for (f, (_, bad)) in decoded do
         for (a, w) in bad do
           IO.eprintln s!"warning: {f.name}: 0x{Braid.hex a}: the word 0x{Braid.hex w.toNat} does not decode"
-    let funcs := decoded.map fun (f, (code, _)) => RiscV.toFunc f.name f.addr code
+    let env := opts.image.isSome
+    let funcs := decoded.map fun (f, (code, _)) => RiscV.toFunc f.name f.addr code env
     if opts.stats then
       printStats funcs (decoded.foldl (fun n (_, (_, bad)) => n + bad.length) 0)
     if let some out := opts.mlir then
@@ -116,8 +121,14 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile out (Braid.Module.toNorm Lowering.RiscV.arch { arch := "riscv64", funcs := view funcs })
     if let some out := opts.lean then
       IO.FS.writeFile out <|
-        leanHeader opts.module ["Lowering.RiscV.Sound"] ["RiscvZkvm.Rv64"] ++
-        "\n".intercalate (decoded.map fun (f, (code, _)) => RiscV.leanSource f.name f.addr code) ++
+        leanHeader opts.module [if env then "Lowering.RiscV.Program" else "Lowering.RiscV.Sound"]
+          ["RiscvZkvm.Rv64"] ++
+        "\n".intercalate
+          (decoded.map fun (f, (code, _)) => RiscV.leanSource f.name f.addr code env) ++
+        (match opts.image with
+          | some n => "\n" ++ RiscV.imageSource n img.entry (fs.map (·.name)) img.dataSections
+              img.zeroSections
+          | none => "") ++
         s!"\nend {opts.module}\n"
     return 0
   | .aarch64 =>
