@@ -17,11 +17,12 @@
   * `ofList_le_lowerProgram`: the blocks of words a program holds are blocks of its lowering
   * `triple_sound`: a triple about the lowered code of a function, for the machine
   * `machine_sound`: the same, from facts about the machine state alone
+  * `tripleT_sound`, `machine_soundT`: the same for a traced triple, with the trace of the run
 -/
 
 module
 
-public import Lowering.Arm.Sound
+public import Lowering.Arm.LeakSound
 public import Braid.Logic
 import Iris.BI.DerivedLaws
 
@@ -379,5 +380,42 @@ theorem machine_sound_flat {prog : Arm64.Program} {base : Word} {ws : List (BitV
     (hsat : ∀ a ∈ flat, a.sat (abs s)) :
     ∃ s' σ', Arm64.Steps prog s s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' :=
   triple_sound hlow ht hw hc (rel_abs hrun) (Atoms.holds_of_sat_flat heq hpt hdisj hsat)
+
+/-! ## Traces -/
+
+/-- **A traced triple about lowered AArch64 code holds of the machine.** The machine runs to
+a running state related to one part of which satisfies `post`, and the trace of the run,
+after `t`, is `t'`. -/
+theorem tripleT_sound {prog : Arm64.Program} {base : Word} {ws : List (BitVec 32)}
+    {blocks : List (Word × Block)} {pre post : SProp} {t t' : Trace} {s : Arm64.State}
+    {σ : State} (hlow : blocks = lowerWords base ws)
+    (ht : TripleT (Program.ofList blocks) pre t post t')
+    (hw : prog.hasWords base ws) (hc : prog.CodeLoaded s.mem) (h : Rel s σ)
+    (hp : (iprop(pre ∗ True) : SProp) σ.heap) :
+    ∃ s' σ' tr, RunL prog s tr s' ∧ Rel s' σ' ∧ (iprop(post ∗ True) : SProp) σ'.heap ∧
+      t ++ tr = t' := by
+  subst hlow
+  obtain ⟨s', σ', tr, hrun, hr, hq, e⟩ :=
+    lowerProgram_soundL hc h ((ht.sound hp).of_le (ofList_le_lowerProgram hw))
+  exact ⟨s', σ', tr, hrun, hr, hq, e⟩
+
+/-- **A specification of leakage about lowered AArch64 code, as a theorem about the
+machine.** If a program holds the words `ws` at `base`, its code is loaded, and the running
+machine state satisfies the atoms `flat`, which are the precondition `pre` with its arrays
+written out, the machine runs, executing an instruction at each step and with the trace
+`ls`, to a running state related to one that satisfies the atoms `post`. -/
+theorem machine_soundT {prog : Arm64.Program} {base : Word} {ws : List (BitVec 32)}
+    {blocks : List (Word × Block)} {pre flat post : Atoms} {ls : Trace} {s : Arm64.State}
+    (hlow : blocks = lowerWords base ws)
+    (ht : TripleT (Program.ofList blocks) (Atoms.interp pre) [] (Atoms.interp post) ls)
+    (hw : prog.hasWords base ws) (hc : prog.CodeLoaded s.mem) (hrun : s.status = .Running)
+    (heq : Atoms.interp pre = Atoms.interp flat)
+    (hpt : ∀ a ∈ flat, a.IsPointsTo) (hdisj : flat.Pairwise Atom.Disj)
+    (hsat : ∀ a ∈ flat, a.sat (abs s)) :
+    ∃ s' σ', RunL prog s ls s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' := by
+  obtain ⟨s', σ', tr, hr, hrel, hq, e⟩ := tripleT_sound hlow ht hw hc (rel_abs hrun)
+    (Atoms.holds_of_sat_flat heq hpt hdisj hsat)
+  rw [List.nil_append] at e
+  exact ⟨s', σ', e ▸ hr, hrel, hq⟩
 
 end Lowering.Arm
