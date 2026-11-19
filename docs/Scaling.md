@@ -180,31 +180,37 @@ for each load, store, division, conditional branch and computed jump. The work f
 operation that reveals nothing is the same as before, with one more argument to the rule.
 `TRACED=1 Examples/scaling/run.sh` measures it, on the same function.
 
-Milliseconds per instruction, and in brackets the seconds to check the whole file. At
-N = 10 the proof costs less than the noise in starting Lean, and at N = 100 the difference
-of two measurements of under two seconds is mostly noise; N = 1000 is the figure to read.
-*Before* is the commit just before a step of the dialect carried a label (`d68af2f`),
-built again and measured with the benchmark as it is now. *After* is the present code,
-with labels of both kinds (what a step reveals, and events of the environment) and with
-`Eventually` and `Triple` derived from the labelled step: the same theorem as before, and
-the same function proved with a traced triple. The three rows of each instruction set were
-measured one after another on the same machine.
+Milliseconds per instruction, and in brackets the seconds to check the whole file with
+its proof. *Before* is the commit just before a step of the dialect carried a label
+(`d68af2f`), built again and measured with the benchmark as it is now. *After* is the
+present code, with labels of both kinds (what a step reveals, and events of the
+environment) and with `Eventually` and `Triple` derived from the labelled step: the same
+theorem as before, and the same function proved with a traced triple. Each figure is the
+median of three runs, and the runs of before, after and traced were interleaved on one
+machine. At N = 10 the proof costs less than the spread between two runs of Lean on the
+same file, so there is no per-instruction figure there, and the seconds are the
+comparison.
 
 | | N = 10 | N = 100 | N = 1000 |
 | --- | --- | --- | --- |
-| RISC-V, triple, before | (1.0) | 2.0 (1.4) | 2.6 (5.8) |
-| RISC-V, triple, after | (1.0) | 2.0 (1.4) | 1.5 (4.7) |
-| RISC-V, traced triple, after | (1.1) | 1.0 (1.4) | 1.4 (4.6) |
+| RISC-V, triple, before | (1.0) | 2.0 (1.4) | 1.3 (4.6) |
+| RISC-V, triple, after | (1.0) | 2.0 (1.4) | 1.4 (4.6) |
+| RISC-V, traced triple, after | (1.0) | 1.0 (1.4) | 1.3 (4.5) |
 | AArch64, triple, before | (1.1) | 2.0 (1.9) | 1.6 (5.6) |
-| AArch64, triple, after | (1.1) | 0.0 (1.9) | 1.6 (5.6) |
-| AArch64, traced triple, after | (1.0) | 1.0 (1.8) | 1.6 (5.7) |
-| x86-64, triple, before | (1.1) | 7.0 (2.6) | 8.6 (16.6) |
-| x86-64, triple, after | (1.2) | 7.0 (2.6) | 8.7 (16.7) |
-| x86-64, traced triple, after | (1.1) | 7.0 (2.6) | 8.8 (16.8) |
+| AArch64, triple, after | (1.1) | 2.0 (1.9) | 1.5 (5.5) |
+| AArch64, traced triple, after | (1.1) | 2.0 (1.9) | 1.7 (5.7) |
+| x86-64, triple, before | (1.2) | 8.0 (2.6) | 8.4 (16.4) |
+| x86-64, triple, after | (1.2) | 7.0 (2.6) | 8.6 (16.6) |
+| x86-64, traced triple, after | (1.2) | 7.0 (2.6) | 8.7 (16.6) |
 
-Labelled steps cost nothing that can be measured. At N = 1000 a triple costs what it did
-on AArch64 and x86-64 and a traced triple 2% more at most, against a limit of 1.5 times set
-for the change; on RISC-V both measured faster than before.
+Labelled steps cost nothing that can be measured, at any of the three sizes and on any of
+the three instruction sets. The limit set for the change was 1.5 times the cost before. The
+largest ratio in the table is 1.08 (a triple on RISC-V at N = 1000, 1.4 against 1.3, which
+is one step of the rounding), and the whole-file times differ by 2% at most. Over the
+three runs the per-instruction cost at N = 1000 ranged over 1.3 to 1.4 before and 1.2 to
+1.4 after on RISC-V, 1.5 to 1.7 and 1.5 to 1.6 on AArch64, and 8.3 to 8.5 and 8.0 to 8.9
+on x86-64; one traced run on AArch64 gave 2.2.
+
 The benchmark function reveals little: one jump at its return, and on x86-64 the load of
 the return address. A function that touches memory at every other instruction adds a label
 that often, and each is one more node of the trace.

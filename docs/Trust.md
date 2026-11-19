@@ -67,11 +67,14 @@ stated with them ([`Programs.md`](Programs.md)).
 | AArch64 | `SVC #0` under the model's Linux system calls (`Arm64.Syscall.standard`): `write` (`x8 = 64`) of every byte asked for to the standard output, and `exit` (`x8 = 93`) | has the status `Exited c` and takes no step; the run records the exit with `c` |
 | x86-64 | nothing: Kraken has no system call ([`ISA.md`](ISA.md)) | does not exist; a whole program ends in a jump to itself |
 
-On AArch64 the bytes of a `write` event are the bytes the model itself appends to its
-output, so there the reading adds a name and no meaning. On RISC-V the model gives the two
-calls the meaning of a zkVM's ABI and keeps no output; that `t0 = 0x10` is a write of those
-bytes is this file's reading of it. A system call the files do not speak of has no label,
-and a run with a trace has no step through it.
+Both models keep an output of their own: riscv-zkvm appends the bytes of a `write_output`
+call to the public output of its state (the calls follow the host interface of a zkVM),
+and arm64-semantics appends the bytes of a `write` to its trace of output. The label of a
+write event is the bytes of memory at the buffer of the call, read by the definition in
+the trusted file. That these are the bytes the model appends is how the model's call is
+written, and is read off it, not proved: no theorem here mentions either model's output.
+A system call the files do not speak of has no label, and a run with a trace has no step
+through it.
 
 **What it means for a binary to be loaded.** A theorem about a whole program has one
 hypothesis about the machine, `Loaded s img`, defined once for each instruction set

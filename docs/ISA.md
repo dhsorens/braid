@@ -149,8 +149,11 @@ nearly all the others are vector instructions.
 5. **`ret` with an operand** (`ret 0x20`), which V8's code uses to pop its arguments.
 6. **Bytes.** An encoder checked against the bytes of a binary, or a decoder, so that a
    theorem need not trust a disassembler.
-7. **A system call.** The model has no `syscall` instruction and no environment, so a
-   program on x86-64 cannot write bytes out or exit, and a run has no events. This is the
+7. **A system call.** The model has no `syscall` instruction, no instruction that halts
+   (`hlt`, `ud2` and `int3` are not in its syntax either), and no output or exit status in
+   its state, so a program on x86-64 cannot write bytes out or exit, and a run has no
+   events. There is nothing in the model for a trusted reading to call an event, and
+   instructions the model lacks are contributed to Kraken and not added here. This is the
    one gap that changes a statement of the whole program
    ([`Programs.md`](Programs.md)): on x86-64 `sha256_main` leaves the digest in memory
    and ends in a jump to itself, and `sha256_main_correct` says the machine gets there
