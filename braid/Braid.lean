@@ -15,4 +15,6 @@ public import Braid.Pass.Dce
 public import Braid.Pass.Fuse
 public import Braid.Pass.DeadFlags
 public import Braid.Pass.Simplify
+public import Braid.Pass.DceFast
+public import Braid.Pass.Plan
 public import Braid.Logic

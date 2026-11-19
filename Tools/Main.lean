@@ -11,6 +11,7 @@ import Std.Data.HashMap
 import Tools.RiscV
 import Tools.Arm
 import Tools.X86
+import Braid.Pass.Plan
 
 open Tools
 
@@ -90,7 +91,7 @@ def main (args : List String) : IO UInt32 := do
   let img ← match Elf.parse (← IO.FS.readBinFile opts.input) with
     | .ok i => pure i
     | .error e => IO.eprintln e; return 1
-  let view (fs : List Braid.Func) := if opts.simplify then fs.map Braid.Func.simplify else fs
+  let view (fs : List Braid.Func) := if opts.simplify then fs.map fun f => f.simplifyBy f.fusePlan else fs
   let all := img.functions
   if opts.list then
     for f in all do IO.println s!"0x{Braid.hex f.addr} {f.bytes.size} {f.name}"

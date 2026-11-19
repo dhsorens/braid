@@ -15,7 +15,7 @@ see [`ISA.md`](ISA.md).
 | x86-64 lowering | the integer core, and vector registers with their moves at 128, 256 and 512 bits and packed addition, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 61 functions across the three instruction sets (17 on RISC-V, 23 on AArch64, 21 on x86-64), each with a proved specification and a theorem about the machine model alone |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 79 functions across the three instruction sets (17 on RISC-V, 32 on AArch64, 30 on x86-64), up to the ChaCha20 block function and the SHA-256 compression function, each with a proved specification and a theorem about the machine model alone |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.
@@ -59,6 +59,10 @@ In rough order of what they would buy.
    works on them. Triples are not yet Iris weakest preconditions; making them so would bring
    invariants and ghost state.
 
+6. **What the ladder asked of the stepper** ([`Scaling.md`](Scaling.md)): a run that stops
+   at a given address, normalization of `x ^^^ x`, of a literal added on the left and of an
+   index scaled by one, and a `braid_done` that does not run out of depth on thirty atoms.
+
 5. **Shorter theorems about the machine.** Every example ends in a theorem about its machine
    model, and writing those showed what the library lacks. A precondition with an array has
    to be written out by hand before `machine_sound_flat` takes it; `braid_disj` gives up when
@@ -70,14 +74,15 @@ In rough order of what they would buy.
 
 ### The dialect
 
-1. **A proved driver for the simplifier, and proofs that use it.** Three passes are proved to
-   preserve what the runs of a program reach: fusing a block with the block it jumps to,
-   removing a flag write that the same block overwrites, and removing operations whose
-   results nothing reads. `braid-lower --simplify` applies them to the text it prints, and a
-   function comes out with a third of its blocks and a fifth less text. Two things are
-   missing. The driver that chooses which blocks of a function to fuse is not itself proved,
-   only the passes it calls. And the Lean modules the decompiler writes are not simplified,
-   so proofs still step through one block for each instruction.
+1. **Proofs that use the simplifier.** Three passes are proved to preserve what the runs of
+   a program reach: fusing a block with the block it jumps to, removing a flag write that
+   the same block overwrites, and removing operations whose results nothing reads. The
+   driver that applies them to a function, by a plan of which blocks to fuse, is proved for
+   any plan, and `braid-lower --simplify` prints its result: a function comes out with a
+   third of its blocks and a fifth less text. The Lean modules the decompiler writes are not
+   simplified, and proofs step through one block for each instruction. Measured, that is the
+   faster way today ([`Scaling.md`](Scaling.md)); bounded fusion with a certificate for each
+   block is what would change it.
 2. **A dialect VeIR knows.** The value operations are defined in IRDL
    (`braid/mlir/braid.irdl.mlir`), so `mlir-opt` checks them, and every example module goes
    through [VeIR](https://github.com/opencompl/veir)'s `veir-opt` and back

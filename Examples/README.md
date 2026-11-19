@@ -12,6 +12,9 @@ mlir/          the lowered code of each example, as MLIR text
 <Module>/<ISA>/Image.lean    the lowered code, as a Lean module (written by braid-lower)
 <Module>/<ISA>/Proofs.lean   specifications and proofs
 Spec.lean      functions the specifications share (umax, wsum, wgcd, ones)
+Spec/          specifications in plain Lean: CRC-32, ChaCha20 (RFC 8439), SHA-256 (FIPS 180-4)
+<Module>/Common.lean         what a module's proofs share on every instruction set
+scaling/       the scaling benchmark (docs/Scaling.md)
 ArmMachine.lean  what the AArch64 machine theorems are stated with (HasBytes, Apart)
 continuity/    the continuity experiment (docs/Continuity.md)
 ```
@@ -31,6 +34,16 @@ theorem about the machine model alone (`<function>_correct`).
 | `go/basic.go` | not lowered | Add3, MaxU64, SumSlice | Add3, MaxU64, SumSlice |
 | `python/basic.py` | py_add3, py_max_u64, py_gcd | py_add3, py_max_u64 | py_add3, py_max_u64 |
 | `js/basic.js` | | js_add3 | js_add3 (to its return instruction) |
+| `c/mem.c` | | copy_bytes, equal_bytes | copy_bytes, equal_bytes |
+| `c/limbs.c` | | add_limbs | add_limbs |
+| `c/crc32.c` | | crc32 | crc32 |
+| `c/chacha20.c` | | quarter_round, chacha20_block | quarter_round, chacha20_block |
+| `c/sha256.c` | | sha256_round, sha256_schedule, sha256_compress | sha256_round, sha256_schedule, sha256_compress |
+
+The last five sources are the scaling ladder ([`docs/Scaling.md`](../docs/Scaling.md)):
+functions of growing size, up to the SHA-256 compression function, proved against
+definitions in plain Lean (`Spec/`) that are checked on the standards' test vectors. They
+are lowered for AArch64 and x86-64.
 
 What the examples exercise:
 
@@ -49,6 +62,15 @@ What the examples exercise:
   around the call. On x86-64 the return address is a word on the stack, pushed by `call` and
   popped by `ret`.
 
+- **Two regions that may overlap** (`equal_bytes`): memory as a set of single bytes, opened
+  at each load.
+- **A table in read-only data** (`crc32`, `sha256_compress`): a read-only array opened at an
+  index the code computes.
+- **Multi-word arithmetic** (`add_limbs`): the specification is an equation between natural
+  numbers.
+- **A function too long to run in one go** (`chacha20_block`, `sha256_compress`): loops by
+  induction with the state folded back into the specification after each round, and the
+  arithmetic of a round as a separate lemma.
 - **Code from a just-in-time compiler** (`js_add3`): the machine code V8 produced for a
   JavaScript function after it had run on small integers. The code checks that it has not
   been marked for deoptimisation, that the stack has room, that each argument is a tagged
@@ -128,7 +150,8 @@ ones still open are in [`docs/Roadmap.md`](../docs/Roadmap.md); the ones that ar
 of a model are in [`docs/ISA.md`](../docs/ISA.md). `braid-lower --stats` on a whole Go binary
 is the broadest test: 95% of its instructions lower on AArch64, and 95% on x86-64.
 
-Every C function is verified on all three instruction sets. What is not verified, and why:
+Every C function outside the ladder is verified on all three instruction sets, and every
+ladder function on the two it is lowered for. What is not verified, and why:
 `gcd` on x86-64, because the machine model has no `div`; the last instruction of the
 JavaScript function on x86-64, `ret 0x20`, which the model does not have either; and
 JavaScript on RISC-V, for which there was no V8 to run.

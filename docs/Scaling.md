@@ -126,6 +126,105 @@ index that need not be a literal, into the cells before, the cell itself as a me
 and the cells after, so a loop can read or write `a[i]`. `Flat` writes out a state with
 several arrays in it as points-to atoms, which is what a theorem about a machine starts from.
 
+## Proving on simplified code
+
+The simplifier fuses straight-line blocks and removes dead flag writes and dead operations
+(`braid/Braid/Pass/`). `Func.simplifyBy` does it by a plan, and is proved whatever the plan
+(`Func.simplifyBy_eventually`): runs of the simplified function are runs of the function.
+`braid-lower --simplify` uses it for the MLIR it prints. The question here was whether a
+proof should run on the simplified function instead of the lowered one.
+
+It should not, as things stand. The benchmark function simplifies to one block, and the
+stepper was timed on it, with no certificate that the block is the function simplified:
+
+| Milliseconds per instruction | N = 100 | N = 1000 |
+| --- | --- | --- |
+| AArch64, lowered | 2.0 | 1.8 |
+| AArch64, simplified | 2.2 | 6.5 |
+| x86-64, lowered | 8.0 | 9.5 |
+| x86-64, simplified | 6.2 | stopped after 8 minutes (lowered: 10 seconds) |
+
+Two things are behind this.
+
+- **There is little dead work left to remove.** The stepper already runs an undefined flag
+  write without a quantifier, and finds a block in a table, so what fusion saves is a write
+  of the program counter for each instruction and, on x86-64, the flag writes the next
+  instruction overwrites: a fifth of the time at N = 100, and nothing on AArch64.
+- **A long block is slower than many short ones.** An SSA value is looked up by walking the
+  environment of the block, which is as long as the block. With a block for each instruction
+  the walk is a few steps; in one block of ten thousand operations it is quadratic.
+
+The certificate costs more than that saving. The decompiler can write the simplified function
+and the plan beside the lowered one, with a theorem, checked by `decide +kernel`, that the
+blocks written are `(f.simplifyBy plan).blocks`. That was built and measured: at N = 100 on
+AArch64 checking the certificate took longer than checking the image, and at N = 100 on
+x86-64 and N = 1000 on AArch64 the kernel ran out of stack, since fusing a thousand blocks
+one after another leaves it a thousand nested appends to evaluate. So `braid-lower` does not
+write simplified functions into Lean modules, and proofs run on the lowered function.
+
+What would change this: fusing in bounded stretches (a plan that fuses at most a few dozen
+blocks keeps the environment short), with the fused block built by one pass over the stretch
+and not by repeated appends, and a certificate for each block. On these numbers that is worth
+at most a fifth on x86-64, so it was not done.
+
+## The ladder
+
+The benchmark is straight-line code. The ladder is real functions of growing size, each
+compiled by clang for AArch64 and x86-64 and proved twice on each: a specification, a
+triple, and a theorem about the machine model alone, stated against a definition in plain
+Lean (`Examples/Spec/`). All of them use the stepper.
+
+| Source | Functions | Instructions, AArch64 / x86-64 | Proofs check in, AArch64 / x86-64 |
+| --- | --- | --- | --- |
+| `mem.c` | `copy_bytes`, `equal_bytes` | 20 / 24 | 4 s / 5 s |
+| `limbs.c` | `add_limbs` | 13 / 16 | 3 s / 4 s |
+| `crc32.c` | `crc32` | 16 / 22 | 5 s / 6 s |
+| `chacha20.c` | `quarter_round`, `chacha20_block` | 155 / 204 | 17 s / 18 s |
+| `sha256.c` | `sha256_round`, `sha256_schedule`, `sha256_compress` | 138 / 202 | 28 s / 23 s |
+
+The times are processor seconds for every proof file of the module on that instruction set,
+each of which starts Lean (about a second). The file with the SHA-256 compression function
+takes 17 seconds on AArch64 and 13 on x86-64.
+
+What made the two hash functions go through, where the first attempt at a single round did
+not finish:
+
+- **Symbolic execution and mathematics apart.** A stretch of code is run to "the registers
+  hold this expression of the inputs", and that the expression is the specification's is a
+  separate goal over bit-vectors, closed by `bv_decide`: one quarter round deep for
+  ChaCha20, one round deep for SHA-256.
+- **Loops by induction, with values folded back.** The ten double rounds of ChaCha20, the 48
+  steps of the SHA-256 schedule and its 64 rounds are each proved once, for an arbitrary
+  iteration, with the state stated as the specification's function of a variable. A term is
+  never more than one iteration deep. The copy loops of 8 and 16 iterations are run out.
+- **Arrays opened where they are used.** The schedule and the table of round constants are
+  `cellsAt` arrays opened at an index that is not a literal; the constants are read-only.
+
+Neither compiler vectorised either hash function, so no proof met an instruction the
+lowerings do not cover.
+
+### What the ladder found
+
+- **The stepper found a memory atom only if its address was the same term.** The same sum is
+  written `p + 16#64` at type `Word` by one lemma and at `BitVec 64` by another, and prints
+  the same. Every rung met this and worked around it. The stepper now falls back to
+  comparing addresses up to the unfolding of `Word`; the workarounds in the proofs are
+  still there.
+- **`braid_sym_run` cannot be told where to stop**, so a proof that takes a loop by
+  induction steps to the loop head by hand, or uses the `braid_sym_run_to` of
+  `Examples/Sha256/RunTo.lean`, which belongs in the stepper.
+- **Three things the stepper does not normalize on x86-64**: `x ^^^ x` after `xor eax, eax`,
+  a literal added on the left (`160#64 + (s + 129#64)` after `add rsp, 0xa0`), and an index
+  scaled by one. Each leaves an address the next load does not find, and a proof rewrites it.
+- **Machine-level statements are long and each module wrote its own helpers**: reading an
+  array back out of a postcondition, disjointness of a state with several arrays, a
+  read-only `HasBytes` on AArch64, and `bv_omega` failing on the x86-64 model's register
+  terms, whose width is not a literal. These are the same lemmas four times over and belong
+  in the logic and in one file for each instruction set ([`Roadmap.md`](Roadmap.md)).
+- **The x86-64 model has no read-only memory**, so on x86-64 the CRC and SHA-256 tables are
+  ordinary memory in the machine-level theorems, with hypotheses that they are apart from
+  what the function writes. The triples hold for a read-only table.
+
 ## What is still superlinear
 
 On x86-64 the cost of an instruction still rises a little with N (7 ms at N = 100 and 11 ms
@@ -133,4 +232,5 @@ at N = 1000). It is not yet profiled.
 
 ## Limits met in the instruction-set models
 
-None so far.
+One: the x86-64 model's memory has no permissions, so a table in read-only data cannot be
+stated as read-only in a theorem about that machine (above).

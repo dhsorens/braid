@@ -196,6 +196,12 @@ partial def parse (e : Expr) (acc : Array Expr := #[]) : MetaM AtomList := do
   | List.nil _ => return ofArray acc
   | _ => throwError "braid_sym: the symbolic state is not a list of atoms written out: {e}"
 
+/-- Whether two addresses are the same: the same term, or the same once `Word` is read as
+`BitVec 64`, which is how the same sum is written by different lemmas. -/
+def sameAddr (a b : Expr) : MetaM Bool := do
+  if a == b then return true
+  withReducible (withoutModifyingState (isDefEq a b))
+
 /-- The first atom built by `ctor` that `p` accepts, as its index and arguments. -/
 def find (A : AtomList) (ctor : Name) (p : Array Expr → MetaM Bool) :
     MetaM (Option (Nat × Array Expr)) := do
@@ -539,8 +545,12 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
       next m rest ρ A'
     | Braid.Op.load d W a =>
       let (addr, ha) ← lookupVar ρ a
-      let some (i, args) ← A.find ``Braid.Atom.mem fun args => return args[0]! == addr
+      let some (i, args) ←
+          (do match ← A.find ``Braid.Atom.mem fun args => return args[0]! == addr with
+              | some r => pure (some r)
+              | none => A.find ``Braid.Atom.mem fun args => AtomList.sameAddr args[0]! addr)
         | throwError "braid_sym: the symbolic state has no memory atom at {addr}"
+      let addr := args[0]!
       let n := args[1]!
       let v := args[2]!
       let r ← norm c.N (mkApp2 (mkConst ``Rule.ld) W v)
@@ -552,9 +562,16 @@ partial def runOps (c : Ctx) (g : MVarId) (ops ρ : Expr) (A : AtomList) :
     | Braid.Op.store W a x =>
       let (addr, ha) ← lookupVar ρ a
       let (xv, hx) ← lookupVar ρ x
-      let some (i, args) ← A.find ``Braid.Atom.mem fun args =>
-          return args[0]! == addr && (← whnfR args[3]!).isConstOf ``Bool.true
+      let writable (args : Array Expr) : MetaM Bool :=
+        return (← whnfR args[3]!).isConstOf ``Bool.true
+      let some (i, args) ←
+          (do match ← A.find ``Braid.Atom.mem fun args =>
+                  return args[0]! == addr && (← writable args) with
+              | some r => pure (some r)
+              | none => A.find ``Braid.Atom.mem fun args =>
+                  return (← AtomList.sameAddr args[0]! addr) && (← writable args))
         | throwError "braid_sym: the symbolic state has no writable memory atom at {addr}"
+      let addr := args[0]!
       let n := args[1]!
       let tt := mkConst ``Bool.true
       let A' := A.set i (mkApp4 (mkConst ``Braid.Atom.mem) addr n xv tt)
