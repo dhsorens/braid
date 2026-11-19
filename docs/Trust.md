@@ -48,8 +48,14 @@ an instruction makes, a theorem will say the program reveals less than it does.
 | ISA | File | Status |
 | --- | --- | --- |
 | RISC-V | `Lowering/RiscV/Leak.lean` (`leak`, `RunL`) | the lowering is proved to preserve it (`lowerCode_soundL`) |
-| AArch64 | | not yet written |
-| x86-64 | | not yet written |
+| AArch64 | `Lowering/Arm/Leak.lean` (`leak`, `RunL`) | the lowering is proved to preserve it (`lowerProgram_soundL`) |
+| x86-64 | `Lowering/X86/Leak.lean` (`leak`, `RunL`) | the lowering is proved to preserve it (`lowerProgram_soundL`) |
+
+On AArch64 and x86-64 the reading is partial: it says nothing of an instruction the lowering
+does not cover, and a run with a trace has no step through one. On x86-64 a run with a trace
+is stated as the model states runs, of every outcome at once (`RunL e post m t`), since
+Kraken's semantics is a set of outcomes. Kraken has no division, so nothing on x86-64
+reveals its operands.
 
 The labels of the dialect are not trusted. They are compared with the machine's by the proof
 that a lowering preserves traces.

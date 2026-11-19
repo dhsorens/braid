@@ -9,6 +9,11 @@
 #   Examples/mlir/<name>.<isa>.mlir           the lowered code, as MLIR text
 #   Examples/<Module>/<ISA>/Image.lean        the lowered code, as a Lean module
 #
+# The five sources of the scaling ladder are compiled a second time, at -O2, into
+#   Examples/bin/<name>.o2.<isa>.elf, Examples/mlir/<name>.o2.<isa>.mlir and
+#   Examples/<Module>/O2/<ISA>/Image.lean
+# so that a proof can be done again on a recompile (docs/Continuity.md).
+#
 # Needs clang with the RISC-V, AArch64 and x86-64 targets, a RISC-V linker, lld, rustc, swiftc
 # and go for the Rust, Swift and Go examples, and a Python with Numba (PYTHON) for the Python
 # examples. See Examples/README.md.
@@ -21,6 +26,8 @@ RV_LD=${RV_LD:-/opt/homebrew/opt/riscv64-elf-binutils/bin/riscv64-elf-ld}
 LLD=${LLD:-$(ls "$(rustc --print sysroot)"/lib/rustlib/*/bin/rust-lld | head -1)}
 LOWER=.lake/build/bin/braid-lower
 CFLAGS="-O1 -fno-vectorize -ffreestanding -nostdlib -fno-builtin"
+# The second optimisation level, for the ladder.
+CFLAGS_O2="-O2 -fno-vectorize -ffreestanding -nostdlib -fno-builtin"
 ISAS=${ISAS:-"rv arm x86"}
 
 mkdir -p Examples/bin Examples/mlir
@@ -67,6 +74,14 @@ lower_c() {
     "$CLANG" $(target "$isa") $CFLAGS -c "$src" -o "Examples/bin/$name.$isa.o"
     link_and_lower "$isa" "$name" "$module" "$@"
   done
+}
+
+# A source of the ladder: name, source, module, functions. It is compiled and lowered twice:
+# at the first optimisation level into <Module>, and at the second into <Module>.O2.
+lower_ladder() {
+  name=$1; src=$2; module=$3; shift 3
+  lower_c "$name" "$src" "$module" "$@"
+  (CFLAGS=$CFLAGS_O2; lower_c "$name.o2" "$src" "$module.O2" "$@")
 }
 
 # LLVM IR from another compiler: name, module, functions. The IR is in Examples/bin/<name>.ll.
@@ -195,12 +210,12 @@ fi
 if want gobasic; then
   lower_go gobasic Examples/src/go/basic.go GoBasic main.Add3 main.MaxU64 main.SumSlice
 fi
-if want mem; then lower_c mem Examples/src/c/mem.c Mem copy_bytes equal_bytes equal_bytes_ct; fi
-if want limbs; then lower_c limbs Examples/src/c/limbs.c Limbs add_limbs; fi
+if want mem; then lower_ladder mem Examples/src/c/mem.c Mem copy_bytes equal_bytes equal_bytes_ct; fi
+if want limbs; then lower_ladder limbs Examples/src/c/limbs.c Limbs add_limbs; fi
 if want chacha20; then
-  lower_c chacha20 Examples/src/c/chacha20.c ChaCha20 quarter_round chacha20_block
+  lower_ladder chacha20 Examples/src/c/chacha20.c ChaCha20 quarter_round chacha20_block
 fi
 if want sha256; then
-  lower_c sha256 Examples/src/c/sha256.c Sha256 sha256_round sha256_schedule sha256_compress
+  lower_ladder sha256 Examples/src/c/sha256.c Sha256 sha256_round sha256_schedule sha256_compress
 fi
-if want crc32; then lower_c crc32 Examples/src/c/crc32.c Crc32 crc32; fi
+if want crc32; then lower_ladder crc32 Examples/src/c/crc32.c Crc32 crc32; fi
