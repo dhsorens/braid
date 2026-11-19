@@ -247,6 +247,32 @@ def Op.next : Op → Env → State → Word → Env × State
   | .havoc d, ρ, σ, x => (ρ.set d x, σ)
   | .guard _, ρ, σ, _ => (ρ, σ)
 
+@[simp] theorem Op.next_const (d : Var) (v : Word) (ρ : Env) (σ : State) (x : Word) :
+    (Op.const d v).next ρ σ x = (ρ.set d v, σ) := rfl
+@[simp] theorem Op.next_un (d a : Var) (op : UnOp) (ρ : Env) (σ : State) (x : Word) :
+    (Op.un d op a).next ρ σ x = (ρ.set d (op.eval (ρ a)), σ) := rfl
+@[simp] theorem Op.next_bin (d a b : Var) (op : BinOp) (ρ : Env) (σ : State) (x : Word) :
+    (Op.bin d op a b).next ρ σ x = (ρ.set d (op.eval (ρ a) (ρ b)), σ) := rfl
+@[simp] theorem Op.next_select (d c a b : Var) (ρ : Env) (σ : State) (x : Word) :
+    (Op.select d c a b).next ρ σ x = (ρ.set d (if ρ c ≠ 0#64 then ρ a else ρ b), σ) := rfl
+@[simp] theorem Op.next_get (d : Var) (r : Reg) (ρ : Env) (σ : State) (x : Word) :
+    (Op.get d r).next ρ σ x = (ρ.set d (σ.regs r), σ) := rfl
+@[simp] theorem Op.next_set (r : Reg) (a : Var) (ρ : Env) (σ : State) (x : Word) :
+    (Op.set r a).next ρ σ x = (ρ, σ.setReg r (ρ a)) := rfl
+@[simp] theorem Op.next_getf (d : Var) (f : Flag) (ρ : Env) (σ : State) (x : Word) :
+    (Op.getf d f).next ρ σ x = (ρ.set d (ofBool (σ.flags f)), σ) := rfl
+@[simp] theorem Op.next_setf (f : Flag) (a : Var) (ρ : Env) (σ : State) (x : Word) :
+    (Op.setf f a).next ρ σ x = (ρ, σ.setFlag f (ρ a != 0#64)) := rfl
+@[simp] theorem Op.next_load (d a : Var) (w : Width) (ρ : Env) (σ : State) (x : Word) :
+    (Op.load d w a).next ρ σ x = (ρ.set d ((σ.mem.load (ρ a) w).getD 0#64), σ) := rfl
+@[simp] theorem Op.next_store (a v : Var) (w : Width) (ρ : Env) (σ : State) (x : Word) :
+    (Op.store w a v).next ρ σ x =
+      (ρ, { σ with mem := (σ.mem.store (ρ a) w (ρ v)).getD σ.mem }) := rfl
+@[simp] theorem Op.next_havoc (d : Var) (ρ : Env) (σ : State) (x : Word) :
+    (Op.havoc d).next ρ σ x = (ρ.set d x, σ) := rfl
+@[simp] theorem Op.next_guard (c : Var) (ρ : Env) (σ : State) (x : Word) :
+    (Op.guard c).next ρ σ x = (ρ, σ) := rfl
+
 /-- The operations as a function: the SSA values and the state after them, and their labels.
 `hv i` is the value the operation at position `i` takes if it is a `havoc`. -/
 def runOps : List Op → Env → State → (Nat → Word) → Env × State × Trace

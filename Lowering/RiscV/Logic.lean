@@ -16,6 +16,7 @@
 module
 
 public import Lowering.RiscV.Sound
+public import Lowering.RiscV.LeakSound
 public import Braid.Logic
 import Iris.BI.DerivedLaws
 
@@ -188,6 +189,42 @@ theorem machine_sound_flat {code : List (Word × Instr)} {blocks : List (Word ×
     (hsat : ∀ a ∈ flat, a.sat (abs s)) :
     ∃ n s' σ', stepN n s = some s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' :=
   triple_sound hlow ht hcode (rel_abs s) (Atoms.holds_of_sat_flat heq hpt hdisj hsat)
+
+/-! ## Traces -/
+
+/-- **A traced triple about lowered RISC-V code holds of the machine.** The machine runs to a
+state related to one part of which satisfies `post`, and the trace of the run, after `t`,
+is `t'`. -/
+theorem tripleT_sound {code : List (Word × Instr)} {blocks : List (Word × Block)}
+    {pre post : SProp} {t t' : Trace} {s : MachineState} {σ : State}
+    (hlow : blocks = code.map fun p => (p.1, lower p.1 p.2))
+    (ht : TripleT (Program.ofList blocks) pre t post t')
+    (hcode : ∀ p ∈ code, s.code p.1 = some p.2) (h : Rel s σ)
+    (hp : (iprop(pre ∗ True) : SProp) σ.heap) :
+    ∃ s' σ' tr, RunL s tr s' ∧ Rel s' σ' ∧ (iprop(post ∗ True) : SProp) σ'.heap ∧
+      t ++ tr = t' := by
+  subst hlow
+  obtain ⟨s', σ', tr, hrun, hr, hq, e⟩ :=
+    lowerCode_soundL rfl h ((ht.sound hp).of_le (ofList_le_lowerCode hcode))
+  exact ⟨s', σ', tr, hrun, hr, hq, e⟩
+
+/-- **A specification of leakage about lowered RISC-V code, as a theorem about the machine.**
+If the machine holds the instructions `code` and its state satisfies the atoms `flat`, which
+are the precondition `pre` with its arrays written out, it runs, without a trap and with the
+trace `ls`, to a state related to one that satisfies the atoms `post`. -/
+theorem machine_soundT {code : List (Word × Instr)} {blocks : List (Word × Block)}
+    {pre flat post : Atoms} {ls : Trace} {s : MachineState}
+    (hlow : blocks = code.map fun p => (p.1, lower p.1 p.2))
+    (ht : TripleT (Program.ofList blocks) (Atoms.interp pre) [] (Atoms.interp post) ls)
+    (hcode : ∀ p ∈ code, s.code p.1 = some p.2)
+    (heq : Atoms.interp pre = Atoms.interp flat)
+    (hpt : ∀ a ∈ flat, a.IsPointsTo) (hdisj : flat.Pairwise Atom.Disj)
+    (hsat : ∀ a ∈ flat, a.sat (abs s)) :
+    ∃ s' σ', RunL s ls s' ∧ Rel s' σ' ∧ (Atoms.interp post).holds iprop(True) σ' := by
+  obtain ⟨s', σ', tr, hrun, hr, hq, e⟩ := tripleT_sound hlow ht hcode (rel_abs s)
+    (Atoms.holds_of_sat_flat heq hpt hdisj hsat)
+  rw [List.nil_append] at e
+  exact ⟨s', σ', e ▸ hrun, hr, hq⟩
 
 /-! ## Out of the logic, for memory -/
 
