@@ -72,12 +72,12 @@ def BinOp.leaks : BinOp → Bool
   | .lanes _ op => op.leaks
   | _ => false
 
-/-- The labels of an operation. They depend on the SSA values it reads and on nothing else. -/
-def Op.leak : Op → Env → Trace
-  | .bin _ op a b, ρ => if op.leaks then [.operands (ρ a) (ρ b)] else []
-  | .load _ w a, ρ => [.read (ρ a) w.bytes]
-  | .store w a _, ρ => [.write (ρ a) w.bytes]
-  | _, _ => []
+/-- The labels of an operation, from the SSA values and the state it runs in. -/
+def Op.leak : Op → Env → State → Trace
+  | .bin _ op a b, ρ, _ => if op.leaks then [.operands (ρ a) (ρ b)] else []
+  | .load _ w a, ρ, _ => [.read (ρ a) w.bytes]
+  | .store w a _, ρ, _ => [.write (ρ a) w.bytes]
+  | _, _, _ => []
 
 /-- The labels of a terminator: where a conditional branch or a computed jump goes. -/
 def Term.leak : Term → Env → Trace
@@ -85,21 +85,21 @@ def Term.leak : Term → Env → Trace
   | .jumpInd a, ρ => [.jump (ρ a)]
   | _, _ => []
 
-@[simp] theorem Op.leak_const (d : Var) (v : Word) (ρ : Env) : (Op.const d v).leak ρ = [] := rfl
-@[simp] theorem Op.leak_un (d a : Var) (op : UnOp) (ρ : Env) : (Op.un d op a).leak ρ = [] := rfl
-@[simp] theorem Op.leak_bin (d a b : Var) (op : BinOp) (ρ : Env) :
-    (Op.bin d op a b).leak ρ = if op.leaks then [.operands (ρ a) (ρ b)] else [] := rfl
-@[simp] theorem Op.leak_select (d c a b : Var) (ρ : Env) : (Op.select d c a b).leak ρ = [] := rfl
-@[simp] theorem Op.leak_get (d : Var) (r : Reg) (ρ : Env) : (Op.get d r).leak ρ = [] := rfl
-@[simp] theorem Op.leak_set (r : Reg) (a : Var) (ρ : Env) : (Op.set r a).leak ρ = [] := rfl
-@[simp] theorem Op.leak_getf (d : Var) (f : Flag) (ρ : Env) : (Op.getf d f).leak ρ = [] := rfl
-@[simp] theorem Op.leak_setf (f : Flag) (a : Var) (ρ : Env) : (Op.setf f a).leak ρ = [] := rfl
-@[simp] theorem Op.leak_load (d a : Var) (w : Width) (ρ : Env) :
-    (Op.load d w a).leak ρ = [.read (ρ a) w.bytes] := rfl
-@[simp] theorem Op.leak_store (a v : Var) (w : Width) (ρ : Env) :
-    (Op.store w a v).leak ρ = [.write (ρ a) w.bytes] := rfl
-@[simp] theorem Op.leak_havoc (d : Var) (ρ : Env) : (Op.havoc d).leak ρ = [] := rfl
-@[simp] theorem Op.leak_guard (c : Var) (ρ : Env) : (Op.guard c).leak ρ = [] := rfl
+@[simp] theorem Op.leak_const (d : Var) (v : Word) (ρ : Env) (σ : State) : (Op.const d v).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_un (d a : Var) (op : UnOp) (ρ : Env) (σ : State) : (Op.un d op a).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_bin (d a b : Var) (op : BinOp) (ρ : Env) (σ : State) :
+    (Op.bin d op a b).leak ρ σ = if op.leaks then [.operands (ρ a) (ρ b)] else [] := rfl
+@[simp] theorem Op.leak_select (d c a b : Var) (ρ : Env) (σ : State) : (Op.select d c a b).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_get (d : Var) (r : Reg) (ρ : Env) (σ : State) : (Op.get d r).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_set (r : Reg) (a : Var) (ρ : Env) (σ : State) : (Op.set r a).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_getf (d : Var) (f : Flag) (ρ : Env) (σ : State) : (Op.getf d f).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_setf (f : Flag) (a : Var) (ρ : Env) (σ : State) : (Op.setf f a).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_load (d a : Var) (w : Width) (ρ : Env) (σ : State) :
+    (Op.load d w a).leak ρ σ = [.read (ρ a) w.bytes] := rfl
+@[simp] theorem Op.leak_store (a v : Var) (w : Width) (ρ : Env) (σ : State) :
+    (Op.store w a v).leak ρ σ = [.write (ρ a) w.bytes] := rfl
+@[simp] theorem Op.leak_havoc (d : Var) (ρ : Env) (σ : State) : (Op.havoc d).leak ρ σ = [] := rfl
+@[simp] theorem Op.leak_guard (c : Var) (ρ : Env) (σ : State) : (Op.guard c).leak ρ σ = [] := rfl
 
 @[simp] theorem Term.leak_jump (a : Word) (ρ : Env) : (Term.jump a).leak ρ = [] := rfl
 @[simp] theorem Term.leak_branch (c : Var) (t f : Word) (ρ : Env) :
@@ -113,7 +113,7 @@ def Term.leak : Term → Env → Trace
 /-- The weakest precondition of an operation run after the trace `t`: the postcondition is
 of the trace with the labels of the operation added. -/
 def Op.wpL (op : Op) (ρ : Env) (σ : State) (t : Trace) (Q : Env → State → Trace → Prop) : Prop :=
-  op.wp ρ σ fun ρ' σ' => Q ρ' σ' (t ++ op.leak ρ)
+  op.wp ρ σ fun ρ' σ' => Q ρ' σ' (t ++ op.leak ρ σ)
 
 /-- The weakest precondition of a list of operations, in order, after the trace `t`. -/
 def wpOpsL : List Op → Env → State → Trace → (Env → State → Trace → Prop) → Prop
@@ -279,7 +279,7 @@ def runOps : List Op → Env → State → (Nat → Word) → Env × State × Tr
   | [], ρ, σ, _ => (ρ, σ, [])
   | op :: ops, ρ, σ, hv =>
     let r := runOps ops (op.next ρ σ (hv 0)).1 (op.next ρ σ (hv 0)).2 fun i => hv (i + 1)
-    (r.1, r.2.1, op.leak ρ ++ r.2.2)
+    (r.1, r.2.1, op.leak ρ σ ++ r.2.2)
 
 /-- The labels of a block run from a state, given the values its `havoc`s take. -/
 def Block.leak (b : Block) (σ : State) (hv : Nat → Word) : Trace :=
@@ -292,7 +292,7 @@ theorem runOps_cons (op : Op) (ops : List Op) (ρ : Env) (σ : State) (hv : Nat 
     runOps (op :: ops) ρ σ hv =
       ((runOps ops (op.next ρ σ (hv 0)).1 (op.next ρ σ (hv 0)).2 fun i => hv (i + 1)).1,
        (runOps ops (op.next ρ σ (hv 0)).1 (op.next ρ σ (hv 0)).2 fun i => hv (i + 1)).2.1,
-       op.leak ρ ++
+       op.leak ρ σ ++
          (runOps ops (op.next ρ σ (hv 0)).1 (op.next ρ σ (hv 0)).2 fun i => hv (i + 1)).2.2) :=
   rfl
 

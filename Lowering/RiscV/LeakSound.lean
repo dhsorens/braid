@@ -34,7 +34,8 @@ theorem rget_next (h : Rel s σ) (d : Var) (r : Reg) (ρ : Env) (x : Word) :
   · rename_i hr
     simp only [Op.next, h.regs r hr, getReg_eq hr]
 
-@[simp] theorem rget_leak (d : Var) (r : Reg) (ρ : Env) : (rget d r).leak ρ = [] := by
+@[simp] theorem rget_leak (d : Var) (r : Reg) (ρ : Env) (σ : State) :
+    (rget d r).leak ρ σ = [] := by
   unfold rget; split <;> rfl
 
 @[simp] theorem runOps_rset_env (r : Reg) (a : Var) (ρ : Env) (σ : State) (hv : Nat → Word) :

@@ -116,12 +116,11 @@ theorem OpsSpecT.nil {ρ : Env} {as : Atoms} {t : Trace} {Φ : Env → Atoms →
 /-- **One operation, by its unlabelled rule.** The operation runs on the atoms as it does
 without a trace, and the rest of the block runs after the trace with its labels added. -/
 theorem OpsSpecT.cons {op : Op} {ops : List Op} {ρ : Env} {as : Atoms} {t t' : Trace}
-    {Φ : Env → Atoms → Trace → Prop} (he : t ++ op.leak ρ = t')
+    {Φ : Env → Atoms → Trace → Prop} (he : ∀ σ, t ++ op.leak ρ σ = t')
     (h : OpsSpec [op] ρ as fun ρ' as' => OpsSpecT ops ρ' as' t' Φ) :
     OpsSpecT (op :: ops) ρ as t Φ := by
-  subst he
   refine ⟨fun R σ hs => ?_⟩
-  simp only [wpOpsL, Op.wpL]
+  simp only [wpOpsL, Op.wpL, he σ]
   refine Op.wp_mono (h.run R σ hs) ?_
   rintro ρ' σ' ⟨as', hΦ, hs'⟩
   exact hΦ.run R σ' hs'

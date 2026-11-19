@@ -20,8 +20,8 @@ namespace Braid
 
 /-- The labels of an operation are the same in two environments that agree on what it
 reads. -/
-theorem Op.leak_agree {op : Op} {ρ ρ' : Env} (h : ∀ x ∈ op.uses, ρ x = ρ' x) :
-    op.leak ρ = op.leak ρ' := by
+theorem Op.leak_agree {op : Op} {ρ ρ' : Env} (σ : State) (h : ∀ x ∈ op.uses, ρ x = ρ' x) :
+    op.leak ρ σ = op.leak ρ' σ := by
   cases op <;> simp only [Op.uses, List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp,
     forall_eq] at h <;> simp only [Op.leak]
   case bin => rw [h.1, h.2]
@@ -47,19 +47,19 @@ variable {Φ : Env → Atoms → Trace → Prop}
 theorem const (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (Φ : Env → Atoms → Trace → Prop) (d : Var) (v : Word)
     (h : OpsSpecT ops (ρ.set d v) as t Φ) : OpsSpecT (.const d v :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t) (Rule.const [] ρ as _ d v (OpsSpec.nil h))
+  OpsSpecT.cons (fun _ => List.append_nil t) (Rule.const [] ρ as _ d v (OpsSpec.nil h))
 
 theorem un (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace) (Φ : Env → Atoms → Trace → Prop)
     (d a : Var) (op : UnOp) (va v : Word) (ha : ρ a = va) (hv : op.eval va = v)
     (h : OpsSpecT ops (ρ.set d v) as t Φ) : OpsSpecT (.un d op a :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t) (Rule.un [] ρ as _ d a op va v ha hv (OpsSpec.nil h))
+  OpsSpecT.cons (fun _ => List.append_nil t) (Rule.un [] ρ as _ d a op va v ha hv (OpsSpec.nil h))
 
 /-- A two-operand operation that reveals nothing. -/
 theorem bin (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (Φ : Env → Atoms → Trace → Prop) (d a b : Var) (op : BinOp) (va vb v : Word)
     (hl : op.leaks = false) (ha : ρ a = va) (hb : ρ b = vb) (hv : op.eval va vb = v)
     (h : OpsSpecT ops (ρ.set d v) as t Φ) : OpsSpecT (.bin d op a b :: ops) ρ as t Φ :=
-  OpsSpecT.cons (by simp [hl]) (Rule.bin [] ρ as _ d a b op va vb v ha hb hv (OpsSpec.nil h))
+  OpsSpecT.cons (fun _ => by simp [hl]) (Rule.bin [] ρ as _ d a b op va vb v ha hb hv (OpsSpec.nil h))
 
 /-- A two-operand operation that reveals its operands. -/
 theorem binLeak (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
@@ -67,45 +67,45 @@ theorem binLeak (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (hl : op.leaks = true) (ha : ρ a = va) (hb : ρ b = vb) (hv : op.eval va vb = v)
     (h : OpsSpecT ops (ρ.set d v) as (t ++ [.operands va vb]) Φ) :
     OpsSpecT (.bin d op a b :: ops) ρ as t Φ :=
-  OpsSpecT.cons (by simp [hl, ha, hb])
+  OpsSpecT.cons (fun _ => by simp [hl, ha, hb])
     (Rule.bin [] ρ as _ d a b op va vb v ha hb hv (OpsSpec.nil h))
 
 theorem select (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (Φ : Env → Atoms → Trace → Prop) (d c a b : Var) (vc va vb v : Word) (hc : ρ c = vc)
     (ha : ρ a = va) (hb : ρ b = vb) (hv : sel vc va vb = v)
     (h : OpsSpecT ops (ρ.set d v) as t Φ) : OpsSpecT (.select d c a b :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t)
+  OpsSpecT.cons (fun _ => List.append_nil t)
     (Rule.select [] ρ as _ d c a b vc va vb v hc ha hb hv (OpsSpec.nil h))
 
 theorem get (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace) (Φ : Env → Atoms → Trace → Prop)
     (d : Var) (r : Reg) (v : Word) (hat : as.At (.reg r v))
     (h : OpsSpecT ops (ρ.set d v) as t Φ) : OpsSpecT (.get d r :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t) (Rule.get [] ρ as _ d r v hat (OpsSpec.nil h))
+  OpsSpecT.cons (fun _ => List.append_nil t) (Rule.get [] ρ as _ d r v hat (OpsSpec.nil h))
 
 theorem set (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace) (as' : Atoms)
     (Φ : Env → Atoms → Trace → Prop) (a : Var) (r : Reg) (v₀ v : Word) (ha : ρ a = v)
     (hupd : as.Upd (.reg r v₀) (.reg r v) as') (h : OpsSpecT ops ρ as' t Φ) :
     OpsSpecT (.set r a :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t) (Rule.set [] ρ as as' _ a r v₀ v ha hupd (OpsSpec.nil h))
+  OpsSpecT.cons (fun _ => List.append_nil t) (Rule.set [] ρ as as' _ a r v₀ v ha hupd (OpsSpec.nil h))
 
 theorem getf (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (Φ : Env → Atoms → Trace → Prop) (d : Var) (f : Flag) (b : Bool) (v : Word)
     (hat : as.At (.flag f b)) (hv : ofBool b = v) (h : OpsSpecT ops (ρ.set d v) as t Φ) :
     OpsSpecT (.getf d f :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t) (Rule.getf [] ρ as _ d f b v hat hv (OpsSpec.nil h))
+  OpsSpecT.cons (fun _ => List.append_nil t) (Rule.getf [] ρ as _ d f b v hat hv (OpsSpec.nil h))
 
 theorem setf (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace) (as' : Atoms)
     (Φ : Env → Atoms → Trace → Prop) (a : Var) (f : Flag) (va : Word) (b₀ b : Bool)
     (ha : ρ a = va) (hv : bnz va = b) (hupd : as.Upd (.flag f b₀) (.flag f b) as')
     (h : OpsSpecT ops ρ as' t Φ) : OpsSpecT (.setf f a :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t)
+  OpsSpecT.cons (fun _ => List.append_nil t)
     (Rule.setf [] ρ as as' _ a f va b₀ b ha hv hupd (OpsSpec.nil h))
 
 theorem setf_any (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace) (as' : Atoms)
     (Φ : Env → Atoms → Trace → Prop) (a : Var) (f : Flag) (va : Word) (b : Bool)
     (ha : ρ a = va) (hv : bnz va = b) (hupd : as.Upd (.prop (flagAny f)) (.flag f b) as')
     (h : OpsSpecT ops ρ as' t Φ) : OpsSpecT (.setf f a :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t)
+  OpsSpecT.cons (fun _ => List.append_nil t)
     (Rule.setf_any [] ρ as as' _ a f va b ha hv hupd (OpsSpec.nil h))
 
 /-- A load reveals its address and its size. -/
@@ -114,7 +114,7 @@ theorem load (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (w : Bool) (ha : ρ a = addr) (hat : as.At (.mem addr n v w)) (hn : n = W.bytes)
     (hv : ld W v = v') (h : OpsSpecT ops (ρ.set d v') as (t ++ [.read addr n]) Φ) :
     OpsSpecT (.load d W a :: ops) ρ as t Φ :=
-  OpsSpecT.cons (by simp [ha, hn])
+  OpsSpecT.cons (fun _ => by simp [ha, hn])
     (Rule.load [] ρ as _ d a W addr v v' n w ha hat hn hv (OpsSpec.nil h))
 
 /-- A store reveals its address and its size. -/
@@ -123,18 +123,18 @@ theorem store (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace) (as' : Atoms)
     (ha : ρ a = addr) (hx : ρ x = xv)
     (hupd : as.Upd (.mem addr n v true) (.mem addr n xv true) as') (hn : n = W.bytes)
     (h : OpsSpecT ops ρ as' (t ++ [.write addr n]) Φ) : OpsSpecT (.store W a x :: ops) ρ as t Φ :=
-  OpsSpecT.cons (by simp [ha, hn])
+  OpsSpecT.cons (fun _ => by simp [ha, hn])
     (Rule.store [] ρ as as' _ a x W addr v xv n ha hx hupd hn (OpsSpec.nil h))
 
 theorem havoc (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (Φ : Env → Atoms → Trace → Prop) (d : Var) (h : ∀ v, OpsSpecT ops (ρ.set d v) as t Φ) :
     OpsSpecT (.havoc d :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t) (Rule.havoc [] ρ as _ d fun v => OpsSpec.nil (h v))
+  OpsSpecT.cons (fun _ => List.append_nil t) (Rule.havoc [] ρ as _ d fun v => OpsSpec.nil (h v))
 
 theorem guard (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace)
     (Φ : Env → Atoms → Trace → Prop) (c : Var) (vc : Word) (hc : ρ c = vc) (hne : nz vc)
     (h : OpsSpecT ops ρ as t Φ) : OpsSpecT (.guard c :: ops) ρ as t Φ :=
-  OpsSpecT.cons (List.append_nil t) (Rule.guard [] ρ as _ c vc hc hne (OpsSpec.nil h))
+  OpsSpecT.cons (fun _ => List.append_nil t) (Rule.guard [] ρ as _ c vc hc hne (OpsSpec.nil h))
 
 /-! ## Flags that hold some value -/
 
@@ -146,8 +146,8 @@ theorem wpOpsL_agree {ops : List Op} {live : List Var} {ρ ρ' : Env} {σ : Stat
   | nil => exact hQ _ _ _ _ h hw
   | cons op ops ih =>
     simp only [wpOpsL, Op.wpL] at hw ⊢
-    have hl : op.leak ρ = op.leak ρ' :=
-      Op.leak_agree fun x hx => h x (List.mem_append_left _ hx)
+    have hl : op.leak ρ σ = op.leak ρ' σ :=
+      Op.leak_agree σ fun x hx => h x (List.mem_append_left _ hx)
     rw [← hl]
     exact Op.wp_agree h (fun _ _ _ ha hq => ih ha hq) hw
 
@@ -172,9 +172,9 @@ theorem havoc_setf (ops : List Op) (ρ : Env) (as : Atoms) (t : Trace) (as' : At
     (hupd : as.Upd a (.prop (flagAny f)) as')
     (h : OpsSpecT ops ρ as' t fun ρ as' u => TermSpecT tm ρ as' u Ψ) :
     OpsSpecT (.havoc d :: .setf f d :: ops) ρ as t fun ρ as' u => TermSpecT tm ρ as' u Ψ := by
-  refine OpsSpecT.cons (List.append_nil t) (OpsSpec.havoc fun v => OpsSpec.nil ?_)
+  refine OpsSpecT.cons (fun _ => List.append_nil t) (OpsSpec.havoc fun v => OpsSpec.nil ?_)
   obtain ⟨as₁, h₁, h₂⟩ := upd_via (.flag f ((ρ.set d v) d != 0#64)) hupd
-  refine OpsSpecT.cons (List.append_nil t) (setf_core ha h₁ (weaken (flag_any f _) h₂
+  refine OpsSpecT.cons (fun _ => List.append_nil t) (setf_core ha h₁ (weaken (flag_any f _) h₂
     (OpsSpec.nil (env_agree (fun x hx => ?_) h))))
   have hne : x ≠ d := fun e => by
     subst e
