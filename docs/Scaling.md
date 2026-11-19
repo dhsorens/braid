@@ -181,18 +181,32 @@ operation that reveals nothing is the same as before, with one more argument to 
 `TRACED=1 Examples/scaling/run.sh` measures it, on the same function.
 
 Milliseconds per instruction, and in brackets the seconds to check the whole file. At
-N = 10 the proof costs less than the noise in starting Lean.
+N = 10 the proof costs less than the noise in starting Lean, and at N = 100 the difference
+of two measurements of about two seconds is noise within a factor of two. *Before* is the
+benchmark before a step of the dialect carried a label. *After* is the benchmark as it is
+now, with labels of both kinds (what a step reveals, and events of the environment) and
+with `Eventually` and `Triple` derived from the labelled step: the same theorem as before,
+and the same function proved with a traced triple.
 
 | | N = 10 | N = 100 | N = 1000 |
 | --- | --- | --- | --- |
-| AArch64, triple (before) | (1.1) | 2.0 (2.1) | 1.7 (5.9) |
-| AArch64, traced triple | (1.1) | 2.0 (2.1) | 1.8 (6.3) |
-| x86-64, triple (before) | (1.2) | 13.0 (3.4) | 9.6 (18.1) |
-| x86-64, traced triple | (1.3) | 7.0 (2.7) | 10.2 (19.0) |
+| AArch64, triple, before | (1.1) | 2.0 (2.1) | 1.7 (5.9) |
+| AArch64, triple, after | (1.0) | 1.0 (1.8) | 1.7 (5.5) |
+| AArch64, traced triple, after | (1.1) | 2.0 (1.9) | 1.6 (5.6) |
+| x86-64, triple, before | (1.2) | 13.0 (3.4) | 9.6 (18.1) |
+| x86-64, triple, after | (1.1) | 4.0 (2.6) | 8.6 (16.5) |
+| x86-64, traced triple, after | (1.1) | 7.0 (2.6) | 9.1 (17.2) |
 
-At N = 1000 a traced triple costs 6% more on both. The benchmark function reveals little: one
-load and one jump, at its return. A function that touches memory at every other instruction
-adds a label that often, and each is one more node of the trace.
+Labelled steps cost nothing that can be measured: at N = 1000 a triple costs what it did,
+and a traced triple is within 6% of it on both, well inside the factor of 1.5 that was the
+limit set for the change. The benchmark function reveals little: one load and one jump, at
+its return. A function that touches memory at every other instruction adds a label that
+often, and each is one more node of the trace; the ladder below measures that, function by
+function.
+
+The benchmark is of AArch64 and x86-64, as it was before labelled steps: its generator
+writes assembly for those two, and there is no figure for RISC-V from before to compare
+with. On RISC-V the cost is measured on the ladder.
 
 ## The ladder
 
