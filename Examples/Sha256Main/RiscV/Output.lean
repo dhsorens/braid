@@ -25,32 +25,11 @@ namespace Examples.Sha256Main.RiscV
 
 open Braid Examples Examples.Sha256 Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
 
-/-- Replace the value of a one-byte cell of the symbolic state by one with the same low
-byte. -/
-theorem _root_.Braid.TripleT.mem1_val {P : Program} {as as' : Atoms} {a v : Word} {w : Bool}
-    {t t' : Trace} (v' : Word) {Q : SProp} (hupd : as.Upd (.mem a 1 v w) (.mem a 1 v' w) as')
-    (he : v.truncate 8 = v'.truncate 8)
-    (h : TripleT P (Atoms.interp as') t Q t') : TripleT P (Atoms.interp as) t Q t' := by
-  obtain ⟨F, e, e'⟩ := hupd.split
-  have em : (Atom.mem a 1 v w).interp = (Atom.mem a 1 v' w).interp := by
-    show memIs a 1 v w = memIs a 1 v' w
-    funext h
-    simp only [memIs, Heap.bytes_byte a v w, Heap.bytes_byte a v' w, he]
-  rw [e, em]; rw [e'] at h
-  exact h
-
 /-- Give a one-byte cell of the symbolic state the byte `b`, which is its low byte:
 `out_byte a, b`. -/
 local macro "out_byte " a:term ", " b:term : tactic =>
   `(tactic| (refine TripleT.mem1_val (a := $a) (BitVec.zeroExtend 64 $b) (by braid_upd) ?_ ?_
              · bv_decide))
-
-theorem w32s_cons (x : W32) (xs : List W32) : w32s (x :: xs) = x.setWidth 64 :: w32s xs := rfl
-
-theorem flatMap_wordBytes_cons (x : W32) (xs : List W32) :
-    (x :: xs).flatMap wordBytes =
-      (x >>> 24).setWidth 8 :: (x >>> 16).setWidth 8 :: (x >>> 8).setWidth 8 :: x.setWidth 8 ::
-        xs.flatMap wordBytes := rfl
 
 /-- What the loop that writes the digest out as bytes reveals, with `n + 1` words to go: the
 word read at `hq`, the four bytes written from `oq` on, and the branch. -/

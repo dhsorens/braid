@@ -118,19 +118,6 @@ def blocksLeak (n : Nat) (b : Nat) : Nat → Trace
   | 0 => blockLeak n b 0x105e4#64
   | r + 1 => blockLeak n b 0x1055c#64 ++ blocksLeak n (b + 1) r
 
-/-- The compression of a hash value of eight words is eight words. -/
-theorem compress_length (H M : List W32) (h : H.length = 8) : (compress H M).length = 8 := by
-  obtain ⟨h0, h1, h2, h3, h4, h5, h6, h7, rfl⟩ := eq_of_length_8 h
-  rfl
-
-theorem ult_false {a b : Word} (h : b.toNat ≤ a.toNat) : a.ult b = false := by
-  rw [← Bool.not_eq_true, BitVec.ult_iff_lt]
-  bv_omega
-
-theorem ult_true {a b : Word} (h : a.toNat < b.toNat) : a.ult b = true := by
-  rw [BitVec.ult_iff_lt]
-  bv_omega
-
 /-- Forget what the loop over the blocks leaves behind, but for the hash value. -/
 local macro "blocks_forget" : tactic =>
   `(tactic| (braid_forget 1; braid_forget 8; braid_forget 9; braid_forget 18; braid_forget 19

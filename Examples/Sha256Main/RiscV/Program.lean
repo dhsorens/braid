@@ -20,7 +20,7 @@
 module
 
 public import Examples.Sha256Main.RiscV.Image
-public import Examples.Sha256Main.Common
+public import Examples.Sha256Main.Shared
 public import Examples.Sha256.RiscV.Compress
 public import Examples.Sha256.RiscV.LeakCompress
 

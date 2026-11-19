@@ -35,69 +35,6 @@ theorem rodata_eq : sha256_main_section_rodata = (w32s K).flatMap (leBytes 4) :=
 
 /-! ## The lengths, as the code computes them -/
 
-/-- The padded length less a block: the length and eight, rounded down to a block. -/
-theorem total_mask (n : Nat) (hn : n < 2 ^ 32) :
-    BitVec.ofNat 64 n + 8#64 &&& 18446744073709551552#64 = BitVec.ofNat 64 (total n - 64) := by
-  have key : ∀ x : Word, x &&& 18446744073709551552#64 = (x >>> 6) <<< 6 := by
-    intro x; bv_decide
-  rw [key]
-  simp only [total]
-  bv_omega
-
-/-- The shift of the first byte of the length, as the code computes it. -/
-theorem total_shift (n : Nat) (hn : n < 2 ^ 32) :
-    (BitVec.ofNat 64 n + 8#64) <<< 3#64 ||| 504#64 =
-      BitVec.ofNat 64 (8 * (total n - 1 - 64 * 0)) := by
-  have key : ∀ x : Word, x <<< 3#64 ||| 504#64 =
-      ((x &&& 18446744073709551552#64) + 63#64) * 8#64 := by
-    intro x; bv_decide
-  have hT : 64 ≤ total n := by simp only [total]; omega
-  have hT' := total_lt n
-  rw [key, total_mask n hn]
-  bv_omega
-
-theorem shl3 (n : Nat) : BitVec.ofNat 64 n <<< 3#64 = BitVec.ofNat 64 (8 * n) := by
-  have key : ∀ x : Word, x <<< 3#64 = x * 8#64 := by intro x; bv_decide
-  rw [key]
-  bv_omega
-
-/-- A hash value of eight words stays one of eight words, block after block. -/
-theorem foldl_compress_length (Ms : List (List W32)) : ∀ (H : List W32), H.length = 8 →
-    (Ms.foldl compress H).length = 8 := by
-  induction Ms with
-  | nil => exact fun H h => h
-  | cons M Ms ih => exact fun H h => ih _ (compress_length H M h)
-
-/-- The digest is the hash value after the blocks of the padded message, as bytes. -/
-theorem sha256_eq_foldl (msg : List (BitVec 8)) (r : Nat)
-    (hr : 64 * (0 + r + 1) = total msg.length) :
-    sha256 msg =
-      (((List.range' 0 (r + 1)).map (block msg)).foldl compress H0).flatMap wordBytes := by
-  rw [sha256_eq, blocks, List.range_eq_range', show total msg.length / 64 = r + 1 from by omega]
-
-/-- Eight words are 32 bytes. -/
-theorem flatMap_wordBytes_length (H : List W32) : (H.flatMap wordBytes).length = 4 * H.length := by
-  induction H with
-  | nil => rfl
-  | cons x xs ih => simp [wordBytes, ih]; omega
-
-theorem H0_eq : H0 = [0x6a09e667#32, 0xbb67ae85#32, 0x3c6ef372#32, 0xa54ff53a#32,
-    0x510e527f#32, 0x9b05688c#32, 0x1f83d9ab#32, 0x5be0cd19#32] := rfl
-
-/-- Replace the value of a 32-bit cell of the symbolic state by one with the same low 32
-bits. -/
-theorem _root_.Braid.TripleT.mem4_val {P : Program} {as as' : Atoms} {a v : Word} {w : Bool}
-    {t t' : Trace} (v' : Word) {Q : SProp} (hupd : as.Upd (.mem a 4 v w) (.mem a 4 v' w) as')
-    (he : v.setWidth 32 = v'.setWidth 32)
-    (h : TripleT P (Atoms.interp as') t Q t') : TripleT P (Atoms.interp as) t Q t' := by
-  obtain ⟨F, e, e'⟩ := hupd.split
-  have em : (Atom.mem a 4 v w).interp = (Atom.mem a 4 v' w).interp := by
-    show memIs a 4 v w = memIs a 4 v' w
-    funext h
-    simp only [memIs, Heap.bytes_setWidth32 a v w, Heap.bytes_setWidth32 a v' w, he]
-  rw [e, em]; rw [e'] at h
-  exact h
-
 /-- Give a 32-bit cell of the symbolic state the 32-bit value `v`, which is its low half:
 `main_cell a, v`. -/
 local macro "main_cell " a:term ", " v:term : tactic =>

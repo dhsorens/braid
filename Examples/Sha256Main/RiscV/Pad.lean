@@ -28,20 +28,6 @@ namespace Examples.Sha256Main.RiscV
 
 open Braid Examples Examples.Sha256 Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
 
-/-- An array of bytes, opened at index `i`. -/
-theorem bytesAt_index (p : Word) (bs : List (BitVec 8)) (i : Nat) (hi : i < bs.length) :
-    (Atom.prop (bytesAt p bs)).interp =
-      Atoms.interp [.prop (bytesAt p (bs.take i)),
-        .mem (p + BitVec.ofNat 64 i) 1 ((bs.getD i 0#8).zeroExtend 64) true,
-        .prop (bytesAt (p + BitVec.ofNat 64 i + 1#64) (bs.drop (i + 1)))] := by
-  rw [bytesAt_split p bs i (Nat.le_of_lt hi)]
-  have hd : bs.drop i = bs.getD i 0#8 :: bs.drop (i + 1) := by
-    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
-    exact List.drop_eq_getElem_cons hi
-  simp only [Atoms.interp_cons, Atoms.interp_nil, Atom.interp, hd, bytesAt]
-  exact SProp.ext ⟨Iris.BI.sep_mono_right Iris.BI.sep_assoc.1,
-    Iris.BI.sep_mono_right Iris.BI.sep_assoc.2⟩
-
 /-- A byte of a word, as the code takes it: shifted down by a register and masked. -/
 theorem srl_byte (v : Word) (m : Nat) (hm : m < 64) :
     v >>> (BitVec.ofNat 64 m &&& 63#64) &&& 255#64 = ((v >>> m).setWidth 8).setWidth 64 := by
@@ -148,21 +134,6 @@ theorem byte_step (msg : List (BitVec 8)) (k : Nat) (x14 x16 x17 x5 x6 e : Word)
 
 /-! ## One word -/
 
-/-- An array with one more cell at its end, which is at `q`. -/
-theorem cellsAt_snoc (p q v : Word) (xs : List Word) (k : Nat) (w : Bool)
-    (hq : q = p + BitVec.ofNat 64 (k * xs.length)) :
-    (Atom.prop (cellsAt k w p (xs ++ [v]))).interp =
-      Atoms.interp [.prop (cellsAt k w p xs), .mem q k v w] := by
-  subst hq
-  have e : cellsAt k w (p + BitVec.ofNat 64 (k * xs.length)) [v] =
-      memIs (p + BitVec.ofNat 64 (k * xs.length)) k v w :=
-    SProp.ext ⟨Iris.BI.sep_emp.1, Iris.BI.sep_emp.2⟩
-  rw [cellsAt_append, sep_interp_pair, e]
-  rfl
-
-/-- An index scaled by four, as the code computes it. -/
-theorem shl2 (x : Word) : x <<< 2#64 = x * 4#64 := by bv_decide
-
 /-- Four bytes shifted into a register one after another are their big-endian word. -/
 theorem be32_bytes (msg : List (BitVec 8)) (b j : Nat) :
     (padByte msg (64 * b + 4 * j + 3)).setWidth 64 |||
@@ -258,12 +229,6 @@ theorem word_step (msg : List (BitVec 8)) (b j : Nat) (x10 x11 x12 x13 x14 x15 x
 def wordsLeak (n b : Nat) (j : Nat) : Nat → Trace
   | 0 => wordLeak n b j 0x10540#64
   | r + 1 => wordLeak n b j 0x10588#64 ++ wordsLeak n b (j + 1) r
-
-/-- The words of a block, the first `j` and one more. -/
-theorem w32s_range_succ (msg : List (BitVec 8)) (b j : Nat) :
-    w32s ((List.range j).map (blockWord msg b)) ++ [(blockWord msg b j).setWidth 64] =
-      w32s ((List.range (j + 1)).map (blockWord msg b)) := by
-  simp [w32s, List.range_succ]
 
 /-- **The loop that pads a block.** From word `j` on, the loop writes the words of block `b`
 of the padded message to the sixteen cells at `0x10d90`, and reveals `wordsLeak`. -/
