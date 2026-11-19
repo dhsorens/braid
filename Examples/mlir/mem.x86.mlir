@@ -343,5 +343,294 @@
       %bb26_3 = "braid.add"(%bb26_0, %bb26_2) : (i64, i64) -> i64
       "braid.set"(%bb26_3) {reg = "rsp"} : (i64) -> ()
       "braid_cf.br_ind"(%bb26_1) : (i64) -> ()
+    ^bb27:  // 0x401047
+      "braid_cf.br"()[^ext401050] : () -> ()
+    ^ext401050:
+      "braid_cf.tail"() {target = 4198480 : i64} : () -> ()
   }) {sym_name = "equal_bytes", entry = 4198432 : i64} : () -> ()
+  "braid_cf.func"() ({
+      "braid_cf.br"()[^bb0] : () -> ()
+    ^bb0:  // 0x401050
+      %bb0_0 = "braid.get"() {reg = "rdx"} : () -> i64
+      %bb0_8 = "braid.get"() {reg = "rdx"} : () -> i64
+      %bb0_16 = "braid.and"(%bb0_0, %bb0_8) : (i64, i64) -> i64
+      %bb0_17 = "braid.const"() {value = 0 : i64} : () -> i64
+      "braid.setf"(%bb0_17) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb0_17) {flag = "of"} : (i64) -> ()
+      %bb0_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb0_24) {flag = "af"} : (i64) -> ()
+      %bb0_32 = "braid.zext"(%bb0_16) {bits = 8 : i64} : (i64) -> i64
+      %bb0_33 = "braid.popcnt"(%bb0_32) : (i64) -> i64
+      %bb0_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb0_35 = "braid.and"(%bb0_33, %bb0_34) : (i64, i64) -> i64
+      %bb0_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb0_37 = "braid.eq"(%bb0_35, %bb0_36) : (i64, i64) -> i64
+      "braid.setf"(%bb0_37) {flag = "pf"} : (i64) -> ()
+      %bb0_38 = "braid.eq"(%bb0_16, %bb0_36) : (i64, i64) -> i64
+      "braid.setf"(%bb0_38) {flag = "zf"} : (i64) -> ()
+      %bb0_39 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
+      %bb0_40 = "braid.and"(%bb0_16, %bb0_39) : (i64, i64) -> i64
+      "braid.setf"(%bb0_40) {flag = "sf"} : (i64) -> ()
+      "braid_cf.br"()[^bb3] : () -> ()
+    ^bb3:  // 0x401053
+      %bb3_0 = "braid.getf"() {flag = "zf"} : () -> i64
+      "braid_cf.cond_br"(%bb3_0)[^bb2c, ^bb5] : (i64) -> ()
+    ^bb5:  // 0x401055
+      %bb5_1 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb5_0 = "braid.zext"(%bb5_1) {bits = 32 : i64} : (i64) -> i64
+      %bb5_9 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb5_8 = "braid.zext"(%bb5_9) {bits = 32 : i64} : (i64) -> i64
+      %bb5_16 = "braid.xor"(%bb5_0, %bb5_8) : (i64, i64) -> i64
+      %bb5_17 = "braid.const"() {value = 0 : i64} : () -> i64
+      "braid.setf"(%bb5_17) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb5_17) {flag = "of"} : (i64) -> ()
+      %bb5_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb5_24) {flag = "af"} : (i64) -> ()
+      %bb5_32 = "braid.zext"(%bb5_16) {bits = 8 : i64} : (i64) -> i64
+      %bb5_33 = "braid.popcnt"(%bb5_32) : (i64) -> i64
+      %bb5_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb5_35 = "braid.and"(%bb5_33, %bb5_34) : (i64, i64) -> i64
+      %bb5_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb5_37 = "braid.eq"(%bb5_35, %bb5_36) : (i64, i64) -> i64
+      "braid.setf"(%bb5_37) {flag = "pf"} : (i64) -> ()
+      %bb5_38 = "braid.eq"(%bb5_16, %bb5_36) : (i64, i64) -> i64
+      "braid.setf"(%bb5_38) {flag = "zf"} : (i64) -> ()
+      %bb5_39 = "braid.const"() {value = 2147483648 : i64} : () -> i64
+      %bb5_40 = "braid.and"(%bb5_16, %bb5_39) : (i64, i64) -> i64
+      "braid.setf"(%bb5_40) {flag = "sf"} : (i64) -> ()
+      "braid.set"(%bb5_16) {reg = "rax"} : (i64) -> ()
+      "braid_cf.br"()[^bb7] : () -> ()
+    ^bb7:  // 0x401057
+      %bb7_1 = "braid.get"() {reg = "rcx"} : () -> i64
+      %bb7_0 = "braid.zext"(%bb7_1) {bits = 32 : i64} : (i64) -> i64
+      %bb7_9 = "braid.get"() {reg = "rcx"} : () -> i64
+      %bb7_8 = "braid.zext"(%bb7_9) {bits = 32 : i64} : (i64) -> i64
+      %bb7_16 = "braid.xor"(%bb7_0, %bb7_8) : (i64, i64) -> i64
+      %bb7_17 = "braid.const"() {value = 0 : i64} : () -> i64
+      "braid.setf"(%bb7_17) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb7_17) {flag = "of"} : (i64) -> ()
+      %bb7_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb7_24) {flag = "af"} : (i64) -> ()
+      %bb7_32 = "braid.zext"(%bb7_16) {bits = 8 : i64} : (i64) -> i64
+      %bb7_33 = "braid.popcnt"(%bb7_32) : (i64) -> i64
+      %bb7_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb7_35 = "braid.and"(%bb7_33, %bb7_34) : (i64, i64) -> i64
+      %bb7_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb7_37 = "braid.eq"(%bb7_35, %bb7_36) : (i64, i64) -> i64
+      "braid.setf"(%bb7_37) {flag = "pf"} : (i64) -> ()
+      %bb7_38 = "braid.eq"(%bb7_16, %bb7_36) : (i64, i64) -> i64
+      "braid.setf"(%bb7_38) {flag = "zf"} : (i64) -> ()
+      %bb7_39 = "braid.const"() {value = 2147483648 : i64} : () -> i64
+      %bb7_40 = "braid.and"(%bb7_16, %bb7_39) : (i64, i64) -> i64
+      "braid.setf"(%bb7_40) {flag = "sf"} : (i64) -> ()
+      "braid.set"(%bb7_16) {reg = "rcx"} : (i64) -> ()
+      "braid_cf.br"()[^bb9] : () -> ()
+    ^bb9:  // 0x401059
+      "braid_cf.br"()[^bb10] : () -> ()
+    ^bb10:  // 0x401060
+      %bb10_2 = "braid.get"() {reg = "rsi"} : () -> i64
+      %bb10_3 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb10_4 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb10_5 = "braid.mul"(%bb10_3, %bb10_4) : (i64, i64) -> i64
+      %bb10_6 = "braid.add"(%bb10_2, %bb10_5) : (i64, i64) -> i64
+      %bb10_7 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb10_1 = "braid.add"(%bb10_6, %bb10_7) : (i64, i64) -> i64
+      %bb10_0 = "braid.load"(%bb10_1) {bytes = 1 : i64} : (i64) -> i64
+      "braid.set"(%bb10_0) {reg = "r8"} : (i64) -> ()
+      "braid_cf.br"()[^bb15] : () -> ()
+    ^bb15:  // 0x401065
+      %bb15_1 = "braid.get"() {reg = "r8"} : () -> i64
+      %bb15_0 = "braid.zext"(%bb15_1) {bits = 8 : i64} : (i64) -> i64
+      %bb15_10 = "braid.get"() {reg = "rdi"} : () -> i64
+      %bb15_11 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb15_12 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb15_13 = "braid.mul"(%bb15_11, %bb15_12) : (i64, i64) -> i64
+      %bb15_14 = "braid.add"(%bb15_10, %bb15_13) : (i64, i64) -> i64
+      %bb15_15 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb15_9 = "braid.add"(%bb15_14, %bb15_15) : (i64, i64) -> i64
+      %bb15_8 = "braid.load"(%bb15_9) {bytes = 1 : i64} : (i64) -> i64
+      %bb15_16 = "braid.xor"(%bb15_0, %bb15_8) : (i64, i64) -> i64
+      %bb15_17 = "braid.const"() {value = 0 : i64} : () -> i64
+      "braid.setf"(%bb15_17) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb15_17) {flag = "of"} : (i64) -> ()
+      %bb15_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb15_24) {flag = "af"} : (i64) -> ()
+      %bb15_32 = "braid.zext"(%bb15_16) {bits = 8 : i64} : (i64) -> i64
+      %bb15_33 = "braid.popcnt"(%bb15_32) : (i64) -> i64
+      %bb15_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb15_35 = "braid.and"(%bb15_33, %bb15_34) : (i64, i64) -> i64
+      %bb15_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb15_37 = "braid.eq"(%bb15_35, %bb15_36) : (i64, i64) -> i64
+      "braid.setf"(%bb15_37) {flag = "pf"} : (i64) -> ()
+      %bb15_38 = "braid.eq"(%bb15_16, %bb15_36) : (i64, i64) -> i64
+      "braid.setf"(%bb15_38) {flag = "zf"} : (i64) -> ()
+      %bb15_39 = "braid.const"() {value = 128 : i64} : () -> i64
+      %bb15_40 = "braid.and"(%bb15_16, %bb15_39) : (i64, i64) -> i64
+      "braid.setf"(%bb15_40) {flag = "sf"} : (i64) -> ()
+      %bb15_48 = "braid.get"() {reg = "r8"} : () -> i64
+      %bb15_49 = "braid.const"() {value = -256 : i64} : () -> i64
+      %bb15_50 = "braid.and"(%bb15_48, %bb15_49) : (i64, i64) -> i64
+      %bb15_51 = "braid.or"(%bb15_50, %bb15_16) : (i64, i64) -> i64
+      "braid.set"(%bb15_51) {reg = "r8"} : (i64) -> ()
+      "braid_cf.br"()[^bb19] : () -> ()
+    ^bb19:  // 0x401069
+      %bb19_1 = "braid.get"() {reg = "rcx"} : () -> i64
+      %bb19_0 = "braid.zext"(%bb19_1) {bits = 8 : i64} : (i64) -> i64
+      %bb19_9 = "braid.get"() {reg = "r8"} : () -> i64
+      %bb19_8 = "braid.zext"(%bb19_9) {bits = 8 : i64} : (i64) -> i64
+      %bb19_16 = "braid.or"(%bb19_0, %bb19_8) : (i64, i64) -> i64
+      %bb19_17 = "braid.const"() {value = 0 : i64} : () -> i64
+      "braid.setf"(%bb19_17) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb19_17) {flag = "of"} : (i64) -> ()
+      %bb19_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb19_24) {flag = "af"} : (i64) -> ()
+      %bb19_32 = "braid.zext"(%bb19_16) {bits = 8 : i64} : (i64) -> i64
+      %bb19_33 = "braid.popcnt"(%bb19_32) : (i64) -> i64
+      %bb19_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb19_35 = "braid.and"(%bb19_33, %bb19_34) : (i64, i64) -> i64
+      %bb19_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb19_37 = "braid.eq"(%bb19_35, %bb19_36) : (i64, i64) -> i64
+      "braid.setf"(%bb19_37) {flag = "pf"} : (i64) -> ()
+      %bb19_38 = "braid.eq"(%bb19_16, %bb19_36) : (i64, i64) -> i64
+      "braid.setf"(%bb19_38) {flag = "zf"} : (i64) -> ()
+      %bb19_39 = "braid.const"() {value = 128 : i64} : () -> i64
+      %bb19_40 = "braid.and"(%bb19_16, %bb19_39) : (i64, i64) -> i64
+      "braid.setf"(%bb19_40) {flag = "sf"} : (i64) -> ()
+      %bb19_48 = "braid.get"() {reg = "rcx"} : () -> i64
+      %bb19_49 = "braid.const"() {value = -256 : i64} : () -> i64
+      %bb19_50 = "braid.and"(%bb19_48, %bb19_49) : (i64, i64) -> i64
+      %bb19_51 = "braid.or"(%bb19_50, %bb19_16) : (i64, i64) -> i64
+      "braid.set"(%bb19_51) {reg = "rcx"} : (i64) -> ()
+      "braid_cf.br"()[^bb1c] : () -> ()
+    ^bb1c:  // 0x40106c
+      %bb1c_0 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb1c_8 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb1c_16 = "braid.add"(%bb1c_0, %bb1c_8) : (i64, i64) -> i64
+      %bb1c_19 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
+      %bb1c_20 = "braid.eq"(%bb1c_16, %bb1c_19) : (i64, i64) -> i64
+      "braid.setf"(%bb1c_20) {flag = "of"} : (i64) -> ()
+      %bb1c_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb1c_24) {flag = "af"} : (i64) -> ()
+      %bb1c_32 = "braid.zext"(%bb1c_16) {bits = 8 : i64} : (i64) -> i64
+      %bb1c_33 = "braid.popcnt"(%bb1c_32) : (i64) -> i64
+      %bb1c_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb1c_35 = "braid.and"(%bb1c_33, %bb1c_34) : (i64, i64) -> i64
+      %bb1c_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb1c_37 = "braid.eq"(%bb1c_35, %bb1c_36) : (i64, i64) -> i64
+      "braid.setf"(%bb1c_37) {flag = "pf"} : (i64) -> ()
+      %bb1c_38 = "braid.eq"(%bb1c_16, %bb1c_36) : (i64, i64) -> i64
+      "braid.setf"(%bb1c_38) {flag = "zf"} : (i64) -> ()
+      %bb1c_39 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
+      %bb1c_40 = "braid.and"(%bb1c_16, %bb1c_39) : (i64, i64) -> i64
+      "braid.setf"(%bb1c_40) {flag = "sf"} : (i64) -> ()
+      "braid.set"(%bb1c_16) {reg = "rax"} : (i64) -> ()
+      "braid_cf.br"()[^bb1f] : () -> ()
+    ^bb1f:  // 0x40106f
+      %bb1f_0 = "braid.get"() {reg = "rdx"} : () -> i64
+      %bb1f_8 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb1f_16 = "braid.sub"(%bb1f_0, %bb1f_8) : (i64, i64) -> i64
+      %bb1f_18 = "braid.ult"(%bb1f_0, %bb1f_8) : (i64, i64) -> i64
+      "braid.setf"(%bb1f_18) {flag = "cf"} : (i64) -> ()
+      %bb1f_19 = "braid.xor"(%bb1f_0, %bb1f_8) : (i64, i64) -> i64
+      %bb1f_20 = "braid.xor"(%bb1f_0, %bb1f_16) : (i64, i64) -> i64
+      %bb1f_21 = "braid.and"(%bb1f_19, %bb1f_20) : (i64, i64) -> i64
+      %bb1f_22 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
+      %bb1f_23 = "braid.and"(%bb1f_21, %bb1f_22) : (i64, i64) -> i64
+      "braid.setf"(%bb1f_23) {flag = "of"} : (i64) -> ()
+      %bb1f_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb1f_24) {flag = "af"} : (i64) -> ()
+      %bb1f_32 = "braid.zext"(%bb1f_16) {bits = 8 : i64} : (i64) -> i64
+      %bb1f_33 = "braid.popcnt"(%bb1f_32) : (i64) -> i64
+      %bb1f_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb1f_35 = "braid.and"(%bb1f_33, %bb1f_34) : (i64, i64) -> i64
+      %bb1f_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb1f_37 = "braid.eq"(%bb1f_35, %bb1f_36) : (i64, i64) -> i64
+      "braid.setf"(%bb1f_37) {flag = "pf"} : (i64) -> ()
+      %bb1f_38 = "braid.eq"(%bb1f_16, %bb1f_36) : (i64, i64) -> i64
+      "braid.setf"(%bb1f_38) {flag = "zf"} : (i64) -> ()
+      %bb1f_39 = "braid.const"() {value = -9223372036854775808 : i64} : () -> i64
+      %bb1f_40 = "braid.and"(%bb1f_16, %bb1f_39) : (i64, i64) -> i64
+      "braid.setf"(%bb1f_40) {flag = "sf"} : (i64) -> ()
+      "braid_cf.br"()[^bb22] : () -> ()
+    ^bb22:  // 0x401072
+      %bb22_1 = "braid.getf"() {flag = "zf"} : () -> i64
+      %bb22_2 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb22_0 = "braid.eq"(%bb22_1, %bb22_2) : (i64, i64) -> i64
+      "braid_cf.cond_br"(%bb22_0)[^bb10, ^bb24] : (i64) -> ()
+    ^bb24:  // 0x401074
+      %bb24_1 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb24_0 = "braid.zext"(%bb24_1) {bits = 32 : i64} : (i64) -> i64
+      %bb24_9 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb24_8 = "braid.zext"(%bb24_9) {bits = 32 : i64} : (i64) -> i64
+      %bb24_16 = "braid.xor"(%bb24_0, %bb24_8) : (i64, i64) -> i64
+      %bb24_17 = "braid.const"() {value = 0 : i64} : () -> i64
+      "braid.setf"(%bb24_17) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb24_17) {flag = "of"} : (i64) -> ()
+      %bb24_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb24_24) {flag = "af"} : (i64) -> ()
+      %bb24_32 = "braid.zext"(%bb24_16) {bits = 8 : i64} : (i64) -> i64
+      %bb24_33 = "braid.popcnt"(%bb24_32) : (i64) -> i64
+      %bb24_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb24_35 = "braid.and"(%bb24_33, %bb24_34) : (i64, i64) -> i64
+      %bb24_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb24_37 = "braid.eq"(%bb24_35, %bb24_36) : (i64, i64) -> i64
+      "braid.setf"(%bb24_37) {flag = "pf"} : (i64) -> ()
+      %bb24_38 = "braid.eq"(%bb24_16, %bb24_36) : (i64, i64) -> i64
+      "braid.setf"(%bb24_38) {flag = "zf"} : (i64) -> ()
+      %bb24_39 = "braid.const"() {value = 2147483648 : i64} : () -> i64
+      %bb24_40 = "braid.and"(%bb24_16, %bb24_39) : (i64, i64) -> i64
+      "braid.setf"(%bb24_40) {flag = "sf"} : (i64) -> ()
+      "braid.set"(%bb24_16) {reg = "rax"} : (i64) -> ()
+      "braid_cf.br"()[^bb26] : () -> ()
+    ^bb26:  // 0x401076
+      %bb26_1 = "braid.get"() {reg = "rcx"} : () -> i64
+      %bb26_0 = "braid.zext"(%bb26_1) {bits = 8 : i64} : (i64) -> i64
+      %bb26_9 = "braid.get"() {reg = "rcx"} : () -> i64
+      %bb26_8 = "braid.zext"(%bb26_9) {bits = 8 : i64} : (i64) -> i64
+      %bb26_16 = "braid.and"(%bb26_0, %bb26_8) : (i64, i64) -> i64
+      %bb26_17 = "braid.const"() {value = 0 : i64} : () -> i64
+      "braid.setf"(%bb26_17) {flag = "cf"} : (i64) -> ()
+      "braid.setf"(%bb26_17) {flag = "of"} : (i64) -> ()
+      %bb26_24 = "braid.havoc"() : () -> i64
+      "braid.setf"(%bb26_24) {flag = "af"} : (i64) -> ()
+      %bb26_32 = "braid.zext"(%bb26_16) {bits = 8 : i64} : (i64) -> i64
+      %bb26_33 = "braid.popcnt"(%bb26_32) : (i64) -> i64
+      %bb26_34 = "braid.const"() {value = 1 : i64} : () -> i64
+      %bb26_35 = "braid.and"(%bb26_33, %bb26_34) : (i64, i64) -> i64
+      %bb26_36 = "braid.const"() {value = 0 : i64} : () -> i64
+      %bb26_37 = "braid.eq"(%bb26_35, %bb26_36) : (i64, i64) -> i64
+      "braid.setf"(%bb26_37) {flag = "pf"} : (i64) -> ()
+      %bb26_38 = "braid.eq"(%bb26_16, %bb26_36) : (i64, i64) -> i64
+      "braid.setf"(%bb26_38) {flag = "zf"} : (i64) -> ()
+      %bb26_39 = "braid.const"() {value = 128 : i64} : () -> i64
+      %bb26_40 = "braid.and"(%bb26_16, %bb26_39) : (i64, i64) -> i64
+      "braid.setf"(%bb26_40) {flag = "sf"} : (i64) -> ()
+      "braid_cf.br"()[^bb28] : () -> ()
+    ^bb28:  // 0x401078
+      %bb28_0 = "braid.getf"() {flag = "zf"} : () -> i64
+      %bb28_8 = "braid.get"() {reg = "rax"} : () -> i64
+      %bb28_9 = "braid.const"() {value = -256 : i64} : () -> i64
+      %bb28_10 = "braid.and"(%bb28_8, %bb28_9) : (i64, i64) -> i64
+      %bb28_11 = "braid.or"(%bb28_10, %bb28_0) : (i64, i64) -> i64
+      "braid.set"(%bb28_11) {reg = "rax"} : (i64) -> ()
+      "braid_cf.br"()[^bb2b] : () -> ()
+    ^bb2b:  // 0x40107b
+      %bb2b_0 = "braid.get"() {reg = "rsp"} : () -> i64
+      %bb2b_1 = "braid.load"(%bb2b_0) {bytes = 8 : i64} : (i64) -> i64
+      %bb2b_2 = "braid.const"() {value = 8 : i64} : () -> i64
+      %bb2b_3 = "braid.add"(%bb2b_0, %bb2b_2) : (i64, i64) -> i64
+      "braid.set"(%bb2b_3) {reg = "rsp"} : (i64) -> ()
+      "braid_cf.br_ind"(%bb2b_1) : (i64) -> ()
+    ^bb2c:  // 0x40107c
+      %bb2c_0 = "braid.const"() {value = 1 : i64} : () -> i64
+      "braid.set"(%bb2c_0) {reg = "rax"} : (i64) -> ()
+      "braid_cf.br"()[^bb31] : () -> ()
+    ^bb31:  // 0x401081
+      %bb31_0 = "braid.get"() {reg = "rsp"} : () -> i64
+      %bb31_1 = "braid.load"(%bb31_0) {bytes = 8 : i64} : (i64) -> i64
+      %bb31_2 = "braid.const"() {value = 8 : i64} : () -> i64
+      %bb31_3 = "braid.add"(%bb31_0, %bb31_2) : (i64, i64) -> i64
+      "braid.set"(%bb31_3) {reg = "rsp"} : (i64) -> ()
+      "braid_cf.br_ind"(%bb31_1) : (i64) -> ()
+  }) {sym_name = "equal_bytes_ct", entry = 4198480 : i64} : () -> ()
 }) {arch = "x86_64"} : () -> ()

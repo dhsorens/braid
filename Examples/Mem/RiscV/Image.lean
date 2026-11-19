@@ -76,4 +76,44 @@ theorem equal_bytes_lowered :
     equal_bytes.blocks = equal_bytes_code.map fun p => (p.1, Lowering.RiscV.lower p.1 p.2) := by
   decide
 
+/-- The instructions of `equal_bytes_ct`, by address. -/
+def equal_bytes_ct_code : List (BitVec 64 × Instr) := [
+  (0x10054#64, RiscvZkvm.Rv64.Instr.BEQ (RiscvZkvm.Rv64.Reg.x12) (RiscvZkvm.Rv64.Reg.x0) 0x0030#13),
+  (0x10058#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x13) (RiscvZkvm.Rv64.Reg.x0) 0x000#12),
+  (0x1005c#64, RiscvZkvm.Rv64.Instr.ADD (RiscvZkvm.Rv64.Reg.x12) (RiscvZkvm.Rv64.Reg.x11) (RiscvZkvm.Rv64.Reg.x12)),
+  (0x10060#64, RiscvZkvm.Rv64.Instr.LBU (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x10) 0x000#12),
+  (0x10064#64, RiscvZkvm.Rv64.Instr.LBU (RiscvZkvm.Rv64.Reg.x15) (RiscvZkvm.Rv64.Reg.x11) 0x000#12),
+  (0x10068#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x11) (RiscvZkvm.Rv64.Reg.x11) 0x001#12),
+  (0x1006c#64, RiscvZkvm.Rv64.Instr.XOR (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x15) (RiscvZkvm.Rv64.Reg.x14)),
+  (0x10070#64, RiscvZkvm.Rv64.Instr.OR (RiscvZkvm.Rv64.Reg.x13) (RiscvZkvm.Rv64.Reg.x14) (RiscvZkvm.Rv64.Reg.x13)),
+  (0x10074#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x10) 0x001#12),
+  (0x10078#64, RiscvZkvm.Rv64.Instr.BNE (RiscvZkvm.Rv64.Reg.x11) (RiscvZkvm.Rv64.Reg.x12) 0x1fe8#13),
+  (0x1007c#64, RiscvZkvm.Rv64.Instr.SLTIU (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x13) 0x001#12),
+  (0x10080#64, RiscvZkvm.Rv64.Instr.JALR (RiscvZkvm.Rv64.Reg.x0) (RiscvZkvm.Rv64.Reg.x1) 0x000#12),
+  (0x10084#64, RiscvZkvm.Rv64.Instr.ADDI (RiscvZkvm.Rv64.Reg.x10) (RiscvZkvm.Rv64.Reg.x0) 0x001#12),
+  (0x10088#64, RiscvZkvm.Rv64.Instr.JALR (RiscvZkvm.Rv64.Reg.x0) (RiscvZkvm.Rv64.Reg.x1) 0x000#12)]
+
+/-- `equal_bytes_ct`, lowered to `braid`. -/
+def equal_bytes_ct : Braid.Func :=
+  { name := "equal_bytes_ct", entry := 0x10054#64, blocks := [
+    (0x10054#64, { ops := [.get 0 12, .const 1 0x0#64, .bin 2 .eq 0 1], term := .branch 2 0x10084#64 0x10058#64 }),
+    (0x10058#64, { ops := [.const 0 0x0#64, .const 1 0x0#64, .bin 2 .add 0 1, .set 13 2], term := .jump 0x1005c#64 }),
+    (0x1005c#64, { ops := [.get 0 11, .get 1 12, .bin 2 .add 0 1, .set 12 2], term := .jump 0x10060#64 }),
+    (0x10060#64, { ops := [.get 0 10, .const 1 0x0#64, .bin 2 .add 0 1, .load 7 .w8 2, .un 8 (.zext 8) 7, .set 14 8], term := .jump 0x10064#64 }),
+    (0x10064#64, { ops := [.get 0 11, .const 1 0x0#64, .bin 2 .add 0 1, .load 7 .w8 2, .un 8 (.zext 8) 7, .set 15 8], term := .jump 0x10068#64 }),
+    (0x10068#64, { ops := [.get 0 11, .const 1 0x1#64, .bin 2 .add 0 1, .set 11 2], term := .jump 0x1006c#64 }),
+    (0x1006c#64, { ops := [.get 0 15, .get 1 14, .bin 2 .xor 0 1, .set 14 2], term := .jump 0x10070#64 }),
+    (0x10070#64, { ops := [.get 0 14, .get 1 13, .bin 2 .or 0 1, .set 13 2], term := .jump 0x10074#64 }),
+    (0x10074#64, { ops := [.get 0 10, .const 1 0x1#64, .bin 2 .add 0 1, .set 10 2], term := .jump 0x10078#64 }),
+    (0x10078#64, { ops := [.get 0 11, .get 1 12, .bin 2 .ne 0 1], term := .branch 2 0x10060#64 0x1007c#64 }),
+    (0x1007c#64, { ops := [.get 0 13, .const 1 0x1#64, .bin 2 .ult 0 1, .set 10 2], term := .jump 0x10080#64 }),
+    (0x10080#64, { ops := [.get 0 1, .const 1 0x0#64, .bin 2 .add 0 1, .const 3 0xfffffffffffffffe#64, .bin 4 .and 2 3, .const 5 0x10084#64], term := .jumpInd 4 }),
+    (0x10084#64, { ops := [.const 0 0x0#64, .const 1 0x1#64, .bin 2 .add 0 1, .set 10 2], term := .jump 0x10088#64 }),
+    (0x10088#64, { ops := [.get 0 1, .const 1 0x0#64, .bin 2 .add 0 1, .const 3 0xfffffffffffffffe#64, .bin 4 .and 2 3, .const 5 0x1008c#64], term := .jumpInd 4 })] }
+
+/-- `equal_bytes_ct` is the lowering of `equal_bytes_ct_code`. -/
+theorem equal_bytes_ct_lowered :
+    equal_bytes_ct.blocks = equal_bytes_ct_code.map fun p => (p.1, Lowering.RiscV.lower p.1 p.2) := by
+  decide
+
 end Examples.Mem.RiscV

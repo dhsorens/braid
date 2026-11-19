@@ -75,6 +75,56 @@ operands, and no other does. The lists were read as described under [Sources](#s
 the Arm and Intel entries are from copies and summaries of the vendors' pages and should be
 checked against the originals before they are relied on for an instruction not named above.
 
+## In the dialect
+
+A label (`Braid.Label`, in `braid/Braid/IR/Trace.lean`) is one observation:
+
+| Label | Emitted by |
+| --- | --- |
+| `read addr n`, `write addr n` | `load` and `store` |
+| `jump target` | a `branch`, with the target it takes, and a `jumpInd` |
+| `operands a b` | `udiv`, `urem`, `sdiv`, `srem` |
+| `event e` | an event of the environment: an exit, bytes written out |
+
+A direct jump emits nothing: where it goes is in the code. The trace of a run is its labels
+in order. The labelled semantics (`Op.wpL`, `Block.wpL`, `EventuallyL`) is the semantics of
+the dialect with the trace so far carried along, and forgetting the trace gives back the
+unlabelled one (`eventuallyL_iff`): every statement about a run without its trace is a
+statement about the run with it.
+
+In the logic, `TripleT P pre t post t'` is a triple with the trace before and the trace
+after. A specification of leakage is one from any `t` to `t ++ ls`, with `ls` written out:
+
+```lean
+theorem swap_trace (p q x y t2 t3 r : Word) (hp : p &&& 7#64 = 0#64) (hq : q &&& 7#64 = 0#64)
+    (t : Trace) :
+    TripleT swap.program
+      (Atoms.interp [.pc 0x10000#64, .reg a0 p, .reg a1 q, .reg a2 t2, .reg a3 t3,
+        .mem p 8 x true, .mem q 8 y true, .reg ra r]) t
+      (Atoms.interp [.pc (r &&& ~~~1#64), .reg a0 p, .reg a1 q, .reg a2 y, .reg a3 x,
+        .mem p 8 y true, .mem q 8 x true, .reg ra r])
+      (t ++ [.read q 8, .read p 8, .write p 8, .write q 8, .jump (r &&& ~~~1#64)]) := by
+  braid_sym_run
+  braid_done
+```
+
+The trace mentions the two addresses and the return address, and not `x` or `y`: `swap`
+reveals where it works and nothing of what it moves. The stepper and the tactics are the ones
+that prove a triple; on a traced triple they keep the trace as well.
+
+## On a machine
+
+For each instruction set, a file says what each instruction of the machine model reveals
+(`Lowering/RiscV/Leak.lean`), and a run of the machine with its trace (`RunL`) is the labels
+of the instructions it executes, in order. That file is trusted ([`Trust.md`](Trust.md)).
+The lowering is proved to preserve traces: the labels the block of an instruction emits are
+those of the instruction (`leak_lower`), so a traced triple about lowered code is a theorem
+about a run of the machine and its trace (`machine_soundT`).
+
+The proof does not redo the proof that the lowering is sound. The labels a block emits are a
+function of the state it starts from (`Block.leak`, with `Block.wp_of_wpL`), and that function
+is compared with the instruction's labels by evaluation, one instruction at a time.
+
 ## Not covered
 
 - **The cache, beyond addresses.** The model takes the attacker to see every address, which

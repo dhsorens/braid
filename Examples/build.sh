@@ -195,7 +195,7 @@ fi
 if want gobasic; then
   lower_go gobasic Examples/src/go/basic.go GoBasic main.Add3 main.MaxU64 main.SumSlice
 fi
-if want mem; then lower_c mem Examples/src/c/mem.c Mem copy_bytes equal_bytes; fi
+if want mem; then lower_c mem Examples/src/c/mem.c Mem copy_bytes equal_bytes equal_bytes_ct; fi
 if want limbs; then lower_c limbs Examples/src/c/limbs.c Limbs add_limbs; fi
 if want chacha20; then
   lower_c chacha20 Examples/src/c/chacha20.c ChaCha20 quarter_round chacha20_block

@@ -14,3 +14,11 @@ u64 equal_bytes(const u8 *a, const u8 *b, u64 n) {
     if (a[i] != b[i]) return 0;
   return 1;
 }
+
+/* The same as equal_bytes, in a time that depends on n alone: every byte is read whatever
+   the bytes are, and no branch depends on them. */
+u64 equal_bytes_ct(const u8 *a, const u8 *b, u64 n) {
+  u8 d = 0;
+  for (u64 i = 0; i < n; i++) d |= a[i] ^ b[i];
+  return d == 0;
+}

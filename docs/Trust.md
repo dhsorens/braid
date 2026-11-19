@@ -37,6 +37,23 @@ sources.
   the binary. The disassembler (`objdump`) and Kraken's parser are trusted to have read the
   bytes correctly.
 
+**What an instruction reveals.** A theorem about leakage is stated with the trace of a run
+of the machine, and none of the three models defines one. For each instruction set one file
+says what each instruction reveals when it runs in a state, in the model of
+[`Leakage.md`](Leakage.md): the address and size of each load and store, where a conditional
+branch or a computed jump goes, and the operands of a division. A run's trace is those labels
+in order. These files are definitions only, and they are trusted: if one leaves out an access
+an instruction makes, a theorem will say the program reveals less than it does.
+
+| ISA | File | Status |
+| --- | --- | --- |
+| RISC-V | `Lowering/RiscV/Leak.lean` (`leak`, `RunL`) | the lowering is proved to preserve it (`lowerCode_soundL`) |
+| AArch64 | | not yet written |
+| x86-64 | | not yet written |
+
+The labels of the dialect are not trusted. They are compared with the machine's by the proof
+that a lowering preserves traces.
+
 **The statement.** A specification can be wrong. The top theorem of each example is stated
 about the machine model alone, so that it can be read without knowing the dialect or the
 logic.
@@ -67,7 +84,9 @@ does not. It proves nothing and nothing depends on it.
 - **Completeness.** Soundness is proved: a run of the lowered code is a run of the machine. The
   converse is tested, not proved. Where a lowering is stricter than the model, a proof gets
   stuck; it does not go wrong.
-- **Everything outside the model.** Timing, caches, interrupts, other threads, and whatever an
-  environment call does are outside all three models.
+- **Everything outside the model.** Caches, speculation, power, interrupts, other threads,
+  and whatever an environment call does are outside all three models. Timing is in only as
+  far as the leakage model of [`Leakage.md`](Leakage.md) goes, and only in theorems that
+  state a trace.
 - **The whole binary.** A theorem is about the functions it names, from their entry to their
   return, on the states its hypotheses allow.

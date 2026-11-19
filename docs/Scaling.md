@@ -16,6 +16,7 @@ The difference, divided by N, is the cost of one instruction.
 ```sh
 Examples/scaling/run.sh                        # N = 10 100 1000, both instruction sets
 TACTIC=braid_run Examples/scaling/run.sh "10 100"   # the older tactic
+TRACED=1 Examples/scaling/run.sh                 # a traced triple (below)
 ```
 
 The values in the registers grow as the function runs: after N instructions a register holds
@@ -170,6 +171,28 @@ What would change this: fusing in bounded stretches (a plan that fuses at most a
 blocks keeps the environment short), with the fused block built by one pass over the stretch
 and not by repeated appends, and a certificate for each block. On these numbers that is worth
 at most a fifth on x86-64, so it was not done.
+
+## Traced triples
+
+A traced triple (`TripleT`, [`Leakage.md`](Leakage.md)) says what a run reveals as well as
+where it ends, and the stepper runs on it as it does on a triple, adding a label to the trace
+for each load, store, division, conditional branch and computed jump. The work for an
+operation that reveals nothing is the same as before, with one more argument to the rule.
+`TRACED=1 Examples/scaling/run.sh` measures it, on the same function.
+
+Milliseconds per instruction, and in brackets the seconds to check the whole file. At
+N = 10 the proof costs less than the noise in starting Lean.
+
+| | N = 10 | N = 100 | N = 1000 |
+| --- | --- | --- | --- |
+| AArch64, triple (before) | (1.1) | 2.0 (2.1) | 1.7 (5.9) |
+| AArch64, traced triple | (1.1) | 2.0 (2.1) | 1.8 (6.3) |
+| x86-64, triple (before) | (1.2) | 13.0 (3.4) | 9.6 (18.1) |
+| x86-64, traced triple | (1.3) | 7.0 (2.7) | 10.2 (19.0) |
+
+At N = 1000 a traced triple costs 6% more on both. The benchmark function reveals little: one
+load and one jump, at its return. A function that touches memory at every other instruction
+adds a label that often, and each is one more node of the trace.
 
 ## The ladder
 

@@ -6,6 +6,7 @@
 #   Examples/scaling/run.sh                 N = 10 100 1000, both instruction sets
 #   Examples/scaling/run.sh "10 100"        other sizes
 #   TACTIC=braid_run Examples/scaling/run.sh   the tactic that runs the function
+#   TRACED=1 Examples/scaling/run.sh        a traced triple: the proof also builds the trace
 #
 # Prints one line for each run: instruction set, N, processor seconds for the image alone,
 # processor seconds for the image with the proof, and the difference per instruction in milliseconds.
@@ -18,7 +19,7 @@ LLD=${LLD:-$(ls "$(rustc --print sysroot)"/lib/rustlib/*/bin/rust-lld | head -1)
 LOWER=.lake/build/bin/braid-lower
 SIZES=${1:-"10 100 1000"}
 ISAS=${ISAS:-"arm x86"}
-TACTIC=${TACTIC:-braid_run}
+TACTIC=${TACTIC:-braid_sym_run}
 OUT=${OUT:-build/scaling}
 mkdir -p "$OUT"
 

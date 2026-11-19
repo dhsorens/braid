@@ -9,8 +9,10 @@ over eight registers, and returns. The instructions are chosen by a fixed pseudo
 sequence, so the same N gives the same program. `isa` is `arm` or `x86`.
 
 The theorem says the code runs to its return from an arbitrary state of those registers;
-proving it is one symbolic execution of the whole function. See docs/Scaling.md.
+proving it is one symbolic execution of the whole function. With TRACED=1 in the environment
+the theorem is a traced triple, and the proof also builds the trace. See docs/Scaling.md.
 """
+import os
 import sys
 
 ARM_REGS = [f"x{i}" for i in range(8)]
@@ -48,8 +50,20 @@ def asm(isa, n):
     return "\n".join(lines) + "\n"
 
 
-def theorem(isa, tactic):
+def theorem(isa, tactic, traced=False):
+    """The benchmark theorem; with `traced`, a traced triple, whose proof also builds the trace."""
     vs = " ".join(f"v{i}" for i in range(8))
+    if traced:
+        end = "[.jump r]" if isa == "arm" else "[.read s 8, .jump r]"
+        return (theorem(isa, tactic)
+                .replace("Triple bench.program", "TripleT bench.program")
+                .replace(" r : Word)", " r : Word) (t : Trace)")
+                .replace("lr r]) iprop(True)", f"lr r]) t iprop(True) (t ++ {end})")
+                .replace(")\n      iprop(True)", f") t\n      iprop(True) (t ++ {end})")
+                .replace("  show Triple _ (Atoms.interp (.pc r :: _)) _\n"
+                         "  exact Triple.done fun _ _ => trivial",
+                         "  show TripleT _ (Atoms.interp (.pc r :: _)) _ _ _\n"
+                         "  exact TripleT.done (fun _ _ => trivial) (by braid_trace)"))
     if isa == "arm":
         regs = ", ".join(f".reg {r} v{i}" for i, r in enumerate(ARM_REGS))
         return f"""
@@ -81,10 +95,10 @@ theorem bench_run ({vs} s r : Word) (b0 b1 b2 b3 b4 b5 : Bool) :
 """
 
 
-def lean(isa, image, tactic):
+def lean(isa, image, tactic, traced=False):
     text = open(image).read().rstrip("\n").split("\n")
     assert text[-1].startswith("end "), text[-1]
-    return "\n".join(text[:-1]) + theorem(isa, tactic) + "\n" + text[-1] + "\n"
+    return "\n".join(text[:-1]) + theorem(isa, tactic, traced) + "\n" + text[-1] + "\n"
 
 
 if __name__ == "__main__":
@@ -92,4 +106,4 @@ if __name__ == "__main__":
         sys.stdout.write(asm(sys.argv[2], int(sys.argv[3])))
     else:
         tactic = sys.argv[5] if len(sys.argv) > 5 else "braid_run"
-        sys.stdout.write(lean(sys.argv[2], sys.argv[4], tactic))
+        sys.stdout.write(lean(sys.argv[2], sys.argv[4], tactic, os.environ.get("TRACED") == "1"))
