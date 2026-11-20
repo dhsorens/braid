@@ -8,11 +8,12 @@
 
   ## Main definitions
 
-  * `quarterRoundLeak`: what `quarter_round` reveals, from its argument and the return address
+  * `quarter_round_run`: the trace of `quarter_round`, found by its run, with the traced
+    triple; the trace is a function of the argument and the return address
+  * `quarterRoundLeak`: what `quarter_round` reveals, which is that trace
 
   ## Main results
 
-  * `quarter_round_trace`: the traced triple
   * `quarter_round_leakage`: the same, about the machine alone
   * `quarter_round_leakage_eq`: two machines that agree on the argument and the return
     address run with the same trace
@@ -20,6 +21,7 @@
 
 module
 
+public import Braid.Logic.Traced
 public import Examples.ChaCha20.Arm.Proofs
 
 public section
@@ -28,16 +30,11 @@ namespace Examples.ChaCha20.Arm
 
 open Braid Examples Lowering.Arm Lowering.Arm.Regs
 
-/-- What `quarter_round` reveals: the addresses of the four words, read as two pairs and
-written as two pairs, the second pair first, and where it returns. -/
-def quarterRoundLeak (s r : Word) : Trace :=
-  [.read s 4, .read (s + 4#64) 4, .read (s + 8#64) 4, .read (s + 12#64) 4,
-    .write (s + 8#64) 4, .write (s + 12#64) 4, .write s 4, .write (s + 4#64) 4,
-    .jump r]
-
-/-- `quarter_round` works on the four words its argument points to and reveals
-`quarterRoundLeak` of the argument and the return address. -/
-theorem quarter_round_trace (s r t8 t9 t10 t11 : Word) (a b c d : W32) (t : Trace) :
+/-- **`quarter_round` and the trace of its run.** It works on the four words its argument
+points to, and the trace is found by running it: it is a function of the argument `s` and
+the return address `r` alone, and of nothing the registers or the four words hold. -/
+def quarter_round_run (s r : Word) : { ls : Trace // ∀ (t8 t9 t10 t11 : Word)
+    (a b c d : W32) (t : Trace),
     TripleT quarter_round.program
       (Atoms.interp [.pc 0x10000#64, .reg x0 s, .reg x8 t8, .reg x9 t9, .reg x10 t10,
         .reg x11 t11, .reg lr r,
@@ -46,7 +43,9 @@ theorem quarter_round_trace (s r t8 t9 t10 t11 : Word) (a b c d : W32) (t : Trac
         .prop (regAny x10), .prop (regAny x11), .reg lr r,
         .prop (cellsAt 4 true s ([(quarter a b c d).1, (quarter a b c d).2.1,
           (quarter a b c d).2.2.1, (quarter a b c d).2.2.2].map (·.zeroExtend 64)))])
-      (t ++ quarterRoundLeak s r) := by
+      (t ++ ls) } := by
+  braid_traced
+  intro t8 t9 t10 t11 a b c d t
   rw [← qr_eq]
   simp only [qr]
   simp only [List.map_cons, List.map_nil]
@@ -59,6 +58,17 @@ theorem quarter_round_trace (s r t8 t9 t10 t11 : Word) (a b c d : W32) (t : Trac
   braid_forget 10
   braid_forget 11
   braid_done
+
+/-- What `quarter_round` reveals: the addresses of the four words, read as two pairs and
+written as two pairs, the second pair first, and where it returns. It is the trace that the
+run of `quarter_round_run` finds. -/
+def quarterRoundLeak (s r : Word) : Trace := (quarter_round_run s r).1
+
+/-- The trace found, written out. -/
+example (s r : Word) : quarterRoundLeak s r =
+    [.read s 4, .read (s + 4#64) 4, .read (s + 8#64) 4, .read (s + 12#64) 4,
+      .write (s + 8#64) 4, .write (s + 12#64) 4, .write s 4, .write (s + 4#64) 4,
+      .jump r] := rfl
 
 /-- **What `quarter_round` reveals, on the machine.** A running machine whose program holds
 the words of `quarter_round`, with its code loaded and its program counter at the entry, and
@@ -74,7 +84,7 @@ theorem quarter_round_leakage (prog : Arm64.Program) (s : Arm64.State) (a b c d 
     ∃ s', RunL prog s (quarterRoundLeak (s.regs.read 0#5) (s.regs.read 30#5)) s' ∧
       s'.pc = s.regs.read 30#5 := by
   obtain ⟨s', σ', hsteps, hr, hq⟩ := machine_soundT quarter_round_lowered
-    (quarter_round_trace (s.regs.read 0#5) (s.regs.read 30#5) (s.regs.read 8#5)
+    ((quarter_round_run (s.regs.read 0#5) (s.regs.read 30#5)).2 (s.regs.read 8#5)
       (s.regs.read 9#5) (s.regs.read 10#5) (s.regs.read 11#5) a b c d []) hw hc hrun
     (Flat.interp (by braid_flat))
     (by simp [Atom.IsPointsTo, cellsAtoms])

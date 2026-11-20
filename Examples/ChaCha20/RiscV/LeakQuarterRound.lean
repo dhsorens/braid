@@ -6,11 +6,12 @@
 
   ## Main definitions
 
-  * `quarterRoundLeak`: what `quarter_round` reveals, from its argument and the return address
+  * `quarter_round_run`: the trace of `quarter_round`, found by its run, with the traced
+    triple; the trace is a function of the argument and the return address
+  * `quarterRoundLeak`: what `quarter_round` reveals, which is that trace
 
   ## Main results
 
-  * `quarter_round_trace`: the traced triple
   * `quarter_round_leakage`: the same, about the machine alone
   * `quarter_round_leakage_eq`: two machines that agree on the argument and the return
     address run with the same trace
@@ -18,6 +19,7 @@
 
 module
 
+public import Braid.Logic.Traced
 public import Examples.ChaCha20.RiscV.Proofs
 
 public section
@@ -26,17 +28,11 @@ namespace Examples.ChaCha20.RiscV
 
 open Braid Examples Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
 
-/-- What `quarter_round` reveals: the addresses of the four words, each read and then
-written, and where it returns. -/
-def quarterRoundLeak (s r : Word) : Trace :=
-  [.read s 4, .read (s + 4#64) 4, .read (s + 12#64) 4, .read (s + 8#64) 4,
-    .write s 4, .write (s + 4#64) 4, .write (s + 8#64) 4, .write (s + 12#64) 4,
-    .jump (r &&& ~~~1#64)]
-
-/-- `quarter_round` works on the four words its argument points to and reveals
-`quarterRoundLeak` of the argument and the return address. -/
-theorem quarter_round_trace (s r t1 t2 t3 t4 t5 : Word) (a b c d : W32)
-    (hs : s &&& 3#64 = 0#64) (t : Trace) :
+/-- **`quarter_round` and the trace of its run.** It works on the four words its argument
+points to, and the trace is found by running it: it is a function of the argument `s` and
+the return address `r` alone, and of nothing the registers or the four words hold. -/
+def quarter_round_run (s r : Word) : { ls : Trace // ∀ (t1 t2 t3 t4 t5 : Word)
+    (a b c d : W32) (_ : s &&& 3#64 = 0#64) (t : Trace),
     TripleT quarter_round.program
       (Atoms.interp [.pc 0x10000#64, .reg a0 s, .reg a1 t1, .reg a2 t2, .reg a3 t3,
         .reg a4 t4, .reg a5 t5, .reg ra r,
@@ -45,7 +41,9 @@ theorem quarter_round_trace (s r t1 t2 t3 t4 t5 : Word) (a b c d : W32)
         .prop (regAny a3), .prop (regAny a4), .prop (regAny a5), .reg ra r,
         .prop (cellsAt 4 true s ([(quarter a b c d).1, (quarter a b c d).2.1,
           (quarter a b c d).2.2.1, (quarter a b c d).2.2.2].map (·.zeroExtend 64)))])
-      (t ++ quarterRoundLeak s r) := by
+      (t ++ ls) } := by
+  braid_traced
+  intro t1 t2 t3 t4 t5 a b c d hs t
   rw [← qr_eq]
   simp only [qr]
   simp only [List.map_cons, List.map_nil]
@@ -61,6 +59,16 @@ theorem quarter_round_trace (s r t1 t2 t3 t4 t5 : Word) (a b c d : W32)
   braid_forget 15
   braid_done
 
+/-- What `quarter_round` reveals: the addresses of the four words, each read and then
+written, and where it returns. It is the trace that the run of `quarter_round_run` finds. -/
+def quarterRoundLeak (s r : Word) : Trace := (quarter_round_run s r).1
+
+/-- The trace found, written out. -/
+example (s r : Word) : quarterRoundLeak s r =
+    [.read s 4, .read (s + 4#64) 4, .read (s + 12#64) 4, .read (s + 8#64) 4,
+      .write s 4, .write (s + 4#64) 4, .write (s + 8#64) 4, .write (s + 12#64) 4,
+      .jump (r &&& ~~~1#64)] := rfl
+
 /-- **What `quarter_round` reveals, on the machine.** A machine that holds the code of
 `quarter_round`, is at its entry, and has the 32-bit words `a`, `b`, `c` and `d` in valid
 memory where `a0` points, `a0` a multiple of 4, runs to the return address with the trace
@@ -75,7 +83,7 @@ theorem quarter_round_leakage (s : MachineState) (a b c d : W32)
     ∃ s', RunL s (quarterRoundLeak (s.getReg .x10) (s.getReg .x1)) s' ∧
       s'.pc = s.getReg .x1 &&& ~~~1#64 := by
   obtain ⟨s', σ', hrun, hr, hq⟩ := machine_soundT quarter_round_lowered
-    (quarter_round_trace (s.getReg .x10) (s.getReg .x1) (s.getReg .x11) (s.getReg .x12)
+    ((quarter_round_run (s.getReg .x10) (s.getReg .x1)).2 (s.getReg .x11) (s.getReg .x12)
       (s.getReg .x13) (s.getReg .x14) (s.getReg .x15) a b c d hp []) hcode
     (Flat.interp (by braid_flat))
     (by simp [Atom.IsPointsTo, cellsAtoms])

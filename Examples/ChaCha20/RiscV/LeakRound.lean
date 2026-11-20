@@ -12,16 +12,17 @@
 
   ## Main definitions
 
-  * `roundsLeak`: what the loop reveals, by recursion on the rounds left after this one
+  * `rounds_run`: the trace of the loop with `n + 1` rounds left, found by its run, with the
+    traced triple; by recursion on `n`
 
   ## Main results
 
   * `columns_trace`, `diagonals_trace`, `double_round_trace`: a round reveals nothing
-  * `rounds_trace`: the loop, with `n + 1` rounds left, reveals `roundsLeak n`
 -/
 
 module
 
+public import Braid.Logic.Traced
 public import Examples.ChaCha20.RiscV.Round
 
 @[expose] public section
@@ -29,13 +30,6 @@ public import Examples.ChaCha20.RiscV.Round
 namespace Examples.ChaCha20.RiscV
 
 open Braid Examples Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
-
-/-- What the loop of rounds reveals with `n` rounds left after the one it is in: the branch
-back to the head of the loop after each round but the last, and the way out after the
-last. The addresses are those of the code, so this is the same list for every state. -/
-def roundsLeak : Nat → Trace
-  | 0 => [.jump 0x10378#64]
-  | n + 1 => .jump 0x100f0#64 :: roundsLeak n
 
 /-- Forget the sixteen registers of the state. -/
 macro "rv_forget_state" : tactic =>
@@ -111,9 +105,13 @@ theorem double_round_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v1
   braid_call diagonals_trace _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ t
   braid_done
 
-/-- **What the loop of `chacha20_block` reveals**, with `n + 1` rounds left: `roundsLeak n`,
-whatever the registers of the state hold. Proved by induction on `n`, as `rounds_spec` is. -/
-theorem rounds_trace : ∀ (n : Nat)
+/-- **The loop of `chacha20_block` and the trace of its run**, with `n + 1` rounds left,
+whatever the registers of the state hold. The trace is found by running a round and then
+the rounds that remain, by recursion on `n` as `rounds_spec` is by induction: it is the
+branch back to the head of the loop after each round but the last, and the way out after
+the last. The addresses are those of the code, so it is a function of the number of rounds
+alone and the same list for every state. -/
+def rounds_run : (n : Nat) → { ls : Trace // ∀
     (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word) (k : W32) (t20 : Word)
     (t : Trace), k = BitVec.ofNat 32 (n + 1) → n + 1 < 2 ^ 32 →
     TripleT chacha20_block.program
@@ -126,10 +124,9 @@ theorem rounds_trace : ∀ (n : Nat)
         .prop (regAny t6), .prop (regAny t0), .prop (regAny t1), .prop (regAny t3),
         .prop (regAny a5), .prop (regAny a6), .prop (regAny a3), .prop (regAny a4),
         .prop (regAny t2), .prop (regAny t4), .prop (regAny t5), .prop (regAny a7),
-        .reg a2 0#64, .prop (regAny s4)]) (t ++ roundsLeak n) := by
-  intro n
-  induction n with
-  | zero =>
+        .reg a2 0#64, .prop (regAny s4)]) (t ++ ls) }
+  | 0 => by
+    braid_traced
     intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t20 t hk _
     obtain rfl : k = 1#32 := hk
     braid_call double_round_trace v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 1#32
@@ -138,17 +135,24 @@ theorem rounds_trace : ∀ (n : Nat)
     · exact absurd (by decide) hbr
     · rw [hbr]
       braid_done
-  | succ n ih =>
+  | n + 1 => by
+    braid_traced
     intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t20 t hk hn
     braid_call double_round_trace v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t20 t
     braid_sym_step
     · rv_name_state
       braid_name_reg 20
-      braid_call ih _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) _ _ (by rw [hk]; bv_omega)
-        (by omega)
+      braid_call (rounds_run n).2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) _ _
+        (by rw [hk]; bv_omega) (by omega)
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
       exact this (by bv_decide)
+
+/-- With one round left the loop reveals the way out. -/
+example : (rounds_run 0).1 = [.jump 0x10378#64] := rfl
+
+/-- With more left it reveals the branch back, and then what the rounds that remain do. -/
+example (n : Nat) : (rounds_run (n + 1)).1 = .jump 0x100f0#64 :: (rounds_run n).1 := rfl
 
 end Examples.ChaCha20.RiscV

@@ -17,18 +17,16 @@
 
   ## Main definitions
 
-  * `colsLeak`, `diagsLeak`: what each half of a round reveals, from the stack pointer
-  * `roundsLeak`: what the loop reveals, from the stack pointer, by recursion on the rounds
-    left after this one
-
-  ## Main results
-
-  * `columns_trace`, `diagonals_trace`, `double_round_trace`: a round, up to its branch
-  * `rounds_trace`: the loop, with `n + 1` rounds left, reveals `roundsLeak q n`
+  * `columns_run`, `diagonals_run`: the trace of each half of a round, found by its run,
+    with the traced triple; a function of the stack pointer
+  * `double_round_run`: the same for a round, up to its branch
+  * `rounds_run`: the trace of the loop with `n + 1` rounds left, a function of the stack
+    pointer and of `n`, by recursion on `n`
 -/
 
 module
 
+public import Braid.Logic.Traced
 public import Examples.ChaCha20.X86.Round
 public import Braid.Logic.Any
 
@@ -41,30 +39,6 @@ open Braid Examples Lowering.X86 Lowering.X86.Regs
 /-- Addition as the stepper writes it when it evaluates an `add`: all three types `Word`.
 The stepper finds memory atoms by syntactic equality of addresses. -/
 local notation:65 a:65 " +ʷ " b:66 => @HAdd.hAdd Word Word Word instHAdd a b
-
-/-! ## What is revealed -/
-
-/-- What the first half of a round reveals, with the stack pointer at `q`: the two stores
-that spill a word of the state and the count of rounds, and the loads and the store of the
-three words of the state that are in slots. -/
-def colsLeak (q : Word) : Trace :=
-  [.write (q - 24#64) 4, .write (q - 20#64) 4, .read (q - 96#64) 4, .read (q - 92#64) 4,
-    .read (q - 100#64) 4, .write (q - 100#64) 4, .read (q - 24#64) 4]
-
-/-- What the second half of a round reveals, with the stack pointer at `q`: the stores and
-the loads of the three words of the state that are in slots, and the load of the count of
-rounds. -/
-def diagsLeak (q : Word) : Trace :=
-  [.write (q - 96#64) 4, .write (q - 92#64) 4, .read (q - 20#64) 4, .read (q - 100#64) 4,
-    .write (q - 100#64) 4]
-
-/-- What the loop of rounds reveals with the stack pointer at `q` and `n` rounds left after
-the one it is in: for each round, the addresses of the slots it uses and where its branch
-goes, which is back to the head of the loop after each round but the last, and on after the
-last. It is a function of the stack pointer and the number of rounds, which is ten. -/
-def roundsLeak (q : Word) : Nat → Trace
-  | 0 => colsLeak q ++ (diagsLeak q ++ [.jump 0x40123c#64])
-  | n + 1 => colsLeak q ++ (diagsLeak q ++ .jump 0x4010d0#64 :: roundsLeak q n)
 
 /-! ## Tactics -/
 
@@ -91,21 +65,39 @@ local macro "name_regs" : tactic =>
              braid_name_reg 4; braid_name_reg 13; braid_name_reg 8; braid_name_reg 1
              braid_name_reg 12))
 
-/-- The symbolic state is the `n` atoms of the postcondition in another order:
-`braid_done_perm`, for a traced triple. It leaves the equation between the traces. -/
+/-- `braid_forget_mem`, for the body of a definition that is exposed: the side condition is
+a goal of its own, since a `by` block inside a term waits there for as long as its goal has
+a metavariable. -/
+local macro "forget_mem " a:term : tactic =>
+  `(tactic| (apply TripleT.forget_mem (a := $a)
+             case hupd => braid_upd))
+
+/-- `braid_name_mem`, for the body of a definition that is exposed, in the same way. -/
+local macro "name_mem " a:term : tactic =>
+  `(tactic| (apply TripleT.mem_any (a := $a)
+             case hext => braid_extract
+             intro _))
+
+/-- `braid_done`, when the symbolic state is the `n` atoms of the postcondition in another
+order and they are to be taken out one at a time: `braid_done_perm`, for a traced triple
+whose trace is to be found. -/
 local macro "done_perm " n:num : tactic =>
   `(tactic| (braid_norm
              refine TripleT.done_split ?_ ?_
              · iterate $n (apply Atoms.Split.cons; · braid_extract)
-               exact Atoms.Split.nil))
+               exact Atoms.Split.nil
+             · braid_trace_find))
 
 /-! ## A round of the loop -/
 
-/-- The first half of a round of the loop reveals `colsLeak` of the stack pointer, whatever
-the registers and slots of the state hold. The count of rounds, in `edx`, is spilled to a
-slot. -/
-theorem columns_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word)
-    (k : W32) (q t9 u18 u14 : Word) (t : Trace) :
+/-- **The first half of a round of the loop and the trace of its run**, whatever the
+registers and slots of the state hold. The count of rounds, in `edx`, is spilled to a slot.
+The trace found is a function of the stack pointer `q` alone: the two stores that spill a
+word of the state and the count of rounds, and the loads and the store of the three words
+of the state that are in slots. -/
+def columns_run (q : Word) : { ls : Trace // ∀
+    (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word)
+    (k : W32) (t9 u18 u14 : Word) (t : Trace),
     TripleT chacha20_block.program
       (Atoms.interp [.pc 0x4010d0#64, .reg rsp q,
         .mem (q +ʷ 18446744073709551520#64) 4 v0 true,
@@ -129,25 +121,34 @@ theorem columns_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : W
         .mem (q +ʷ 18446744073709551596#64) 4 (k.zeroExtend 64) true,
         .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
         .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)])
-      (t ++ colsLeak q) := by
+      (t ++ ls) } := by
+  braid_traced
+  intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t9 u18 u14 t
   iterate 55 braid_sym_step
   forget_flags
   forget_regs
   braid_forget 3
   braid_forget 9
-  braid_forget_mem (q +ʷ 18446744073709551520#64)
-  braid_forget_mem (q +ʷ 18446744073709551524#64)
-  braid_forget_mem (q +ʷ 18446744073709551516#64)
-  braid_forget_mem (q +ʷ 18446744073709551592#64)
-  done_perm 28
-  simp only [colsLeak, sub_lit, BitVec.reduceNeg, List.append_assoc, List.cons_append,
-    List.nil_append]
+  forget_mem (q +ʷ 18446744073709551520#64)
+  forget_mem (q +ʷ 18446744073709551524#64)
+  forget_mem (q +ʷ 18446744073709551516#64)
+  forget_mem (q +ʷ 18446744073709551592#64)
+  braid_done
 
-/-- The second half of a round of the loop reveals `diagsLeak` of the stack pointer. The
-count of rounds is loaded from its slot into `edx`, one less, and the zero flag is set if
-none is left. -/
-theorem diagonals_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word)
-    (k : W32) (q u60 u5c : Word) (t : Trace) :
+/-- The trace found for the first half, written out. -/
+example (q : Word) : (columns_run q).1 =
+    [.write (q - 24#64) 4, .write (q - 20#64) 4, .read (q - 96#64) 4, .read (q - 92#64) 4,
+      .read (q - 100#64) 4, .write (q - 100#64) 4, .read (q - 24#64) 4] := by
+  simp only [sub_lit, BitVec.reduceNeg]; rfl
+
+/-- **The second half of a round of the loop and the trace of its run.** The count of
+rounds is loaded from its slot into `edx`, one less, and the zero flag is set if none is
+left. The trace found is a function of the stack pointer `q` alone: the stores and the
+loads of the three words of the state that are in slots, and the load of the count of
+rounds. -/
+def diagonals_run (q : Word) : { ls : Trace // ∀
+    (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word)
+    (k : W32) (u60 u5c : Word) (t : Trace),
     TripleT chacha20_block.program
       (Atoms.interp [.pc 0x401185#64, .reg rsp q,
         .reg r9 v0, .reg rdx v1, .reg r11 v2, .reg r15 v3, .reg rcx v4, .reg rdi v5,
@@ -171,7 +172,9 @@ theorem diagonals_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 :
         .prop (memAny (q +ʷ 18446744073709551596#64) 4 true),
         .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
         .flag Flags.zf ((k - 1).zeroExtend 64 == 0#64), .prop (flagAny Flags.sf),
-        .prop (flagAny Flags.of)]) (t ++ diagsLeak q) := by
+        .prop (flagAny Flags.of)]) (t ++ ls) } := by
+  braid_traced
+  intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k u60 u5c t
   iterate 54 braid_sym_step
   simp only [zdec]
   braid_forget 9
@@ -181,24 +184,30 @@ theorem diagonals_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 :
   try braid_forget_flag 4
   try braid_forget_flag 5
   forget_regs
-  braid_forget_mem (q +ʷ 18446744073709551520#64)
-  braid_forget_mem (q +ʷ 18446744073709551524#64)
-  braid_forget_mem (q +ʷ 18446744073709551516#64)
-  braid_forget_mem (q +ʷ 18446744073709551596#64)
-  done_perm 27
-  simp only [diagsLeak, sub_lit, BitVec.reduceNeg, List.append_assoc, List.cons_append,
-    List.nil_append]
+  forget_mem (q +ʷ 18446744073709551520#64)
+  forget_mem (q +ʷ 18446744073709551524#64)
+  forget_mem (q +ʷ 18446744073709551516#64)
+  forget_mem (q +ʷ 18446744073709551596#64)
+  braid_done
+
+/-- The trace found for the second half, written out. -/
+example (q : Word) : (diagonals_run q).1 =
+    [.write (q - 96#64) 4, .write (q - 92#64) 4, .read (q - 20#64) 4, .read (q - 100#64) 4,
+      .write (q - 100#64) 4] := by
+  simp only [sub_lit, BitVec.reduceNeg]; rfl
 
 /-- Name what the three slots of the state hold. -/
 local macro "name_slots " q:term : tactic =>
-  `(tactic| (braid_name_mem ($q +ʷ 18446744073709551520#64)
-             braid_name_mem ($q +ʷ 18446744073709551524#64)
-             braid_name_mem ($q +ʷ 18446744073709551516#64)))
+  `(tactic| (name_mem ($q +ʷ 18446744073709551520#64)
+             name_mem ($q +ʷ 18446744073709551524#64)
+             name_mem ($q +ʷ 18446744073709551516#64)))
 
-/-- **A round of the loop reveals `colsLeak` and then `diagsLeak`** of the stack pointer, up
-to the branch at its end, whatever the registers and slots of the state hold. -/
-theorem double_round_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word)
-    (k : W32) (q t9 u18 u14 : Word) (t : Trace) :
+/-- **A round of the loop and the trace of its run**, up to the branch at its end, whatever
+the registers and slots of the state hold. The trace found is that of the first half and
+then that of the second, a function of the stack pointer `q` alone. -/
+def double_round_run (q : Word) : { ls : Trace // ∀
+    (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word)
+    (k : W32) (t9 u18 u14 : Word) (t : Trace),
     TripleT chacha20_block.program
       (Atoms.interp [.pc 0x4010d0#64, .reg rsp q,
         .mem (q +ʷ 18446744073709551520#64) 4 v0 true,
@@ -223,25 +232,33 @@ theorem double_round_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v1
         .prop (memAny (q +ʷ 18446744073709551596#64) 4 true),
         .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
         .flag Flags.zf ((k - 1).zeroExtend 64 == 0#64), .prop (flagAny Flags.sf),
-        .prop (flagAny Flags.of)]) (t ++ (colsLeak q ++ diagsLeak q)) := by
-  braid_call columns_trace v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k q t9 u18
+        .prop (flagAny Flags.of)]) (t ++ ls) } := by
+  braid_traced
+  intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t9 u18 u14 t
+  braid_call (columns_run q).2 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t9 u18
     u14 t
   name_regs
   braid_name_reg 3
   braid_name_reg 9
   name_slots q
-  braid_call diagonals_trace _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ k q _ _ _
+  braid_call (diagonals_run q).2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ k _ _ _
   done_perm 28
-  simp only [List.append_assoc]
+
+/-- The trace found for a round is those of its two halves. -/
+example (q : Word) : (double_round_run q).1 = (columns_run q).1 ++ (diagonals_run q).1 := rfl
 
 /-! ## The loop -/
 
-/-- **What the loop of `chacha20_block` reveals**, with the stack pointer at `q` and `n + 1`
-rounds left: `roundsLeak q n`, whatever the registers and slots of the state hold. Proved by
-induction on `n`, as `rounds_spec` is. -/
-theorem rounds_trace : ∀ (n : Nat)
+/-- **The loop of `chacha20_block` and the trace of its run**, with the stack pointer at `q`
+and `n + 1` rounds left, whatever the registers and slots of the state hold. The trace is
+found by running a round and then the rounds that remain, by recursion on `n` as
+`rounds_spec` is by induction: for each round, the addresses of the slots it uses and where
+its branch goes, which is back to the head of the loop after each round but the last, and
+on after the last. It is a function of the stack pointer and the number of rounds, which is
+ten. -/
+def rounds_run (q : Word) : (n : Nat) → { ls : Trace // ∀
     (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word) (k : W32)
-    (q t9 u18 u14 : Word) (t : Trace), k = BitVec.ofNat 32 (n + 1) → n + 1 < 2 ^ 32 →
+    (t9 u18 u14 : Word) (t : Trace), k = BitVec.ofNat 32 (n + 1) → n + 1 < 2 ^ 32 →
     TripleT chacha20_block.program
       (Atoms.interp [.pc 0x4010d0#64, .reg rsp q,
         .mem (q +ʷ 18446744073709551520#64) 4 v0 true,
@@ -265,35 +282,41 @@ theorem rounds_trace : ∀ (n : Nat)
         .prop (memAny (q +ʷ 18446744073709551596#64) 4 true),
         .prop (flagAny Flags.cf), .prop (flagAny Flags.pf), .prop (flagAny Flags.af),
         .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of)])
-      (t ++ roundsLeak q n) := by
-  intro n
-  induction n with
-  | zero =>
-    intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k q t9 u18 u14 t hk _
+      (t ++ ls) }
+  | 0 => by
+    braid_traced
+    intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t9 u18 u14 t hk _
     obtain rfl : k = 1#32 := hk
-    braid_call double_round_trace v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 1#32 q
-      t9 u18 u14 t
+    braid_call (double_round_run q).2 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15
+      1#32 t9 u18 u14 t
     braid_sym_step
     braid_forget_flag 3
     done_perm 28
-    simp only [roundsLeak, List.append_assoc]
-  | succ n ih =>
-    intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k q t9 u18 u14 t hk hn
-    braid_call double_round_trace v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k q
+  | n + 1 => by
+    braid_traced
+    intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t9 u18 u14 t hk hn
+    braid_call (double_round_run q).2 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k
       t9 u18 u14 t
     braid_sym_step
     · name_regs
       braid_name_reg 9
       name_slots q
-      braid_name_mem (q +ʷ 18446744073709551592#64)
-      braid_name_mem (q +ʷ 18446744073709551596#64)
+      name_mem (q +ʷ 18446744073709551592#64)
+      name_mem (q +ʷ 18446744073709551596#64)
       braid_forget_flag 3
-      braid_call ih _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) q _ _ _ _ (by rw [hk]; bv_omega)
-        (by omega)
+      braid_call (rounds_run q n).2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) _ _ _ _
+        (by rw [hk]; bv_omega) (by omega)
       done_perm 28
-      simp only [roundsLeak, List.append_assoc, List.cons_append, List.nil_append]
     · exfalso
       have : k - 1 ≠ 0#32 := by rw [hk]; bv_omega
       exact this (by bv_decide)
+
+/-- With one round left the loop reveals what the round does, and the way on. -/
+example (q : Word) : (rounds_run q 0).1 = (double_round_run q).1 ++ [.jump 0x40123c#64] := rfl
+
+/-- With more left it reveals what the round does, the branch back, and then what the rounds
+that remain do. -/
+example (q : Word) (n : Nat) : (rounds_run q (n + 1)).1 =
+    (double_round_run q).1 ++ .jump 0x4010d0#64 :: (rounds_run q n).1 := rfl
 
 end Examples.ChaCha20.X86

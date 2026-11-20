@@ -2,8 +2,9 @@
   Examples.ChaCha20.X86.Leakage
 
   What `chacha20_block` reveals on x86-64, about the machine alone (`docs/Leakage.md`). The
-  traced triple is `chacha20_block_trace` of `Examples.ChaCha20.X86.LeakBlock`; here it is
-  carried to the machine model, and the two-run statement is drawn from it.
+  traced triple is that of `block_run` of `Examples.ChaCha20.X86.LeakBlock`, whose run finds
+  the trace `blockLeak`; here it is carried to the machine model, and the two-run statement
+  is drawn from it.
 
   The code neither branches nor indexes on the words of the state: its three loops run a
   fixed number of times, and every address is an offset from one of the two pointers or
@@ -64,7 +65,7 @@ theorem chacha20_block_leakage_aux [Layout] (m : MachineState) (s : List W32)
       .flag Flags.of m.data.status.of] : Atoms), ∀ q n v w', Atom.Disj b (.mem q n v w') := by
     braid_not_mem
   refine (machine_soundT chacha20_block_holds
-    (chacha20_block_trace out inp r sp₀ s os fr sv (m.data.regs.get64 .rax)
+    ((block_run out inp sp₀ r).2 s os fr sv (m.data.regs.get64 .rax)
       (m.data.regs.get64 .rbx) (m.data.regs.get64 .rcx) (m.data.regs.get64 .rdx)
       (m.data.regs.get64 .rbp) (m.data.regs.get64 .r8) (m.data.regs.get64 .r9)
       (m.data.regs.get64 .r10) (m.data.regs.get64 .r11) (m.data.regs.get64 .r12)
@@ -117,7 +118,7 @@ theorem chacha20_block_leakage_aux [Layout] (m : MachineState) (s : List W32)
             | exact sat_mem_abs.2 hret | exact hout | exact hinp | exact hsp | rfl
             | (simp [hpc]; done)⟩⟩⟩⟩)).mono ?_
   rintro m' u ⟨e, σ', hr, hq⟩
-  refine ⟨e, ?_⟩
+  refine ⟨e.trans (List.nil_append _), ?_⟩
   rw [← hr.pc]
   exact Atoms.pc_of_holds hq (by braid_at)
 

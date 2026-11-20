@@ -7,7 +7,7 @@
   so the function that gives the trace, `blockLeak`, does not take them.
 
   The code is run in four parts: the head, to the loop of rounds; the loop, which is
-  `rounds_trace` of `Examples.ChaCha20.Arm.LeakRound`; the stores of the state to the frame;
+  `rounds_run` of `Examples.ChaCha20.Arm.LeakRound`; the stores of the state to the frame;
   and the loop that adds the input, with the return. The traced triples here say nothing of
   what is computed, which is `chacha20_block_spec`: the output and the frame are left with
   some contents. The theorems about the machine alone are in
@@ -15,18 +15,21 @@
 
   ## Main definitions
 
-  * `headLeak`, `storesLeak`, `sumLeak`: what each part of the code reveals
-  * `blockLeak`: what `chacha20_block` reveals, from its two pointers, the stack pointer and
-    the return address
+  * `block_head_run`, `block_stores_run`, `block_sum_run`: the trace of each part of the
+    code, found by its run, with the traced triple
+  * `block_run`: the trace of `chacha20_block`, found by its run, with the traced triple; it
+    is a function of its two pointers, the stack pointer and the return address
+  * `blockLeak`: what `chacha20_block` reveals, which is that trace
 
   ## Main results
 
-  * `block_head_trace`, `block_stores_trace`, `block_sum_trace`: the parts
-  * `chacha20_block_trace`: the function reveals `blockLeak`
+  * `TripleT.forget_cells`, `TripleT.name_cells`: rules that belong with the logic
+  * `trace_start`, `trace_snoc`: the labels of a long run, gathered one at a time
 -/
 
 module
 
+public import Braid.Logic.Traced
 public import Examples.ChaCha20.Arm.Block
 public import Examples.ChaCha20.Arm.LeakRound
 import all Examples.ChaCha20.Common
@@ -37,56 +40,6 @@ import Iris.BI.DerivedLaws
 namespace Examples.ChaCha20.Arm
 
 open Braid Examples Lowering.Arm Lowering.Arm.Regs
-
-/-! ## What is revealed -/
-
-/-- The order in which the code loads the sixteen words of the state from the frame into
-registers, a pair at a time: by index of the word. -/
-def loadOrder : List Nat := [4, 5, 0, 1, 12, 13, 8, 9, 6, 7, 2, 3, 14, 15, 10, 11]
-
-/-- The order in which the code stores the sixteen words of the state from registers back
-to the frame, a pair at a time: by index of the word. -/
-def storeOrder : List Nat := [8, 9, 4, 5, 0, 1, 12, 13, 10, 11, 6, 7, 2, 3, 14, 15]
-
-/-- The head of `chacha20_block`, to the loop of rounds, reveals: the four stores, in two
-pairs, that save registers below the stack pointer `sp`; for each of the sixteen words, the
-address it is read from in the input, the address it is written to in the frame, and where
-the branch of the loop that copies goes, which is back to its head but for the last; and the
-sixteen loads from the frame. -/
-def headLeak (inp sp : Word) : Trace :=
-  [.write (sp - 32#64) 8, .write (sp - 24#64) 8, .write (sp - 16#64) 8,
-    .write (sp - 8#64) 8] ++
-  ((List.range 16).flatMap fun i =>
-    [.read (inp + BitVec.ofNat 64 (4 * i)) 4,
-      .write (sp - 96#64 + BitVec.ofNat 64 (4 * i)) 4,
-      .jump (if i < 15 then 0x10058#64 else 0x1006c#64)]) ++
-  loadOrder.map fun i => .read (sp - 96#64 + BitVec.ofNat 64 (4 * i)) 4
-
-/-- The sixteen stores of the registers of the state to the frame reveal their addresses. -/
-def storesLeak (sp : Word) : Trace :=
-  storeOrder.map fun i => .write (sp - 96#64 + BitVec.ofNat 64 (4 * i)) 4
-
-/-- The end of `chacha20_block`, from the loop that adds, reveals: for each of the sixteen
-words, the address it is read from in the frame, the address it is read from in the input,
-the address it is written to in the output, and where the branch of the loop goes, which is
-back to its head but for the last; the four loads, in two pairs, that restore registers;
-and the return address. -/
-def sumLeak (out inp sp r : Word) : Trace :=
-  ((List.range 16).flatMap fun i =>
-    [.read (sp - 96#64 + BitVec.ofNat 64 (4 * i)) 4,
-      .read (inp + BitVec.ofNat 64 (4 * i)) 4,
-      .write (out + BitVec.ofNat 64 (4 * i)) 4,
-      .jump (if i < 15 then 0x10240#64 else 0x1025c#64)]) ++
-  [.read (sp - 16#64) 8, .read (sp - 8#64) 8, .read (sp - 32#64) 8, .read (sp - 24#64) 8,
-    .jump r]
-
-/-- **What `chacha20_block` reveals**: the addresses it works at, which are those of the
-output, of the input and of its frame below the stack pointer, where the branches of its
-three loops go, which is the same on every run, and the return address. It is a function of
-the two pointers, the stack pointer and the return address, and of nothing else: not of the
-sixteen words of the state. -/
-def blockLeak (out inp sp r : Word) : Trace :=
-  headLeak inp sp ++ (roundsLeak 9 ++ (storesLeak sp ++ sumLeak out inp sp r))
 
 /-! ## Rules that the logic has for triples without a trace -/
 
@@ -110,47 +63,42 @@ theorem TripleT.name_cells {P : Program} {as rest : Atoms} {k n : Nat} {p : Word
   exact (Braid.TripleT.exists_pre fun vs : { l : List Word // l.length = n } =>
     h vs.1 vs.2).conseq Iris.BI.sep_exists_right.1 .rfl
 
-/-- The symbolic state is the `n` atoms of the postcondition in another order:
-`braid_done_perm`, for a traced triple. It leaves the equation between the traces. -/
-local macro "done_perm " n:num : tactic =>
+/-- The trace a run has left, `x`, is `t` and then some labels, if it is so with no labels
+after it: the first step of finding the labels of a long run. -/
+theorem trace_start {x t ls : Trace} (h : x ++ [] = t ++ ls) : x = t ++ ls := by
+  rwa [List.append_nil] at h
+
+/-- The last label the stepper added goes to the front of the labels already gathered. -/
+theorem trace_snoc {x t ls acc : Trace} {l : Label} (h : x ++ l :: acc = t ++ ls) :
+    x ++ [l] ++ acc = t ++ ls := by
+  rwa [List.append_assoc]
+
+/-- `braid_done` for a long run, whose state is the `n` atoms of the postcondition in
+another order. The labels are gathered from the last to the first, one rule for each, so
+that the trace the stepper has left is not reassociated as a whole. -/
+local macro "done_long " n:num : tactic =>
   `(tactic| (braid_norm
              refine TripleT.done_split ?_ ?_
              · iterate $n (apply Atoms.Split.cons; · braid_extract)
-               exact Atoms.Split.nil))
-
-/-- A trace to which labels were added one at a time, as the stepper adds them, is the
-trace with the list of them appended. -/
-theorem foldl_snoc_eq (t ls : Trace) : ls.foldl (fun acc l => acc ++ [l]) t = t ++ ls := by
-  induction ls generalizing t with
-  | nil => simp
-  | cons l ls ih => simp [ih]
-
-/-- The trace the stepper has left is the one a specification gives: the specification
-alone is written out, with its addresses as the stepper computes them, and the trace the
-stepper has left is compared with it label by label, without reassociating it. -/
-local macro "leak_eq " d:ident : tactic =>
-  `(tactic| (conv =>
-               rhs
-               arg 2
-               simp only [$d:ident, loadOrder, storeOrder, List.range_succ, List.range_zero,
-                 List.flatMap_cons, List.flatMap_nil, List.map_cons, List.map_nil,
-                 List.append_assoc, List.cons_append, List.nil_append,
-                 sub_lit, BitVec.add_assoc, BitVec.reduceAdd, BitVec.reduceNeg, BitVec.reduceNot,
-                 BitVec.add_zero, Nat.reduceMul, Nat.reduceAdd, Nat.reduceLT, ↓reduceIte,
-                 BitVec.ofNat_eq_ofNat]
-             refine Eq.trans ?_ (foldl_snoc_eq _ _)
-             simp only [List.foldl_cons, List.foldl_nil]))
+               exact Atoms.Split.nil
+             · apply trace_start
+               repeat apply trace_snoc
+               rfl))
 
 /-! ## The code -/
 
-/-- **What the head of `chacha20_block` reveals**, to the head of the loop of rounds:
-`headLeak` of the address of the input and the stack pointer, which must be a multiple
-of 16. The registers of the state are left with what was loaded, which the trace does not
-need. -/
-theorem block_head_trace (inp sp₀ : Word) (s : List W32) (fr sv : List Word)
+/-- **The head of `chacha20_block` and the trace of its run**, to the head of the loop of
+rounds. The trace found is a function of the address of the input and the stack pointer,
+which must be a multiple of 16: the four stores, in two pairs, that save registers below
+the stack pointer; for each of the sixteen words, the address it is read from in the input,
+the address it is written to in the frame, and where the branch of the loop that copies
+goes, which is back to its head but for the last; and the sixteen loads from the frame, a
+pair at a time. The registers of the state are left with what was loaded, which the trace
+does not need. -/
+def block_head_run (inp sp₀ : Word) : { ls : Trace // ∀ (s : List W32) (fr sv : List Word)
     (t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 t14 t15 t16 t17 t18 v19 v20 v21 v22 : Word)
-    (fn fz fc fv : Bool) (hs : s.length = 16) (hfr : fr.length = 16) (hsv : sv.length = 4)
-    (hsp : sp₀ &&& 15#64 = 0#64) (t : Trace) :
+    (fn fz fc fv : Bool) (_ : s.length = 16) (_ : fr.length = 16) (_ : sv.length = 4)
+    (_ : sp₀ &&& 15#64 = 0#64) (t : Trace),
     TripleT chacha20_block.program
       (Atoms.interp [.prop (cellsAt 4 true inp (s.map (·.zeroExtend 64))),
         .prop (cellsAt 4 true (sp₀ - 96#64) fr), .prop (cellsAt 8 true (sp₀ - 32#64) sv),
@@ -170,7 +118,10 @@ theorem block_head_trace (inp sp₀ : Word) (s : List W32) (fr sv : List Word)
         .prop (regAny x14), .prop (regAny x15), .prop (regAny x3), .prop (regAny x17),
         .reg x19 v19, .reg x20 v20, .reg x21 v21, .reg x22 v22, .reg sp (sp₀ - 96#64),
         .prop (flagAny Flags.n), .prop (flagAny Flags.z), .prop (flagAny Flags.c),
-        .prop (flagAny Flags.v)]) (t ++ headLeak inp sp₀) := by
+        .prop (flagAny Flags.v)]) (t ++ ls) } := by
+  braid_traced
+  intro s fr sv t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 t14 t15 t16 t17 t18 v19 v20 v21 v22
+    fn fz fc fv hs hfr hsv hsp t
   obtain ⟨a0, s0, rfl, hs0⟩ := exists_cons_of_length hs
   obtain ⟨a1, s1, rfl, hs1⟩ := exists_cons_of_length hs0
   obtain ⟨a2, s2, rfl, hs2⟩ := exists_cons_of_length hs1
@@ -224,15 +175,15 @@ theorem block_head_trace (inp sp₀ : Word) (s : List W32) (fr sv : List Word)
   braid_forget_flag 1
   braid_forget_flag 2
   braid_forget_flag 3
-  done_perm 31
-  leak_eq headLeak
+  done_long 31
 
-/-- **What the stores after the loop of rounds reveal**: `storesLeak` of the stack pointer.
-The sixteen registers of the state are stored to the frame, whose contents are then not
-said, and `x8` and `x9` are set for the loop that adds. -/
-theorem block_stores_trace (sp₀ : Word) (fr : List Word)
+/-- **The stores after the loop of rounds and the trace of their run.** The sixteen
+registers of the state are stored to the frame, a pair at a time, whose contents are then
+not said, and `x8` and `x9` are set for the loop that adds. The trace found is the sixteen
+addresses in the frame, a function of the stack pointer alone. -/
+def block_stores_run (sp₀ : Word) : { ls : Trace // ∀ (fr : List Word)
     (w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 u8 : Word)
-    (hfr : fr.length = 16) (hsp : sp₀ &&& 15#64 = 0#64) (t : Trace) :
+    (_ : fr.length = 16) (_ : sp₀ &&& 15#64 = 0#64) (t : Trace),
     TripleT chacha20_block.program
       (Atoms.interp [.prop (cellsAt 4 true (sp₀ - 96#64) fr),
         .pc 0x10218#64, .reg x8 u8,
@@ -244,7 +195,9 @@ theorem block_stores_trace (sp₀ : Word) (fr : List Word)
         .reg x7 w0, .reg x6 w1, .reg x5 w2, .reg x16 w3, .reg x13 w4, .reg x10 w5,
         .reg x11 w6, .reg x2 w7, .reg x9 (sp₀ - 96#64), .reg x18 w9, .reg x4 w10,
         .reg x12 w11, .reg x14 w12, .reg x15 w13, .reg x3 w14, .reg x17 w15,
-        .reg sp (sp₀ - 96#64)]) (t ++ storesLeak sp₀) := by
+        .reg sp (sp₀ - 96#64)]) (t ++ ls) } := by
+  braid_traced
+  intro fr w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 u8 hfr hsp t
   obtain ⟨f0, fr0, rfl, hfr0⟩ := exists_cons_of_length hfr
   obtain ⟨f1, fr1, rfl, hfr1⟩ := exists_cons_of_length hfr0
   obtain ⟨f2, fr2, rfl, hfr2⟩ := exists_cons_of_length hfr1
@@ -268,16 +221,19 @@ theorem block_stores_trace (sp₀ : Word) (fr : List Word)
   apply TripleT.forget_cells (k := 4) (p := sp₀ + 18446744073709551520#64) (n := 16)
   case hupd => braid_upd
   case hn => rfl
-  done_perm 20
-  leak_eq storesLeak
+  braid_done
 
-/-- **What the end of `chacha20_block` reveals**, from the loop that adds: `sumLeak` of the
-two pointers, the stack pointer and the return address, whatever is in the frame and in the
-input. The output and the frame are left with some contents. -/
-theorem block_sum_trace (out inp r sp₀ : Word) (s : List W32) (os fr : List Word)
-    (m0 m1 m2 m3 u10 u11 u19 u20 u21 u22 : Word) (fn fz fc fv : Bool)
-    (hs : s.length = 16) (hos : os.length = 16) (hfr : fr.length = 16)
-    (hsp : sp₀ &&& 15#64 = 0#64) (t : Trace) :
+/-- **The end of `chacha20_block` and the trace of its run**, from the loop that adds,
+whatever is in the frame and in the input. The trace found is a function of the two
+pointers, the stack pointer and the return address: for each of the sixteen words, the
+address it is read from in the frame, the address it is read from in the input, the address
+it is written to in the output, and where the branch of the loop goes, which is back to its
+head but for the last; the four loads, in two pairs, that restore registers; and the return
+address. The output and the frame are left with some contents. -/
+def block_sum_run (out inp sp₀ r : Word) : { ls : Trace // ∀ (s : List W32)
+    (os fr : List Word) (m0 m1 m2 m3 u10 u11 u19 u20 u21 u22 : Word) (fn fz fc fv : Bool)
+    (_ : s.length = 16) (_ : os.length = 16) (_ : fr.length = 16)
+    (_ : sp₀ &&& 15#64 = 0#64) (t : Trace),
     TripleT chacha20_block.program
       (Atoms.interp (.prop (cellsAt 4 true inp (s.map (·.zeroExtend 64))) ::
         .prop (cellsAt 4 true out os) :: .prop (cellsAt 4 true (sp₀ - 96#64) fr) ::
@@ -293,7 +249,9 @@ theorem block_sum_trace (out inp r sp₀ : Word) (s : List W32) (os fr : List Wo
         .prop (regAny x10), .prop (regAny x11),
         .reg x19 m3, .reg x20 m2, .reg x21 m1, .reg x22 m0, .reg sp sp₀, .reg lr r,
         .prop (flagAny Flags.n), .prop (flagAny Flags.z), .prop (flagAny Flags.c),
-        .prop (flagAny Flags.v)])) (t ++ sumLeak out inp sp₀ r) := by
+        .prop (flagAny Flags.v)])) (t ++ ls) } := by
+  braid_traced
+  intro s os fr m0 m1 m2 m3 u10 u11 u19 u20 u21 u22 fn fz fc fv hs hos hfr hsp t
   obtain ⟨a0, s0, rfl, hs0⟩ := exists_cons_of_length hs
   obtain ⟨a1, s1, rfl, hs1⟩ := exists_cons_of_length hs0
   obtain ⟨a2, s2, rfl, hs2⟩ := exists_cons_of_length hs1
@@ -370,18 +328,19 @@ theorem block_sum_trace (out inp r sp₀ : Word) (s : List W32) (os fr : List Wo
   braid_forget_flag 1
   braid_forget_flag 2
   braid_forget_flag 3
-  done_perm 21
-  leak_eq sumLeak
+  done_long 21
 
-/-- **What `chacha20_block` reveals**: `blockLeak` of its two arguments, the stack pointer
-and the return address, whatever the sixteen words of the input are. The stack pointer must
-be a multiple of 16, with 96 bytes below it. The output and the frame are left with some
+/-- **`chacha20_block` and the trace of its run**, whatever the sixteen words of the input
+are. The trace found is a function of its two arguments, the stack pointer and the return
+address, which are bound before it, and of nothing else. The stack pointer must be a
+multiple of 16, with 96 bytes below it. The output and the frame are left with some
 contents, which `chacha20_block_spec` gives; the registers `x19` to `x22` and the stack
 pointer are restored. -/
-theorem chacha20_block_trace (out inp r sp₀ : Word) (s : List W32) (os fr sv : List Word)
+def block_run (out inp sp₀ r : Word) : { ls : Trace // ∀ (s : List W32)
+    (os fr sv : List Word)
     (t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 t14 t15 t16 t17 t18 v19 v20 v21 v22 : Word)
-    (fn fz fc fv : Bool) (hs : s.length = 16) (hos : os.length = 16) (hfr : fr.length = 16)
-    (hsv : sv.length = 4) (hsp : sp₀ &&& 15#64 = 0#64) (t : Trace) :
+    (fn fz fc fv : Bool) (_ : s.length = 16) (_ : os.length = 16) (_ : fr.length = 16)
+    (_ : sv.length = 4) (_ : sp₀ &&& 15#64 = 0#64) (t : Trace),
     TripleT chacha20_block.program
       (Atoms.interp (.prop (cellsAt 4 true inp (s.map (·.zeroExtend 64))) ::
         .prop (cellsAt 4 true out os) :: .prop (cellsAt 4 true (sp₀ - 96#64) fr) ::
@@ -403,9 +362,11 @@ theorem chacha20_block_trace (out inp r sp₀ : Word) (s : List W32) (os fr sv :
         .prop (regAny x18),
         .reg x19 v19, .reg x20 v20, .reg x21 v21, .reg x22 v22, .reg sp sp₀, .reg lr r,
         .prop (flagAny Flags.n), .prop (flagAny Flags.z), .prop (flagAny Flags.c),
-        .prop (flagAny Flags.v)])) (t ++ blockLeak out inp sp₀ r) := by
-  simp only [blockLeak]
-  braid_call block_head_trace inp sp₀ s fr sv t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 t14
+        .prop (flagAny Flags.v)])) (t ++ ls) } := by
+  braid_traced
+  intro s os fr sv t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 t14 t15 t16 t17 t18 v19 v20 v21
+    v22 fn fz fc fv hs hos hfr hsv hsp t
+  braid_call (block_head_run inp sp₀).2 s fr sv t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 t14
     t15 t16 t17 t18 v19 v20 v21 v22 fn fz fc fv hs hfr hsv hsp t
   -- The ten double rounds.
   arm_name_state
@@ -414,7 +375,7 @@ theorem chacha20_block_trace (out inp r sp₀ : Word) (s : List W32) (os fr sv :
   braid_name_flag 2
   braid_name_flag 3
   have h := fun v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 fn fz fc fv t =>
-    rounds_trace 9 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 10#32 v19 v20 v21
+    (rounds_run 9).2 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 10#32 v19 v20 v21
       v22 fn fz fc fv t rfl (by decide)
   simp only [show BitVec.zeroExtend 64 10#32 = 10#64 from by decide] at h
   braid_call h _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -426,11 +387,12 @@ theorem chacha20_block_trace (out inp r sp₀ : Word) (s : List W32) (os fr sv :
   braid_name_flag 1
   braid_name_flag 2
   braid_name_flag 3
-  braid_call block_stores_trace sp₀ (s.map (·.zeroExtend 64)) _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-    _ (by rw [List.length_map, hs]) hsp _
-  refine TripleT.name_cells (k := 4) (n := 16) (p := sp₀ + 18446744073709551520#64)
-    (by braid_extract) fun fr' hfr' => ?_
-  braid_call block_sum_trace out inp r sp₀ s os fr' v22 v21 v20 v19 _ _ _ _ _ _ _ _ _ _
+  braid_call (block_stores_run sp₀).2 (s.map (·.zeroExtend 64)) _ _ _ _ _ _ _ _ _ _ _ _ _
+    _ _ _ _ (by rw [List.length_map, hs]) hsp _
+  apply TripleT.name_cells (k := 4) (n := 16) (p := sp₀ + 18446744073709551520#64)
+  case hext => braid_extract
+  intro fr' hfr'
+  braid_call (block_sum_run out inp sp₀ r).2 s os fr' v22 v21 v20 v19 _ _ _ _ _ _ _ _ _ _
     hs hos hfr' hsp _
   braid_forget 2
   braid_forget 3
@@ -445,7 +407,19 @@ theorem chacha20_block_trace (out inp r sp₀ : Word) (s : List W32) (os fr sv :
   braid_forget 16
   braid_forget 17
   braid_forget 18
-  done_perm 34
-  simp only [List.append_assoc]
+  braid_done
+
+/-- **What `chacha20_block` reveals**: the addresses it works at, which are those of the
+output, of the input and of its frame below the stack pointer, where the branches of its
+three loops go, which is the same on every run, and the return address. It is the trace
+that the run of `block_run` finds, a function of the two pointers, the stack pointer and
+the return address, and of nothing else: not of the sixteen words of the state. -/
+def blockLeak (out inp sp r : Word) : Trace := (block_run out inp sp r).1
+
+/-- The trace found is those of the four parts, one after another, with ten rounds. -/
+example (out inp sp r : Word) : blockLeak out inp sp r =
+    (block_head_run inp sp).1 ++ ((rounds_run 9).1 ++
+      ((block_stores_run sp).1 ++ (block_sum_run out inp sp r).1)) := rfl
+
 
 end Examples.ChaCha20.Arm

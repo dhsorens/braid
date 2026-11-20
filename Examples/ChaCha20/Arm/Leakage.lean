@@ -2,8 +2,9 @@
   Examples.ChaCha20.Arm.Leakage
 
   What `chacha20_block` reveals on AArch64, about the machine alone (`docs/Leakage.md`). The
-  traced triple is `chacha20_block_trace` of `Examples.ChaCha20.Arm.LeakBlock`; here it is
-  carried to the machine model, and the two-run statement is drawn from it.
+  traced triple is that of `block_run` of `Examples.ChaCha20.Arm.LeakBlock`, whose run finds
+  the trace `blockLeak`; here it is carried to the machine model, and the two-run statement
+  is drawn from it.
 
   The code neither branches nor indexes on the words of the state: its three loops run a
   fixed number of times, and every address is an offset from one of the two pointers or
@@ -70,7 +71,7 @@ theorem chacha20_block_leakage (prog : Arm64.Program) (st : Arm64.State) (s : Li
       ∀ q n v w', Atom.Disj b (.mem q n v w') := by
     braid_not_mem
   obtain ⟨st', σ', hsteps, hr, hq⟩ := machine_soundT chacha20_block_lowered
-    (chacha20_block_trace (st.regs.read 0#5) (st.regs.read 1#5) (st.regs.read 30#5) st.sp s os
+    ((block_run (st.regs.read 0#5) (st.regs.read 1#5) st.sp (st.regs.read 30#5)).2 s os
       fr sv
       (st.regs.read 2#5) (st.regs.read 3#5) (st.regs.read 4#5) (st.regs.read 5#5)
       (st.regs.read 6#5) (st.regs.read 7#5) (st.regs.read 8#5) (st.regs.read 9#5)

@@ -8,12 +8,12 @@
 
   ## Main definitions
 
-  * `quarterRoundLeak`: what `quarter_round` reveals, from its argument, the stack pointer
-    and the return address
+  * `quarter_round_run`: the trace of `quarter_round`, found by its run, with the traced
+    triple; the trace is a function of the argument, the stack pointer and the return address
+  * `quarterRoundLeak`: what `quarter_round` reveals, which is that trace
 
   ## Main results
 
-  * `quarter_round_trace`: the traced triple
   * `quarter_round_leakage`: the same, about the machine alone
   * `quarter_round_leakage_eq`: two machines that agree on the argument, the stack pointer
     and the return address run with the same trace
@@ -21,6 +21,7 @@
 
 module
 
+public import Braid.Logic.Traced
 public import Examples.ChaCha20.X86.QuarterRound
 
 public section
@@ -29,18 +30,12 @@ namespace Examples.ChaCha20.X86
 
 open Braid Examples Lowering.X86 Lowering.X86.Regs
 
-/-- What `quarter_round` reveals: the addresses of the four words, each read and then
-written, the stack pointer, where the return address is read, and the return address, where
-it goes. -/
-def quarterRoundLeak (s sp r : Word) : Trace :=
-  [.read (s + 4#64) 4, .read s 4, .read (s + 12#64) 4, .read (s + 8#64) 4,
-    .write s 4, .write (s + 4#64) 4, .write (s + 8#64) 4, .write (s + 12#64) 4,
-    .read sp 8, .jump r]
-
-/-- `quarter_round` works on the four words its argument points to and reveals
-`quarterRoundLeak` of the argument, the stack pointer and the return address. -/
-theorem quarter_round_trace (s r t0 t2 t3 t4 sp₀ : Word) (a b c d : W32)
-    (fc fp fa fz fs fo : Bool) (t : Trace) :
+/-- **`quarter_round` and the trace of its run.** It works on the four words its argument
+points to, and the trace is found by running it: it is a function of the argument `s`, the
+stack pointer `sp₀` and the return address `r` alone, and of nothing the registers, the
+flags or the four words hold. -/
+def quarter_round_run (s sp₀ r : Word) : { ls : Trace // ∀ (t0 t2 t3 t4 : Word)
+    (a b c d : W32) (fc fp fa fz fs fo : Bool) (t : Trace),
     TripleT quarter_round.program
       (Atoms.interp [.pc 0x401000#64, .reg rdi s, .reg rax t0, .reg rcx t2, .reg rdx t3,
         .reg rsi t4, .reg rsp sp₀, .mem sp₀ 8 r true,
@@ -53,7 +48,9 @@ theorem quarter_round_trace (s r t0 t2 t3 t4 sp₀ : Word) (a b c d : W32)
         .prop (flagAny Flags.zf), .prop (flagAny Flags.sf), .prop (flagAny Flags.of),
         .prop (cellsAt 4 true s ([(quarter a b c d).1, (quarter a b c d).2.1,
           (quarter a b c d).2.2.1, (quarter a b c d).2.2.2].map (·.zeroExtend 64)))])
-      (t ++ quarterRoundLeak s sp₀ r) := by
+      (t ++ ls) } := by
+  braid_traced
+  intro t0 t2 t3 t4 a b c d fc fp fa fz fs fo t
   rw [← qr_eq]
   simp only [qr]
   simp only [List.map_cons, List.map_nil]
@@ -72,6 +69,17 @@ theorem quarter_round_trace (s r t0 t2 t3 t4 sp₀ : Word) (a b c d : W32)
   try braid_forget_flag 4
   try braid_forget_flag 5
   braid_done
+
+/-- What `quarter_round` reveals: the addresses of the four words, each read and then
+written, the stack pointer, where the return address is read, and the return address, where
+it goes. It is the trace that the run of `quarter_round_run` finds. -/
+def quarterRoundLeak (s sp r : Word) : Trace := (quarter_round_run s sp r).1
+
+/-- The trace found, written out. -/
+example (s sp r : Word) : quarterRoundLeak s sp r =
+    [.read (s + 4#64) 4, .read s 4, .read (s + 12#64) 4, .read (s + 8#64) 4,
+      .write s 4, .write (s + 4#64) 4, .write (s + 8#64) 4, .write (s + 12#64) 4,
+      .read sp 8, .jump r] := rfl
 
 /-- **What `quarter_round` reveals, on the machine.** A machine of the model that runs the
 executable of this image, is at the entry of `quarter_round`, has the 32-bit words `a`, `b`,
@@ -92,9 +100,9 @@ theorem quarter_round_leakage [Layout] (m : MachineState) (a b c d : W32) (r : W
         m'.pc.toBitVec = r) m [] := by
   obtain ⟨hsep₁, hsep₂⟩ := hsep
   refine (machine_soundT quarter_round_holds
-    (quarter_round_trace (m.data.regs.get64 .rdi) r (m.data.regs.get64 .rax)
-      (m.data.regs.get64 .rcx) (m.data.regs.get64 .rdx) (m.data.regs.get64 .rsi)
-      (m.data.regs.get64 .rsp) a b c d m.data.status.cf m.data.status.pf m.data.status.af
+    ((quarter_round_run (m.data.regs.get64 .rdi) (m.data.regs.get64 .rsp) r).2
+      (m.data.regs.get64 .rax) (m.data.regs.get64 .rcx) (m.data.regs.get64 .rdx)
+      (m.data.regs.get64 .rsi) a b c d m.data.status.cf m.data.status.pf m.data.status.af
       m.data.status.zf m.data.status.sf m.data.status.of [])
     (Flat.interp (by braid_flat))
     (by simp [Atom.IsPointsTo, cellsAtoms])

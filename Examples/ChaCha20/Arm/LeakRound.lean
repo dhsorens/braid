@@ -13,16 +13,17 @@
 
   ## Main definitions
 
-  * `roundsLeak`: what the loop reveals, by recursion on the rounds left after this one
+  * `rounds_run`: the trace of the loop with `n + 1` rounds left, found by its run, with the
+    traced triple; by recursion on `n`
 
   ## Main results
 
   * `columns_trace`, `diagonals_trace`, `double_round_trace`: a round reveals nothing
-  * `rounds_trace`: the loop, with `n + 1` rounds left, reveals `roundsLeak n`
 -/
 
 module
 
+public import Braid.Logic.Traced
 public import Examples.ChaCha20.Arm.Round
 
 @[expose] public section
@@ -30,13 +31,6 @@ public import Examples.ChaCha20.Arm.Round
 namespace Examples.ChaCha20.Arm
 
 open Braid Examples Lowering.Arm Lowering.Arm.Regs
-
-/-- What the loop of rounds reveals with `n` rounds left after the one it is in: the branch
-back to the head of the loop after each round but the last, and the way out after the
-last. The addresses are those of the code, so this is the same list for every state. -/
-def roundsLeak : Nat → Trace
-  | 0 => [.jump 0x10218#64]
-  | n + 1 => .jump 0x10090#64 :: roundsLeak n
 
 /-- Forget the sixteen registers the state is in at the head of the loop. -/
 macro "arm_forget_state" : tactic =>
@@ -135,9 +129,13 @@ theorem double_round_trace (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v1
   braid_call diagonals_trace _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ t
   braid_done
 
-/-- **What the loop of `chacha20_block` reveals**, with `n + 1` rounds left: `roundsLeak n`,
-whatever the registers of the state hold. Proved by induction on `n`, as `rounds_spec` is. -/
-theorem rounds_trace : ∀ (n : Nat)
+/-- **The loop of `chacha20_block` and the trace of its run**, with `n + 1` rounds left,
+whatever the registers of the state hold. The trace is found by running a round and then
+the rounds that remain, by recursion on `n` as `rounds_spec` is by induction: it is the
+branch back to the head of the loop after each round but the last, and the way out after
+the last. The addresses are those of the code, so it is a function of the number of rounds
+alone and the same list for every state. -/
+def rounds_run : (n : Nat) → { ls : Trace // ∀
     (v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word) (k : W32)
     (t19 t20 t21 t22 : Word) (fn fz fc fv : Bool) (t : Trace),
     k = BitVec.ofNat 32 (n + 1) → n + 1 < 2 ^ 32 →
@@ -156,10 +154,9 @@ theorem rounds_trace : ∀ (n : Nat)
         .prop (regAny x19), .prop (regAny x20), .prop (regAny x21), .prop (regAny x22),
         .reg x8 0#64,
         .prop (flagAny Flags.n), .prop (flagAny Flags.z),
-        .prop (flagAny Flags.c), .prop (flagAny Flags.v)]) (t ++ roundsLeak n) := by
-  intro n
-  induction n with
-  | zero =>
+        .prop (flagAny Flags.c), .prop (flagAny Flags.v)]) (t ++ ls) }
+  | 0 => by
+    braid_traced
     intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t19 t20 t21 t22 fn fz fc fv
       t hk _
     obtain rfl : k = 1#32 := hk
@@ -168,7 +165,8 @@ theorem rounds_trace : ∀ (n : Nat)
     braid_sym_step
     braid_forget_flag 1
     braid_done
-  | succ n ih =>
+  | n + 1 => by
+    braid_traced
     intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t19 t20 t21 t22 fn fz fc fv
       t hk hn
     braid_call double_round_trace v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k
@@ -179,11 +177,17 @@ theorem rounds_trace : ∀ (n : Nat)
       braid_name_flag 0
       braid_name_flag 2
       braid_name_flag 3
-      braid_call ih _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) _ _ _ _ _ _ _ _ _
+      braid_call (rounds_run n).2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) _ _ _ _ _ _ _ _ _
         (by rw [hk]; bv_omega) (by omega)
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
       exact this (by bv_decide)
+
+/-- With one round left the loop reveals the way out. -/
+example : (rounds_run 0).1 = [.jump 0x10218#64] := rfl
+
+/-- With more left it reveals the branch back, and then what the rounds that remain do. -/
+example (n : Nat) : (rounds_run (n + 1)).1 = .jump 0x10090#64 :: (rounds_run n).1 := rfl
 
 end Examples.ChaCha20.Arm

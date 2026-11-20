@@ -2,8 +2,9 @@
   Examples.ChaCha20.RiscV.Leakage
 
   What `chacha20_block` reveals on RISC-V, about the machine alone (`docs/Leakage.md`). The
-  traced triple is `chacha20_block_trace` of `Examples.ChaCha20.RiscV.LeakBlock`; here it is
-  carried to the machine model, and the two-run statement is drawn from it.
+  traced triple is that of `block_run` of `Examples.ChaCha20.RiscV.LeakBlock`, whose run
+  finds the trace `blockLeak`; here it is carried to the machine model, and the two-run
+  statement is drawn from it.
 
   The code neither branches nor indexes on the words of the state: its three loops run a
   fixed number of times, and every address is an offset from one of the two pointers or
@@ -66,7 +67,7 @@ theorem chacha20_block_leakage (st : MachineState) (s : List W32) (os fr sv : Li
       ∀ q n v w', Atom.Disj b (.mem q n v w') := by
     braid_not_mem
   obtain ⟨st', σ', hrun, hr, hq⟩ := machine_soundT chacha20_block_lowered
-    (chacha20_block_trace (st.getReg .x10) (st.getReg .x11) (st.getReg .x1) (st.getReg .x2) s os
+    ((block_run (st.getReg .x10) (st.getReg .x11) (st.getReg .x2) (st.getReg .x1)).2 s os
       fr sv (st.getReg .x5) (st.getReg .x6) (st.getReg .x7) (st.getReg .x8) (st.getReg .x9)
       (st.getReg .x12) (st.getReg .x13) (st.getReg .x14) (st.getReg .x15) (st.getReg .x16)
       (st.getReg .x17) (st.getReg .x18) (st.getReg .x19) (st.getReg .x20) (st.getReg .x28)
