@@ -10,30 +10,42 @@ see [`ISA.md`](ISA.md).
 | --- | --- |
 | The `braid` dialect | syntax, a weakest-precondition semantics, a functional reading proved equivalent to it, MLIR and Lean printers, an IRDL definition, three proved simplification passes |
 | The logic | heaps and assertions as an Iris BI, atoms, triples with the frame rule built in, symbolic execution rules for every operation, tactics, arrays of words and bytes |
-| Traces | a step of the dialect carries labels: what it reveals, and events of the environment; triples that state the trace of a run, produced by the stepper; a trusted reading of each machine model's labels, which each lowering is proved to preserve ([`Leakage.md`](Leakage.md)) |
+| Traces | a step of the dialect carries labels: what it reveals, and events of the environment; triples that state the trace of a run, produced by the stepper, or found by it when the statement leaves the trace open (`braid_traced`); a trusted reading of each machine model's labels, which each lowering is proved to preserve ([`Leakage.md`](Leakage.md)) |
 | Whole programs | a loaded binary as an object (code, data sections, entry point) written by the decompiler with a checked certificate; a rule that joins a callee's specification and its trace at a call; safety of every reachable state from the trace of one run ([`Programs.md`](Programs.md)) |
 | RISC-V lowering | every instruction of the model, proved sound |
-| AArch64 lowering | the integer core with load-acquire, store-release and the atomic read-modify-writes, and vector registers with their loads, stores, moves, bitwise operations and lane-wise addition, proved sound |
-| x86-64 lowering | the integer core, and vector registers with their moves at 128, 256 and 512 bits and packed addition, proved sound |
+| AArch64 lowering | the integer core with load-acquire, store-release and the atomic read-modify-writes, and vector registers with their loads, stores, moves, bitwise operations, lane-wise addition, shifts of lanes by a constant, `EXT`, the reversals, and the four SHA-256 instructions, proved sound |
+| x86-64 lowering | the integer core, and vector registers with their moves at 128, 256 and 512 bits, packed addition, `vprord`, `vpsrld`, `vpternlogd`, `pshufd`, `pshufb`, `palignr`, `pblendw` and the three SHA-256 instructions, proved sound |
 | Decompiler | ELF for RISC-V and AArch64; ELF with `objdump`'s disassembly for x86-64; MLIR text, a Lean module with certificates, coverage statistics |
 | Differential tester | all three instruction sets |
-| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 94 functions across the three instruction sets (28 on RISC-V, 34 on AArch64, 32 on x86-64), up to the ChaCha20 block function and the SHA-256 compression function, each with a proved specification and a theorem about the machine model alone; for the twelve functions of the scaling ladder on each, a theorem of what a run reveals; ChaCha20 and SHA-256 proved a second time at `-O2`; and one whole program on each, SHA-256 of a message, proved from its entry point |
+| Examples | C, Rust, Swift, Go, Python (compiled by Numba) and JavaScript (compiled by V8); straight-line code, branches, loops, memory, calls, and the output of a just-in-time compiler; 99 functions across the three instruction sets (28 on RISC-V, 37 on AArch64, 34 on x86-64), up to the ChaCha20 block function and the SHA-256 compression function, each with a proved specification and a theorem about the machine model alone; for the twelve functions of the scaling ladder on each, a theorem of what a run reveals; ChaCha20 and SHA-256 proved a second time at `-O2`; one whole program on each, SHA-256 of a message, proved from its entry point; and on AArch64 and x86-64 a vectorised ChaCha20 and SHA-256 with the SHA instructions, each proved correct with what it reveals, and on AArch64 the whole program again with the latter |
 
 Everything in the table is checked by `lake build` with no `sorry`, no `axiom`, and no
 warnings.
 
 ## Next
 
-The next three goals, in order:
+The next goals, in order:
 
-1. **Vector and cryptographic instructions**, with a vectorised ChaCha20 proved correct
-   and constant-time. The theorems about what code reveals are about scalar code
-   compiled with vectorisation off; real libraries are not.
-2. **Proof reuse.** [`Continuity.md`](Continuity.md) measures what of a proof survives a
+1. **Proof reuse.** [`Continuity.md`](Continuity.md) measures what of a proof survives a
    recompile and lists what the decompiler and the logic would have to do for the rest to
-   be regenerated: statements against the image and not against literals, cut points and
-   frames from the code, the function of what a run reveals produced by the stepper.
-3. **Concurrency**, starting with triples as Iris weakest preconditions and steps of the
+   be regenerated. One item of that list is done (the trace is found by the run); the
+   others are statements against the image and not against literals, cut points and frames
+   read off the code, and a recompiled proof regenerated from a table of where the
+   specification's variables live. The second whole program
+   ([`Programs.md`](Programs.md)) adds two: the frame of a safety property and the image
+   with a message in it as parameters, so that what is proved of one program's own code
+   is not stated again for the next.
+2. **Upstream.** To Kraken: a memory operand with an index and no base (sent), an
+   exclusive or, a shift to the left and an or of vector registers and their VEX forms, so
+   that compiled vector code lowers and not only code written for the model; a system
+   call with output and exit, with which the x86-64 whole program gets its exit event; and
+   division. To riscv-zkvm: the word operations and compressed instructions. On our side,
+   Kraken has since removed the string parser the x86-64 decompiler calls, so moving the
+   pin means porting that front end to its embedded syntax ([`ISA.md`](ISA.md)).
+3. **Wider vectors and several blocks**: ChaCha20 at 256 and 512 bits in the lane form
+   libraries use for four blocks and more ([`Leakage.md`](Leakage.md)), and Poly1305,
+   towards a whole AEAD.
+4. **Concurrency**, starting with triples as Iris weakest preconditions and steps of the
    environment, before any model of several cores.
 
 The rest, in rough order of what it would buy.
@@ -50,12 +62,12 @@ The rest, in rough order of what it would buy.
    has no conditional store: the block would write the old value back, which needs a lemma
    that doing so changes nothing in the model.
 4. **More of the vector instructions.** A vector register is words of `braid` state, and a
-   lane-wise operation on a word is in the dialect (`BinOp.lanes`). AArch64 has its loads,
-   stores, moves, bitwise operations and lane-wise addition lowered and proved; x86-64 has
-   its moves at 128, 256 and 512 bits, the moves to and from general registers, and packed
-   addition. That took the vector traps of a Go binary on x86-64 from 1,343 to 40. Not
-   lowered on either: shuffles, table lookups, shifts by lane, `vzeroupper`, the
-   cryptographic instructions and floating point.
+   lane-wise operation on a word is in the dialect (`BinOp.lanes`). Lowered and proved on
+   both: loads, stores, moves, lane-wise addition, shifts and rotations of lanes by a
+   constant, shuffles of lanes and of bytes, and the SHA-256 instructions; on AArch64 also
+   the bitwise operations, and on x86-64 the bitwise functions of three operands. Not
+   lowered on either: table lookups, signed and saturating shifts, comparisons,
+   multiplications, AES, SHA-1 and SHA-512, `vzeroupper`, and floating point.
 5. **What the models lack**: `div` and `idiv`, `xchg`, `cqo`, bit tests and atomics on x86-64;
    the RV64 word operations and compressed instructions on RISC-V. These go to the models
    ([`ISA.md`](ISA.md)), not here.

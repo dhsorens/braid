@@ -222,3 +222,9 @@ the work it sized:
 Both models give every one of these a meaning, so nothing here is a gap of a model. RISC-V
 has no instruction for SHA-256 rounds in the pinned model (the scalar `Zknh` extension is
 not in it either).
+
+Since then every instruction in both tables lowers with no `trap`, soundly and with its
+trace preserved, on AArch64 and x86-64 ([`Lowering/README.md`](../Lowering/README.md)):
+the AArch64 forms, `pshufd` and `pshufb` for the compiled ChaCha20, and every instruction
+of the SHA tables. What remains a gap is of the x86-64 model alone: the instructions named
+above that Kraken does not read.

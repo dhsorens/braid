@@ -19,6 +19,7 @@ Spec/          specifications in plain Lean: CRC-32, ChaCha20 (RFC 8439), SHA-25
 Sha256Main/                  a whole program, proved from its entry point (docs/Programs.md)
 ChaCha20Vec/                 ChaCha20 on vector registers (docs/Leakage.md, docs/ISA.md)
 Sha256Ni/                    SHA-256 with the processors' SHA instructions
+Sha256MainNi/                the whole program again, calling Sha256Ni (AArch64; docs/Programs.md)
 scaling/       the scaling benchmark (docs/Scaling.md)
 ArmMachine.lean  what the AArch64 machine theorems are stated with (HasBytes, Apart)
 continuity/    the continuity experiment (docs/Continuity.md)
@@ -88,6 +89,15 @@ in a 64-bit word, a row as two words, and a round on rows as the specification's
 these proofs the trace is not written down: the run finds it
 (`braid/Braid/Logic/Traced.lean`).
 
+`c/sha256_ni.c` is the SHA-256 compression function written with the processors' SHA
+instructions, through the compilers' intrinsics. `Sha256Ni/<ISA>/` proves it against
+`Spec/Sha256.lean` unchanged: `sha256_compress_ni_spec`, `_correct` and `_leakage`, on
+AArch64 (`sha256h`, `sha256h2`, `sha256su0`, `sha256su1`) and on x86-64 (`sha256rnds2`,
+`sha256msg1`, `sha256msg2`, with `pshufd`, `palignr`, `pblendw`, `pshufb`). It reveals the
+addresses of its loads and stores and nothing else. RISC-V's model has no instruction for
+SHA-256 rounds. `Sha256Ni/Common.lean` is what the two share: four rounds of the
+specification as two instructions do them, and the message schedule four words at a time.
+
 ## Recompiled
 
 `chacha20.c` and `sha256.c` are compiled a second time, at `-O2`, and their five functions
@@ -107,6 +117,12 @@ with no hypothesis but that the binary is loaded, that it writes out the digest 
 On x86-64, whose model has no system call, the program leaves the digest in memory and
 the first theorem says that.
 See [`docs/Programs.md`](../docs/Programs.md).
+
+`Sha256MainNi/Arm/` is the same program on AArch64 with `sha256_compress_ni` as its callee
+(`-Dsha256_compress=sha256_compress_ni`), proved again with the same three theorems. The
+files of `Sha256Main/Arm/` that do not mention the callee's code (`Own.lean`, `Pad.lean`,
+`Output.lean` and `Sha256Main/Shared.lean`: the padding, the output and what the two
+programs share) are imported unchanged.
 
 What the examples exercise:
 
@@ -155,6 +171,7 @@ Examples/build.sh memory    # one example
 Examples/build.sh sha256main  # the whole program (after sha256)
 Examples/build.sh chacha20vec # the vectorised ChaCha20
 Examples/build.sh sha256ni    # SHA-256 with the SHA instructions
+Examples/build.sh sha256mainni  # the whole program with it (after sha256ni; AArch64)
 ISAS=x86 Examples/build.sh  # one instruction set
 lake build Examples         # check every image and every proof
 ```

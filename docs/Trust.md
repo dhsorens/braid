@@ -63,8 +63,8 @@ lowerings cover, and each reading rests on the vendor's list for its instruction
 
 | ISA | Read as revealing nothing | The list | Loads and stores |
 | --- | --- | --- | --- |
-| AArch64 | vector moves, bitwise operations, lane-wise `ADD`, `SHL`, `USHR`, `USRA`, `SRI`, `SLI`, `EXT`, `REV16`, `REV32`, `REV64` | Arm's `DIT`: the description of each says it is a data-independent-time instruction | the address and the size, 16 bytes for a `q` register, twice for a pair |
-| x86-64 | vector moves between registers, `paddd` and `vpaddd`, `vprord`, `vpsrld`, `vpternlogd`, `pshufd`, `pshufb`, `palignr`, `pblendw` | Intel's table of instructions with data operand independent timing, which names mnemonics and not operand forms | a memory operand is a load or a store, read 8 bytes at a time as the lowering makes it |
+| AArch64 | vector moves, bitwise operations, lane-wise `ADD`, `SHL`, `USHR`, `USRA`, `SRI`, `SLI`, `EXT`, `REV16`, `REV32`, `REV64`, and `SHA256H`, `SHA256H2`, `SHA256SU0`, `SHA256SU1` | Arm's `DIT`: the description of each says it is a data-independent-time instruction | the address and the size, 16 bytes for a `q` register, twice for a pair |
+| x86-64 | vector moves between registers, `paddd` and `vpaddd`, `vprord`, `vpsrld`, `vpternlogd`, `pshufd`, `pshufb`, `palignr`, `pblendw`, and `sha256rnds2` (which also reads `xmm0`), `sha256msg1`, `sha256msg2` | Intel's table of instructions with data operand independent timing, which names mnemonics and not operand forms | a memory operand is a load or a store, read 8 bytes at a time as the lowering makes it |
 
 No vector instruction is read as revealing its operands, because none the lowerings cover
 is off its list. The lists are the vendors' statements about processors that implement

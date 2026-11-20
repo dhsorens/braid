@@ -115,6 +115,45 @@ followed by every state, so the theorem also says that no reachable state is stu
 | Proof, lines (and 538 shared by the three) | 1,155 | 1,279 | 1,451 |
 | Processor time | 20 s | 19 s | 24 s |
 
+## A second program, with another callee
+
+`Examples/Sha256MainNi` is the same program on AArch64 with another compression function:
+`sha256_compress_ni`, SHA-256 with the Arm SHA instructions
+(`Examples/src/c/sha256_ni.c`, [`ISA.md`](ISA.md)). It is linked so that the new function
+and its table are where the scalar function and its table were, and the code of `_start`
+and `main` and every data section then come out word for word as in the first program, at
+the same addresses. The same three theorems are proved of it, from its entry point, in the
+same form: `sha256_main_correct`, `sha256_main_leakage` with its two-run statement, and
+`sha256_main_safe`.
+
+The point of the exercise is what did not have to be proved again. The loops of `main`
+that do not call the compression function (the padding of a block, and the loop that
+writes the digest out as bytes) are stated about the program of the binary's own code,
+`ownProgram`, the blocks of `_start` and `main` alone (`Examples/Sha256Main/Arm/Own.lean`).
+The first program contains that program, and so does the second, by `rfl` on the blocks of
+the two images and `Program.ofList_mono`; `TripleT.mono` carries a loop's triple to either.
+So the second proof imports those files and does not copy them.
+
+| | Lines | |
+| --- | --- | --- |
+| Imported unchanged: `Common.lean`, `Shared.lean`, `Arm/Own.lean`, `Arm/Pad.lean`, `Arm/Output.lean` | 1,059 | the padding mathematics, and the two loops with their traces |
+| Imported unchanged: the callee's `_spec`, its trace and the equations of the trace | | `Examples/Sha256Ni/Arm` |
+| New: `Program.lean`, `Blocks.lean`, `Main.lean`, `Proofs.lean` | 949 | of their 779 lines of Lean, 480 are lines of the first program's files word for word, 149 are changed and 150 are new |
+
+What is new is what the callee forces. It has no stack frame, so the state of `main` has no
+cells for one; it uses twelve vector registers, so they are in every state and among the
+registers a loaded machine is asked for; and it reveals other loads. The safety theorem is
+stronger than the first program's for the same reason: the callee stores only to the hash
+value, which is in the frame of `main`, so the range that may change is the 208 bytes of
+that frame and not 512. That every store of the callee is inside it is proved from the
+equations of the callee's trace, which the run found, and not by evaluating a list.
+
+What was repeated and need not have been: the lemmas that every store of the padding loops
+is inside the frame, since the first program states them about its own range, and the
+image with a message in it, since it is stated about the first program's constant. Both
+would be shared if the range and the image were parameters. The four new files check in 18
+seconds of processor time, against 15 for those of the first program.
+
 ## The environment
 
 A step of the dialect carries labels of two kinds: what the step reveals, and an event of the
@@ -138,7 +177,9 @@ The same variant would exit through `syscall` if the model had one.
 ## What this does not do
 
 - **One binary.** Linking is within one binary whose callee is where its proof says. There
-  is no rule for position-independent code or for a callee proved at other addresses.
+  is no rule for position-independent code or for a callee proved at other addresses: the
+  second program has its callee where the first had its own because the linker was told
+  to put it there.
 - **No loader.** "Loaded" is a hypothesis about the first state. Nothing models the kernel
   that puts the sections in memory, relocations, or dynamic linking; the program is linked
   statically and uses no library.

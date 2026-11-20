@@ -152,6 +152,43 @@ The trace mentions the two addresses and the return address, and not `x` or `y`:
 reveals where it works and nothing of what it moves. The stepper and the tactics are the ones
 that prove a triple; on a traced triple they keep the trace as well.
 
+### A trace the run finds
+
+A traced triple states the trace before the proof starts. For a function of any size that
+is a list written by hand, label by label, and written again when the compiler reorders a
+load. A statement can leave it open instead (`braid/Braid/Logic/Traced.lean`):
+
+```lean
+def swap_run (p q r : Word) : { ls : Trace // ∀ (x y : Word) (t : Trace),
+    TripleT swap.program (pre p q r x y) t (post p q r x y) (t ++ ls) } := by
+  braid_traced
+  intro x y t
+  braid_sym_run
+  braid_done
+```
+
+The definition is a trace and the traced triple that leaves it. `braid_done` finds the
+trace: the labels the stepper added, gathered into one list. `(swap_run p q r).1` is what
+`swap` reveals, and a theorem about the machine is stated with it.
+
+**What the trace may depend on is a matter of scope.** The trace is found among the
+variables bound before the pair: the two addresses and the return address above, and not
+the words `x` and `y` at those addresses. A run whose labels mention `x` cannot be closed,
+because the value to be found is not in the scope of `x`. So the binders of such a
+definition are the public inputs of its code, and that what a run reveals is a function of
+them alone, which a two-run statement then says in so many words, is checked when the
+definition is. For code that does reveal data (`equal_bytes`, `crc32`), the data it reveals
+has to be bound before the pair, and that is the statement of what leaks.
+
+A loop is a definition by recursion on the turns left, as its triple is a proof by
+induction: one turn runs the body and calls the definition for the rest, and the trace
+found is the labels of a turn before the trace of the rest. Its two equations hold by
+`rfl`. The explicit form of a whole trace, where a reader wants to see it, is a theorem
+proved by `rfl` from the definition and not the definition itself.
+
+The leakage proofs of ChaCha20, of the vectorised ChaCha20 and of SHA-256 with the SHA
+instructions are written this way; those of the rest of the ladder state their traces.
+
 ## On a machine
 
 For each instruction set, a file says what each instruction of the machine model reveals

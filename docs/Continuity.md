@@ -230,6 +230,54 @@ recompiles measured it was found by reading the disassembly of each function.
 A decompiler that tracked it from the source's debug information, or a search over
 permutations checked by `bv_decide`, would close the gap; neither is attempted here.
 
+## The trace found by the run
+
+The fourth item above was done. A traced triple can now leave its trace open, and the run
+finds it (`braid/Braid/Logic/Traced.lean`, [`Leakage.md`](Leakage.md)): the statement is a
+pair of a trace and the triple that leaves it, `braid_done` gathers the labels the stepper
+has added, and a loop is a definition by recursion on the turns left, as its triple was a
+proof by induction. What the trace may depend on is what is bound before the pair, so that
+it is a function of the public inputs is checked by scope, when the definition is.
+
+The leakage proofs of `chacha20.c` at `-O1` were converted on all three instruction sets,
+with no change to any statement about a machine: `quarterRoundLeak` and `blockLeak` keep
+their names and arguments and are now the traces the runs find. Lines are lines of the four
+files of each proof; *trace, by hand* is the lines of them that were definitions of traces,
+label by label or by recursion; times are processor seconds of `lake env lean` on the four
+files, both measured on the same machine at the same load, the files of before put back
+in place and built for the purpose.
+
+| | lines before | lines after | trace, by hand, before | after | seconds before | seconds after |
+| --- | --- | --- | --- | --- | --- | --- |
+| RISC-V | 868 | 832 | 28 | 0 | 20.9 | 16.2 |
+| AArch64 | 924 | 890 | 29 | 0 | 15.6 | 12.5 |
+| x86-64 | 1144 | 1134 | 43 | 0 | 17.1 | 12.3 |
+
+The files are hardly shorter, and the measurement should not be read as if they were. The
+hand-written traces of ChaCha20 were short: the function touches memory at its ends and
+runs its rounds on registers. What changed is not the size but who writes the trace. The
+intermediate definitions (`headLeak`, `storesLeak`, `sumLeak`, the recursive `roundsLeak`)
+are gone with the lemmas that unfolded them, and in their place are the same runs, stated
+as pairs. The proofs check faster because the trace is no longer compared with a list
+written elsewhere.
+
+Where the gain is expected is the case the recompile measured: `LeakCompress.lean` of
+SHA-256 lost half its lines to a rewritten `compressLeak` on each instruction set. The
+proofs written since in this style have no such function to rewrite. The vectorised
+ChaCha20 and SHA-256 with the SHA instructions ([`Scaling.md`](Scaling.md)) state their
+traces by reference on both instruction sets, and the explicit form of each (thirty-odd
+labels, or the recursion equations of a loop) is a theorem proved by `rfl` for the reader,
+not a definition the proof depends on. The scalar SHA-256 proofs were not converted.
+
+Converting found what the tactics lacked, which is now in the core: a run that leaves no
+label, a run whose labels follow the trace of a triple it called, a trace of seventy
+labels or more (gathered one label at a time), and a state of thirty atoms (taken out one
+at a time, `braid_done_traced`). The tactics that forget a cell or name a value in memory
+(`braid_forget_mem`, `braid_name_mem`, `braid_forget_cells`) were local to the x86-64
+proof and to the second whole program, as workarounds; they now close by the form they
+had or, failing that, by applying the rule and proving its side conditions in turn, and
+the workarounds are gone.
+
 ## Limits of the measurement
 
 Line counts are a crude metric. They over-count on x86-64, where a changed instruction
