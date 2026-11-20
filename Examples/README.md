@@ -17,6 +17,8 @@ Spec/          specifications in plain Lean: CRC-32, ChaCha20 (RFC 8439), SHA-25
 <Module>/<ISA>/Leak*.lean    what a function reveals (docs/Leakage.md)
 <Module>/O2/<ISA>/           the same source compiled at -O2, lowered and proved again
 Sha256Main/                  a whole program, proved from its entry point (docs/Programs.md)
+ChaCha20Vec/                 ChaCha20 on vector registers (docs/Leakage.md, docs/ISA.md)
+Sha256Ni/                    SHA-256 with the processors' SHA instructions
 scaling/       the scaling benchmark (docs/Scaling.md)
 ArmMachine.lean  what the AArch64 machine theorems are stated with (HasBytes, Apart)
 continuity/    the continuity experiment (docs/Continuity.md)
@@ -65,6 +67,26 @@ that agree on the public inputs have equal traces). The model is in
 | `crc32` | the address, the length, the return address, and the two four-bit indices at which the table is read for each byte | no: the lookups index on the data, the theorem says exactly which indices, and from one starting value they determine the message (`crcIndices_inj`) |
 | `quarter_round`, `chacha20_block` | the addresses, the stack pointer, the return address | yes |
 | `sha256_round`, `sha256_schedule`, `sha256_compress` | the addresses, the stack pointer, the return address | yes |
+
+## Vector code
+
+`c/chacha20_vec.c` is the ChaCha20 block function over four rows of four 32-bit lanes, in C
+with vector types and no intrinsics. `ChaCha20Vec/<ISA>/` proves it against the
+specification the scalar function is proved against, `Spec/ChaCha20.lean` unchanged:
+`chacha20_block_vec_spec`, `_correct` (and both for a call with the output over the input),
+and `chacha20_block_vec_leakage` with its two-run statement. What it reveals is the
+addresses of its loads and stores and the branch of its loop: no vector instruction in it
+reveals its operands ([`docs/Leakage.md`](../docs/Leakage.md)).
+
+| | AArch64 | x86-64 | RISC-V |
+| --- | --- | --- | --- |
+| The code | compiled from the C: `add`, `eor`, `rev32`, `shl` with `usra`, `ext` | `asm/chacha20_vec.x86.S`, by hand for AVX-512VL in the instructions the model has: `vpaddd`, `vpternlogd`, `vprord`, `pshufd` | not lowered: the model has no vector extension |
+| Why | | the compiled C uses `pxor`, `pslld`, `psrld`, `por`, which the model's parser does not read ([`docs/ISA.md`](../docs/ISA.md)) | |
+
+`ChaCha20Vec/Common.lean` is what the two proofs share beyond the specification: two lanes
+in a 64-bit word, a row as two words, and a round on rows as the specification's round. In
+these proofs the trace is not written down: the run finds it
+(`braid/Braid/Logic/Traced.lean`).
 
 ## Recompiled
 
@@ -131,6 +153,8 @@ lake build braid-lower      # the decompiler
 Examples/build.sh           # compile and lower every example, for every instruction set
 Examples/build.sh memory    # one example
 Examples/build.sh sha256main  # the whole program (after sha256)
+Examples/build.sh chacha20vec # the vectorised ChaCha20
+Examples/build.sh sha256ni    # SHA-256 with the SHA instructions
 ISAS=x86 Examples/build.sh  # one instruction set
 lake build Examples         # check every image and every proof
 ```
