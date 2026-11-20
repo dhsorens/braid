@@ -414,6 +414,30 @@ theorem all_silent_extOps {q : Bool} {rm : Arm64.VReg} {imm4 : BitVec 4} {rn rd 
   repeat' split at h
   all_goals first | (cases h; done) | (cases h; simp [extWord])
 
+theorem all_silent_sigOps (n k x d a : Nat) : (sigOps n k x d a).all silent = true := by
+  simp [sigOps]
+
+theorem all_silent_hashRounds : hashRounds.all silent = true := by
+  simp [hashRounds, hashPre, rndOps, rndTOps, rndAPart, rndEPart]
+
+theorem all_silent_sha2Ops {opcode : BitVec 5} {rn rd : Arm64.VReg} {ops : List Op}
+    (h : sha2Ops opcode rn rd = some ops) : ops.all silent = true := by
+  simp only [sha2Ops] at h
+  split at h
+  · cases h
+    simp [su0Words, sigConsts, joinOps, all_silent_sigOps]
+  · cases h
+
+theorem all_silent_sha3Ops {opcode : BitVec 3} {rm rn rd : Arm64.VReg} {ops : List Op}
+    (h : sha3Ops opcode rm rn rd = some ops) : ops.all silent = true := by
+  simp only [sha3Ops] at h
+  repeat' split at h
+  all_goals first
+    | (cases h; done)
+    | (cases h
+       simp [hashWords, hash2Words, rndAOps, rndEOps, rndTOps, rndAPart, rndEPart, packOps,
+         all_silent_hashRounds, su1Words, sigConsts, joinOps, all_silent_sigOps])
+
 @[local simp] theorem all_silent_vecOps (op : VecOp) (q : Bool) (rm rn rd : Arm64.VReg) :
     (vecOps op q rm rn rd).all silent = true := by
   cases op <;> cases q <;> simp [vecOps, VecOp.ops]
@@ -473,8 +497,7 @@ theorem leak_lower (h : Rel s σ) (i : Instr) (hv : Nat → Word) {Q : State →
       | ldrSimdLit | st1SinglePost | simdLdSt1Single | simdLdSt1Multi | simdLdStMulti | simdLd1r
       | fpDataProc2 | fpCompare | fpCondCompare | fpDataProc3 | fpFixedConv | simdAcrossLanes
       | simdPermute | simdTbl | simdDupScalar | simdPmull | simdThreeDiff | aes
-      | cryptoSha2Reg | cryptoSha3Reg | cryptoSha512Reg2 | cryptoSha512Reg3 | cryptoSha3FourReg
-      | cryptoXar =>
+      | cryptoSha512Reg2 | cryptoSha512Reg3 | cryptoSha3FourReg | cryptoXar =>
     exact (not_wp_trap hw).elim
   case moveWide w op rd imm16 hw' =>
     cases op <;> simp only [lower, leak] <;> rw [leak_of_silent_jump (by simp)]
@@ -647,7 +670,8 @@ theorem leak_lower (h : Rel s σ) (i : Instr) (hv : Nat → Word) {Q : State →
     cases hops : immShiftOps q op immh immb opc rn rd with
     | none => simp only [lower, hops] at hw; exact (not_wp_trap hw).elim
     | some ops =>
-      have hc : immh = 0#4 ∨ opc = 10#5 ∨ (op = true ∧ (opc = 0#5 ∨ opc = 2#5 ∨ opc = 8#5)) := by
+      have hc : immh = 0#4 ∨ opc = 10#5 ∨
+          (op = true ∧ (opc = 0#5 ∨ opc = 2#5 ∨ opc = 8#5)) := by
         by_cases h0 : immh = 0#4
         · exact .inl h0
         · refine .inr ?_
@@ -662,6 +686,32 @@ theorem leak_lower (h : Rel s σ) (i : Instr) (hv : Nat → Word) {Q : State →
       rcases hc with hc | hc
       · simp only [hc, ↓reduceIte]
       · by_cases h0 : immh = 0#4 <;> simp only [h0, hc, ↓reduceIte]
+  case cryptoSha2Reg opcode rn rd =>
+    cases hops : sha2Ops opcode rn rd with
+    | none => simp only [lower, hops] at hw; exact (not_wp_trap hw).elim
+    | some ops =>
+      have hc : opcode = 2#5 := by
+        by_cases h2 : opcode = 2#5
+        · exact h2
+        · simp [sha2Ops, h2] at hops
+      simp only [lower, hops]
+      simp only [leak, hc, ↓reduceIte]
+      rw [leak_of_silent_jump (all_silent_sha2Ops hops)]
+  case cryptoSha3Reg opcode rm rn rd =>
+    cases hops : sha3Ops opcode rm rn rd with
+    | none => simp only [lower, hops] at hw; exact (not_wp_trap hw).elim
+    | some ops =>
+      have hc : opcode = 4#3 ∨ opcode = 5#3 ∨ opcode = 6#3 := by
+        by_cases h4 : opcode = 4#3
+        · exact .inl h4
+        · by_cases h5 : opcode = 5#3
+          · exact .inr (.inl h5)
+          · by_cases h6 : opcode = 6#3
+            · exact .inr (.inr h6)
+            · simp [sha3Ops, h4, h5, h6] at hops
+      simp only [lower, hops]
+      simp only [leak, hc, ↓reduceIte]
+      rw [leak_of_silent_jump (all_silent_sha3Ops hops)]
   case simdExt q rm imm4 rn rd =>
     cases hops : extOps q rm imm4 rn rd with
     | none => simp only [lower, hops] at hw; exact (not_wp_trap hw).elim

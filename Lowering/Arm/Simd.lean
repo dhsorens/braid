@@ -1106,16 +1106,16 @@ macro "lanes_simp" : tactic => `(tactic|
     Nat.reduceEqDiff])
 
 /-- The model's shift left of lanes is the shift of each half, masked. -/
-theorem lanes_shl {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
-    (vn vd : BitVec 128) :
+theorem lanes_shl {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e)
+    (q : Bool) (vn vd : BitVec 128) :
     Arm64.mapSimdLanes q e vn (fun lane => lane <<< k) = shiftRes .shl e k q vn vd := by
   obtain ⟨kb, rfl, hkb⟩ := amount_bv he hk
   rw [mapSimdLanes_eq]
   rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
 
 /-- The model's shift right of lanes is the shift of each half, masked. -/
-theorem lanes_ushr {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
-    (vn vd : BitVec 128) :
+theorem lanes_ushr {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e)
+    (q : Bool) (vn vd : BitVec 128) :
     Arm64.mapSimdLanes q e vn (fun lane => lane >>> k) = shiftRes .ushr e k q vn vd := by
   obtain ⟨kb, rfl, hkb⟩ := amount_bv he hk
   rw [mapSimdLanes_eq]
@@ -1141,8 +1141,8 @@ theorem usra_lane (e k : Nat) (x : BitVec 128) :
 
 /-- The model's shift right of lanes, added to the lanes of the destination, is the shift of
 each half, masked, and `BinOp.lanes` of the sum. -/
-theorem lanes_usra {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
-    (vn vd : BitVec 128) :
+theorem lanes_usra {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e)
+    (q : Bool) (vn vd : BitVec 128) :
     Arm64.zipSimdLanes q e vn vd (fun lane acc =>
         acc + Arm64.intToSimdLane e (Arm64.aslRShr (Arm64.simdLaneUInt e lane) k false)) =
       shiftRes .usra e k q vn vd := by
@@ -1152,8 +1152,8 @@ theorem lanes_usra {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk
   rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
 
 /-- The model's `SRI` of lanes is the shift of each half, into the bits it fills. -/
-theorem lanes_sri {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
-    (vn vd : BitVec 128) :
+theorem lanes_sri {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e)
+    (q : Bool) (vn vd : BitVec 128) :
     Arm64.zipSimdLanes q e vn vd (fun a d =>
         (d &&& ~~~(((1#128 <<< e) - 1#128) >>> k)) |||
           ((a >>> k) &&& (((1#128 <<< e) - 1#128) >>> k))) =
@@ -1163,8 +1163,8 @@ theorem lanes_sri {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk 
   rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
 
 /-- The model's `SLI` of lanes is the shift of each half, into the bits it fills. -/
-theorem lanes_sli {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
-    (vn vd : BitVec 128) :
+theorem lanes_sli {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e)
+    (q : Bool) (vn vd : BitVec 128) :
     Arm64.zipSimdLanes q e vn vd (fun a d =>
         (d &&& ~~~((((1#128 <<< e) - 1#128) <<< k) &&& ((1#128 <<< e) - 1#128))) |||
           (((a <<< k) &&& ((1#128 <<< e) - 1#128)) &&&
@@ -1370,7 +1370,8 @@ def revRes (gs : List Nat) (q : Bool) (vn : BitVec 128) : BitVec 128 :=
 /-- The reversals the lowering covers. -/
 theorem revGroups_cases {u : Bool} {size : BitVec 2} {opcode : BitVec 5} {gs : List Nat}
     (hg : revGroups u size opcode = some gs) :
-    gs = [8, 16, 32] ∨ gs = [16, 32] ∨ gs = [32] ∨ gs = [8, 16] ∨ gs = [16] ∨ gs = [8] := by
+    gs = [8, 16, 32] ∨ gs = [16, 32] ∨ gs = [32] ∨ gs = [8, 16] ∨ gs = [16] ∨
+      gs = [8] := by
   simp only [revGroups] at hg
   repeat' split at hg
   all_goals first | (cases hg; done) | (cases hg; simp)
@@ -1411,7 +1412,8 @@ theorem evalInst_rev {q u : Bool} {size : BitVec 2} {opcode : BitVec 5} {gs : Li
 /-- An exchange of groups leaves its value in `d`, and keeps the values below `d`. -/
 theorem wp_swapOps {σ : State} {g d x : Nat} {ρ : Env} {Q : Env → State → Prop}
     {rest : List Op} (hx : x < d) (hw : wpOps (swapOps g d x ++ rest) ρ σ Q) :
-    ∃ ρ' : Env, ρ' d = swapEval g (ρ x) ∧ (∀ y, y < d → ρ' y = ρ y) ∧ wpOps rest ρ' σ Q := by
+    ∃ ρ' : Env, ρ' d = swapEval g (ρ x) ∧ (∀ y, y < d → ρ' y = ρ y) ∧
+      wpOps rest ρ' σ Q := by
   have h1 : x ≠ d + 1 := by omega
   have h2 : x ≠ d + 2 := by omega
   have h3 : x ≠ d + 3 := by omega
@@ -1438,7 +1440,8 @@ theorem wp_revOps {σ : State} (gs : List Nat) {d x : Nat} {ρ : Env} {Q : Env �
 
 /-- The operations of a reversal leave its value in the destination. -/
 theorem wp_revVecOps {gs : List Nat} {q : Bool}
-    (hgs : gs = [8, 16, 32] ∨ gs = [16, 32] ∨ gs = [32] ∨ gs = [8, 16] ∨ gs = [16] ∨ gs = [8])
+    (hgs : gs = [8, 16, 32] ∨ gs = [16, 32] ∨ gs = [32] ∨ gs = [8, 16] ∨ gs = [16] ∨
+      gs = [8])
     (h : Rel s σ) (hw : (⟨revVecOps gs q rn rd, .jump (s.pc + 4)⟩ : Block).wp σ Q) :
     ∃ σ', Rel ((s.writeVReg128 rd (revRes gs q (s.vregs.read rn))).setPC (s.pc + 4)) σ' ∧
       Q σ' := by
@@ -1500,7 +1503,8 @@ theorem sound_simdTwoRegMisc {q u : Bool} {size : BitVec 2} {opcode : BitVec 5}
 
 theorem bv4_cases (x : BitVec 4) :
     x = 0#4 ∨ x = 1#4 ∨ x = 2#4 ∨ x = 3#4 ∨ x = 4#4 ∨ x = 5#4 ∨ x = 6#4 ∨ x = 7#4 ∨
-      x = 8#4 ∨ x = 9#4 ∨ x = 10#4 ∨ x = 11#4 ∨ x = 12#4 ∨ x = 13#4 ∨ x = 14#4 ∨ x = 15#4 := by
+      x = 8#4 ∨ x = 9#4 ∨ x = 10#4 ∨ x = 11#4 ∨ x = 12#4 ∨ x = 13#4 ∨ x = 14#4 ∨
+      x = 15#4 := by
   bv_decide
 
 /-- The 64 bits from bit `k` of `b:a`, for `k` below 64. -/

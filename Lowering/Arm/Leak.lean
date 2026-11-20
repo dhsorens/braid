@@ -21,7 +21,7 @@
   * **Instructions it does not speak of.** `leak` is `none` for an instruction this file gives
     no labels to, and a run with a trace (`RunL`) does not go through one. These are the
     instructions the lowering turns into a `trap`: floating-point arithmetic and conversions,
-    the rest of SIMD, the cryptographic extensions, compare-and-swap, store-exclusive and
+    the rest of SIMD, the other cryptographic extensions, compare-and-swap, store-exclusive and
     load-exclusive pairs, the loads and stores of several vector registers or of one lane,
     `LDAPUR` and `STLUR`, the literal load of a vector register, `CRC32`, system registers,
     `DC ZVA`, and supervisor calls, breakpoints and undefined instructions. Some of them
@@ -50,7 +50,9 @@
     modified immediates, `FMOV` of a constant), the bitwise operations, `ADD` and `SUB` of
     lanes, `ADDP` of the two halves, `CNT`, `NOT`, `RBIT`, and `FCSEL`; the shifts of lanes
     by a constant `SHL`, `USHR`, `USRA`, `SRI` and `SLI`; `EXT`; and the reversals `REV16`,
-    `REV32` and `REV64`. The amount of such a shift and the position of an `EXT` are in the
+    `REV32` and `REV64`; and the SHA-256 instructions `SHA256H`, `SHA256H2`, `SHA256SU0`
+    and `SHA256SU1`, each of which Arm documents as data-independent in time when
+    `PSTATE.DIT` is set. The amount of such a shift and the position of an `EXT` are in the
     code. That these are data-independent is from the same reading of Arm's list as in
     `docs/Leakage.md`, and should be checked against it before it is relied on.
   * **Hooked functions.** A step of the model that is a call to a hooked function
@@ -190,6 +192,10 @@ def leak (s : Arm64.State) : Instr → Option Trace
     if opcode = 5#5 ∨ opcode = 0#5 ∨ (opcode = 1#5 ∧ u = false ∧ size = 0#2) then some []
     else none
   | .simdExt .. => some []
+  -- The SHA-256 instructions: `SHA256SU0`, and `SHA256H`, `SHA256H2` and `SHA256SU1`.
+  | .cryptoSha2Reg opcode _ _ => if opcode = 2#5 then some [] else none
+  | .cryptoSha3Reg opcode _ _ _ =>
+    if opcode = 4#3 ∨ opcode = 5#3 ∨ opcode = 6#3 then some [] else none
   -- Everything else: this file does not say.
   | _ => none
 

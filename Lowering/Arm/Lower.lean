@@ -17,6 +17,9 @@
   `USRA`, `SRI`, `SLI`), `EXT`, and the reversals `REV16`, `REV32` and `REV64`. A shift of
   lanes is a shift of each half and a mask that clears what crossed from one lane into the
   next, and a reversal is the same on groups of lanes.
+  The SHA-256 instructions `SHA256H`, `SHA256H2`, `SHA256SU0` and `SHA256SU1` are covered
+  too: the schedule updates as mixings and additions of lanes, and the four rounds of a hash
+  instruction on the eight working words, each in the low half of a value.
 
   Whenever the model would not simply run the instruction (a permission fault, a stack
   pointer that is not aligned, a supervisor call, a breakpoint), the block faults. The model
@@ -938,6 +941,248 @@ def extOps (q : Bool) (rm : Arm64.VReg) (imm4 : BitVec 4) (rn rd : Arm64.VReg) :
   else some ([.get 0 (vregLo rn), .get 2 (vregLo rm)] ++ extWord 10 0 2 k ++ [.const 20 0#64] ++
     vset rd 10 20)
 
+/-! The SHA-256 instructions work on the 32-bit lanes of their operands. The two schedule
+instructions are a mixing of lanes and additions of lanes. The two hash instructions take the
+eight working words out of the lanes, each into the low half of a value, and do four
+rounds. -/
+
+/-- A mixing of each 32-bit lane of the word `x` in the message schedule: the lane rotated
+right by `r1`, by `r2`, and shifted right by `s`, exclusive-ored. -/
+def sigLanes (r1 r2 s : Nat) (x : Word) : Word :=
+  ((x >>> BitVec.ofNat 64 r1 &&& shrMask 32 r1) |||
+      (x <<< BitVec.ofNat 64 (32 - r1) &&& shlMask 32 (32 - r1))) ^^^
+    ((x >>> BitVec.ofNat 64 r2 &&& shrMask 32 r2) |||
+      (x <<< BitVec.ofNat 64 (32 - r2) &&& shlMask 32 (32 - r2))) ^^^
+    (x >>> BitVec.ofNat 64 s &&& shrMask 32 s)
+
+/-- The ten constants of `sigLanes r1 r2 s`, into the values `k` up. -/
+def sigConsts (k r1 r2 s : Nat) : List Op :=
+  [.const k (BitVec.ofNat 64 r1), .const (k + 1) (shrMask 32 r1),
+    .const (k + 2) (BitVec.ofNat 64 (32 - r1)), .const (k + 3) (shlMask 32 (32 - r1)),
+    .const (k + 4) (BitVec.ofNat 64 r2), .const (k + 5) (shrMask 32 r2),
+    .const (k + 6) (BitVec.ofNat 64 (32 - r2)), .const (k + 7) (shlMask 32 (32 - r2)),
+    .const (k + 8) (BitVec.ofNat 64 s), .const (k + 9) (shrMask 32 s)]
+
+/-- The value `a` plus, lane by lane, `sigLanes` of the value `x`, into the value `d`, with
+the constants in the values `k` up. Uses values from `n` to `n + 13`. -/
+def sigOps (n k x d a : Nat) : List Op :=
+  [.bin n .lshr x k, .bin (n + 1) .and n (k + 1), .bin (n + 2) .shl x (k + 2),
+    .bin (n + 3) .and (n + 2) (k + 3), .bin (n + 4) .or (n + 1) (n + 3),
+    .bin (n + 5) .lshr x (k + 4), .bin (n + 6) .and (n + 5) (k + 5),
+    .bin (n + 7) .shl x (k + 6), .bin (n + 8) .and (n + 7) (k + 7),
+    .bin (n + 9) .or (n + 6) (n + 8),
+    .bin (n + 10) .lshr x (k + 8), .bin (n + 11) .and (n + 10) (k + 9),
+    .bin (n + 12) .xor (n + 4) (n + 9), .bin (n + 13) .xor (n + 12) (n + 11),
+    .bin d (.lanes 32 .add) a (n + 13)]
+
+/-- The high half of the value `x` below the low half of the value `y`, into the value
+`n + 3`. Uses values from `n` to `n + 2`. -/
+def joinOps (n x y : Nat) : List Op :=
+  [.const n 32#64, .bin (n + 1) .lshr x n, .bin (n + 2) .shl y n,
+    .bin (n + 3) .or (n + 1) (n + 2)]
+
+/-- The low word of `SHA256SU0`: the low word `d0` of the destination plus, lane by lane,
+the mixing of the two lanes above its low one, the second of them from the high word
+`d1`. -/
+def su0Lo (d0 d1 : Word) : Word :=
+  (BinOp.lanes 32 .add).eval d0 (sigLanes 7 18 3 (d0 >>> 32#64 ||| d1 <<< 32#64))
+
+/-- The high word of `SHA256SU0`: the high word `d1` of the destination plus, lane by lane,
+the mixing of its high lane and of the low lane of the low word `n0` of the source. -/
+def su0Hi (d1 n0 : Word) : Word :=
+  (BinOp.lanes 32 .add).eval d1 (sigLanes 7 18 3 (d1 >>> 32#64 ||| n0 <<< 32#64))
+
+/-- The low word of `SHA256SU1`: the low word `d0` of the destination plus, lane by lane,
+the two lanes above the low one of the first source, `n0` and `n1`, and the mixing of the
+high word `m1` of the second source. -/
+def su1Lo (d0 n0 n1 m1 : Word) : Word :=
+  (BinOp.lanes 32 .add).eval ((BinOp.lanes 32 .add).eval d0 (n0 >>> 32#64 ||| n1 <<< 32#64))
+    (sigLanes 17 19 10 m1)
+
+/-- The high word of `SHA256SU1`: the high word `d1` of the destination plus, lane by lane,
+the high lane of the first source, the low lane of the second, and the mixing of the low
+word `lo` of the result. -/
+def su1Hi (d1 n1 m0 lo : Word) : Word :=
+  (BinOp.lanes 32 .add).eval ((BinOp.lanes 32 .add).eval d1 (n1 >>> 32#64 ||| m0 <<< 32#64))
+    (sigLanes 17 19 10 lo)
+
+/-- The two words of `SHA256SU0`, of the destination in the values 0 and 1 and the low word
+of the source in the value 2, into the values 200 and 201: `su0Lo` and `su0Hi`. Uses values
+from 10 to 73. -/
+def su0Words : List Op :=
+  sigConsts 10 7 18 3 ++ joinOps 20 0 1 ++ sigOps 30 10 23 200 0 ++ joinOps 50 1 2 ++
+    sigOps 60 10 53 201 1
+
+/-- The two words of `SHA256SU1`, of the destination in the values 0 and 1 and the sources in
+the values 2 and 3 and 4 and 5, into the values 200 and 201: `su1Lo`, and `su1Hi` of it. Uses
+values from 10 to 73. -/
+def su1Words : List Op :=
+  sigConsts 10 17 19 10 ++ joinOps 20 2 3 ++ [.bin 24 (.lanes 32 .add) 0 23] ++
+    sigOps 30 10 5 200 24 ++ joinOps 50 3 4 ++ [.bin 54 (.lanes 32 .add) 1 53] ++
+    sigOps 60 10 200 201 54
+
+/-- The word with the low half of `x` in both halves, for `x` below `2 ^ 32`: a shift of it
+to the right by `c` has in its low half the low half of `x` rotated by `c`. -/
+def dupLo (x : Word) : Word := x ||| x <<< 32#64
+
+/-- A mixing of a working word in a round: the word rotated right by `c1`, by `c2` and by
+`c3`, exclusive-ored. The low half is the mixing of `x`, for `x` below `2 ^ 32`. -/
+def bigSig (c1 c2 c3 x : Word) : Word := dupLo x >>> c1 ^^^ dupLo x >>> c2 ^^^ dupLo x >>> c3
+
+/-- What a round adds to its fourth and to its first working word, in the low half: the
+choice by `e` between `f` and `g`, the mixing of `e`, the message word with its constant, and
+`h`. Only `e` must be below `2 ^ 32`. -/
+def rndT (e f g h k : Word) : Word :=
+  (g ^^^ (e &&& (f ^^^ g))) + bigSig 6#64 11#64 25#64 e + k + h
+
+/-- The new first working word of a round, in the low half: `rndT`, the majority of `a`, `b`
+and `c`, and the mixing of `a`. Only `a` and `e` must be below `2 ^ 32`. -/
+def rndA (a b c e f g h k : Word) : Word :=
+  rndT e f g h k + ((a &&& (b ^^^ c)) ^^^ (b &&& c)) + bigSig 2#64 13#64 22#64 a
+
+/-- The new fifth working word of a round, in the low half: `rndT` and `d`. -/
+def rndE (d e f g h k : Word) : Word := rndT e f g h k + d
+
+/-- The eight working words of SHA-256, each in the low half of a word. -/
+structure Work where
+  a : Word
+  b : Word
+  c : Word
+  d : Word
+  e : Word
+  f : Word
+  g : Word
+  h : Word
+
+/-- The working words in the lanes of two vector registers, `a` to `d` in the words `x0` and
+`x1` of one and `e` to `h` in the words `y0` and `y1` of the other. The first and the fifth
+are below `2 ^ 32`. -/
+def Work.init (x0 x1 y0 y1 : Word) : Work :=
+  ⟨x0 &&& 0xffffffff#64, x0 >>> 32#64, x1, x1 >>> 32#64,
+    y0 &&& 0xffffffff#64, y0 >>> 32#64, y1, y1 >>> 32#64⟩
+
+/-- One round, with the message word and its constant in the low half of `k`. The new first
+and fifth working words are below `2 ^ 32`. -/
+def Work.step (s : Work) (k : Word) : Work :=
+  ⟨rndA s.a s.b s.c s.e s.f s.g s.h k &&& 0xffffffff#64, s.a, s.b, s.c,
+    rndE s.d s.e s.f s.g s.h k &&& 0xffffffff#64, s.e, s.f, s.g⟩
+
+/-- The working words after the four rounds of `SHA256H` and `SHA256H2`, from `a` to `d` in
+the words `x0` and `x1`, `e` to `h` in `y0` and `y1`, and the four message words with their
+constants in the lanes of `w0` and `w1`. -/
+def hashWork (x0 x1 y0 y1 w0 w1 : Word) : Work :=
+  ((((Work.init x0 x1 y0 y1).step w0).step (w0 >>> 32#64)).step w1).step (w1 >>> 32#64)
+
+/-- The low word of `SHA256H`, of the words of the destination, of the first source and of
+the second: the new `a` and `b`. -/
+def sha256hLo (d0 d1 n0 n1 m0 m1 : Word) : Word :=
+  (hashWork d0 d1 n0 n1 m0 m1).a ||| (hashWork d0 d1 n0 n1 m0 m1).b <<< 32#64
+
+/-- The high word of `SHA256H`: the new `c` and `d`. -/
+def sha256hHi (d0 d1 n0 n1 m0 m1 : Word) : Word :=
+  (hashWork d0 d1 n0 n1 m0 m1).c ||| (hashWork d0 d1 n0 n1 m0 m1).d <<< 32#64
+
+/-- The low word of `SHA256H2`, of the words of the destination, which holds `e` to `h`, of
+the first source, which holds `a` to `d`, and of the second: the new `e` and `f`. -/
+def sha256h2Lo (d0 d1 n0 n1 m0 m1 : Word) : Word :=
+  (hashWork n0 n1 d0 d1 m0 m1).e ||| (hashWork n0 n1 d0 d1 m0 m1).f <<< 32#64
+
+/-- The high word of `SHA256H2`: the new `g` and `h`. -/
+def sha256h2Hi (d0 d1 n0 n1 m0 m1 : Word) : Word :=
+  (hashWork n0 n1 d0 d1 m0 m1).g ||| (hashWork n0 n1 d0 d1 m0 m1).h <<< 32#64
+
+/-- What the four rounds start from: 32, the six counts and the mask of a low half into the
+values 10 to 17, and the working words of `Work.init` that are not a word of an operand,
+with the second and fourth message words, into the values 20 to 27. The words holding `a` to
+`d` are the values 0 and 1, those holding `e` to `h` the values 2 and 3, and the message
+words the values 4 and 5. -/
+def hashPre : List Op :=
+  [.const 10 32#64, .const 11 6#64, .const 12 11#64, .const 13 25#64, .const 14 2#64,
+    .const 15 13#64, .const 16 22#64, .const 17 0xffffffff#64,
+    .bin 20 .and 0 17, .bin 21 .lshr 0 10, .bin 22 .lshr 1 10,
+    .bin 23 .and 2 17, .bin 24 .lshr 2 10, .bin 25 .lshr 3 10,
+    .bin 26 .lshr 4 10, .bin 27 .lshr 5 10]
+
+/-- `rndT` of the working words in the values `e` to `h` and the message word in `k`, into
+the value `n + 12`. Uses values from `n` to `n + 11`. -/
+def rndTOps (n e f g h k : Nat) : List Op :=
+  [.bin n .shl e 10, .bin (n + 1) .or e n,
+    .bin (n + 2) .lshr (n + 1) 11, .bin (n + 3) .lshr (n + 1) 12, .bin (n + 4) .lshr (n + 1) 13,
+    .bin (n + 5) .xor (n + 2) (n + 3), .bin (n + 6) .xor (n + 5) (n + 4),
+    .bin (n + 7) .xor f g, .bin (n + 8) .and e (n + 7), .bin (n + 9) .xor g (n + 8),
+    .bin (n + 10) .add (n + 9) (n + 6), .bin (n + 11) .add (n + 10) k,
+    .bin (n + 12) .add (n + 11) h]
+
+/-- The new first working word, of `rndT` in the value `n + 12` and the working words in the
+values `a`, `b` and `c`, into the value `n + 27`, below `2 ^ 32`. Uses values from `n + 13`
+to `n + 25`. -/
+def rndAPart (n a b c : Nat) : List Op :=
+  [.bin (n + 13) .shl a 10, .bin (n + 14) .or a (n + 13),
+    .bin (n + 15) .lshr (n + 14) 14, .bin (n + 16) .lshr (n + 14) 15,
+    .bin (n + 17) .lshr (n + 14) 16,
+    .bin (n + 18) .xor (n + 15) (n + 16), .bin (n + 19) .xor (n + 18) (n + 17),
+    .bin (n + 20) .xor b c, .bin (n + 21) .and a (n + 20), .bin (n + 22) .and b c,
+    .bin (n + 23) .xor (n + 21) (n + 22),
+    .bin (n + 24) .add (n + 12) (n + 23), .bin (n + 25) .add (n + 24) (n + 19),
+    .bin (n + 27) .and (n + 25) 17]
+
+/-- The new fifth working word, of `rndT` in the value `n + 12` and the working word in the
+value `d`, into the value `n + 28`, below `2 ^ 32`. Uses the value `n + 26`. -/
+def rndEPart (n d : Nat) : List Op :=
+  [.bin (n + 26) .add (n + 12) d, .bin (n + 28) .and (n + 26) 17]
+
+/-- One round, of the working words in the values `a` to `h` and the message word in `k`:
+the new first working word into the value `n + 27` and the new fifth into `n + 28`. The
+values 10 to 17 hold the constants of `hashPre`. Uses values from `n` to `n + 26`. -/
+def rndOps (n a b c d e f g h k : Nat) : List Op :=
+  rndTOps n e f g h k ++ rndAPart n a b c ++ rndEPart n d
+
+/-- A round of which only the new first working word is wanted. -/
+def rndAOps (n a b c e f g h k : Nat) : List Op := rndTOps n e f g h k ++ rndAPart n a b c
+
+/-- A round of which only the new fifth working word is wanted. -/
+def rndEOps (n d e f g h k : Nat) : List Op := rndTOps n e f g h k ++ rndEPart n d
+
+/-- Two result words, into the values 200 and 201: the working word in the value `a` with
+that in `b` above it, and the one in `c` with that in `d` above it. -/
+def packOps (a b c d : Nat) : List Op :=
+  [.bin 150 .shl b 10, .bin 200 .or a 150, .bin 151 .shl d 10, .bin 201 .or c 151]
+
+/-- The first three of the four rounds. They leave the working words in the values 117, 87,
+57, 20, 118, 88, 58 and 23, and the fourth message word in the value 27. -/
+def hashRounds : List Op :=
+  hashPre ++ rndOps 30 20 21 1 22 23 24 3 25 4 ++ rndOps 60 57 20 21 1 58 23 24 3 26 ++
+    rndOps 90 87 57 20 21 88 58 23 24 5
+
+/-- The two words of `SHA256H`, into the values 200 and 201: `a` and `b`, and `c` and `d`,
+of `hashWork`. -/
+def hashWords : List Op :=
+  hashRounds ++ rndAOps 120 117 87 57 118 88 58 23 27 ++ packOps 147 117 87 57
+
+/-- The two words of `SHA256H2`, into the values 200 and 201: `e` and `f`, and `g` and `h`,
+of `hashWork`. -/
+def hash2Words : List Op :=
+  hashRounds ++ rndEOps 120 20 118 88 58 23 27 ++ packOps 148 118 88 58
+
+/-- `SHA256SU0`, the one `cryptoSha2Reg` instruction the lowering covers. `none` for the
+SHA-1 instructions. -/
+def sha2Ops (opcode : BitVec 5) (rn rd : Arm64.VReg) : Option (List Op) :=
+  if opcode = 2#5 then
+    some (vget 0 rd ++ [.get 2 (vregLo rn)] ++ su0Words ++ vset rd 200 201)
+  else none
+
+/-- `SHA256H`, `SHA256H2` and `SHA256SU1`. For the two hash instructions the register that
+holds `a` to `d` is read into the values 0 and 1 and the one that holds `e` to `h` into 2
+and 3. `none` for the SHA-1 instructions. -/
+def sha3Ops (opcode : BitVec 3) (rm rn rd : Arm64.VReg) : Option (List Op) :=
+  if opcode = 4#3 then
+    some (vget 0 rd ++ vget 2 rn ++ vget 4 rm ++ hashWords ++ vset rd 200 201)
+  else if opcode = 5#3 then
+    some (vget 0 rn ++ vget 2 rd ++ vget 4 rm ++ hash2Words ++ vset rd 200 201)
+  else if opcode = 6#3 then
+    some (vget 0 rd ++ vget 2 rn ++ vget 4 rm ++ su1Words ++ vset rd 200 201)
+  else none
+
 /-- The size in bits of the lanes that the `imm5` field of a `simdInsDup` instruction names:
 the position of its lowest set bit says 8, 16, 32 or 64. -/
 def laneSize (imm5 : BitVec 5) : Nat :=
@@ -1153,8 +1398,14 @@ def lower (pc : Word) (i : Instr) : Block :=
   | .simdPmull .. => ⟨[], .trap "simdPmull"⟩
   | .simdThreeDiff .. => ⟨[], .trap "simdThreeDiff"⟩
   | .aes .. => ⟨[], .trap "aes"⟩
-  | .cryptoSha2Reg .. => ⟨[], .trap "cryptoSha2Reg"⟩
-  | .cryptoSha3Reg .. => ⟨[], .trap "cryptoSha3Reg"⟩
+  | .cryptoSha2Reg opcode rn rd =>
+    match sha2Ops opcode rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "cryptoSha2Reg"⟩
+  | .cryptoSha3Reg opcode rm rn rd =>
+    match sha3Ops opcode rm rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "cryptoSha3Reg"⟩
   | .cryptoSha512Reg2 .. => ⟨[], .trap "cryptoSha512Reg2"⟩
   | .cryptoSha512Reg3 .. => ⟨[], .trap "cryptoSha512Reg3"⟩
   | .cryptoSha3FourReg .. => ⟨[], .trap "cryptoSha3FourReg"⟩

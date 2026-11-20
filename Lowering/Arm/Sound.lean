@@ -9,7 +9,7 @@
   built from (a register read, a chain, the flags of an addition, an address) has a lemma
   in `Rel.lean` saying what it leaves in the environment and the state, and each instruction
   puts these together and compares the result with the model. The vector instructions are
-  in `Simd.lean`.
+  in `Simd.lean`, and the SHA-256 instructions in `Sha.lean`.
 
   ## Main results
 
@@ -21,7 +21,7 @@
 
 module
 
-public import Lowering.Arm.Simd
+public import Lowering.Arm.Sha
 import Std.Tactic.BVDecide
 
 @[expose] public section
@@ -967,6 +967,8 @@ theorem lower_step (prog : Arm64.Program) {i : Instr} (h : Rel s σ)
   case simdAddpScalar => exact sound_simdAddpScalar prog _ _ h hw
   case simdInsDup => exact sound_simdInsDup prog _ _ h hw
   case simdExt => exact sound_simdExt prog _ _ _ h hw
+  case cryptoSha2Reg => exact sound_cryptoSha2Reg prog _ _ h hw
+  case cryptoSha3Reg => exact sound_cryptoSha3Reg prog _ _ _ h hw
   all_goals exact absurd hw (by simp [lower, Block.wp, wpOps, Term.wp])
 
 /-- **One instruction of the AArch64 lowering is sound.** If the block of the instruction

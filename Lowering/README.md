@@ -78,6 +78,7 @@ the lowering is stated on instruction words.
 | `Mem.lean` | permissions and bytes of the model's memory |
 | `Rel.lean` | `Rel`, and what each piece of a block does to related states |
 | `Simd.lean` | the vector instructions, lowered soundly |
+| `Sha.lean` | the SHA-256 instructions, lowered soundly; the words each writes |
 | `Sound.lean` | the integer instructions, `lower_sound`, `lowerProgram_sound` |
 | `Logic.lean` | register and flag names, `lowerWords`, `triple_sound`, `machine_sound` |
 | `Leak.lean` | trusted: what each instruction reveals, the events of `SVC #0`, `RunL` |
@@ -102,6 +103,13 @@ How the machine appears in `braid`:
   way, the smallest groups first: `REV32` of 16-bit lanes is one exchange of groups of 16
   bits. `EXT` takes each word of its result from one word of its operands, or from the end
   of one and the start of the next with two shifts and an `or`.
+- The SHA-256 instructions are operations on words. `SHA256SU0` and `SHA256SU1` mix the
+  32-bit lanes of a word with shifts and masks and add lanes with `BinOp.lanes`
+  (`su0Lo`, `su0Hi`, `su1Lo`, `su1Hi`). `SHA256H` and `SHA256H2` take the eight working words
+  out of the lanes, each into the low half of a value, and do four rounds (`Work.step`,
+  `hashWork`): a rotation of `x` below `2 ^ 32` is one shift of `x ||| x <<< 32`, a sum
+  carries into the high half, and only the new first and fifth working word of a round are
+  masked. The result words are `sha256hLo`, `sha256hHi`, `sha256h2Lo` and `sha256h2Hi`.
 - The model runs one thread, so a load-acquire, a store-release and an atomic
   read-modify-write are a load, a store, and the two with the operation between, each with
   a `guard` that the address is aligned.
@@ -123,11 +131,12 @@ instructions:
 | `simdInsDup` | `DUP` from a general register and from a lane, `INS` from a general register, `UMOV`, `SMOV` | `INS` from a lane |
 | `simdTwoRegMisc`, `simdAddpScalar` | `NOT`, `REV16`, `REV32` of bytes and of 16 bits, `REV64` of bytes, of 16 and of 32 bits, scalar `ADDP` | the rest of `simdTwoRegMisc` |
 | `simdExt` | `EXT` at every position, in 64 or 128 bits | |
+| `cryptoSha2Reg`, `cryptoSha3Reg` | `SHA256SU0`, `SHA256H`, `SHA256H2`, `SHA256SU1` | the SHA-1 instructions |
 
 Not yet covered: compare-and-swap, store-exclusives and the exclusive pairs, `LDAPUR` and
 `STLUR`, CRC, system registers and calls, floating-point arithmetic and comparisons,
 `simdAcrossLanes`, `simdPermute`, `simdTbl`, `simdDupScalar`, `simdPmull`,
-`simdThreeDiff`, and AES and SHA. On a whole Go binary, 97% of 118,148 instructions lower to
+`simdThreeDiff`, and AES, SHA-1, SHA-512 and SHA-3. On a whole Go binary, 97% of 118,148 instructions lower to
 something other than `trap`. Of the 1,105 that trap, the largest groups are `STXR` (369), AES
 (191) and `CAS` (119). Before the vector instructions, `LDAR`, `STLR`, `CLZ` and `RBIT` were
 added, 3,388 trapped.
