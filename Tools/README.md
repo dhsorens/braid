@@ -150,7 +150,8 @@ braid-difftest <binary> --fn <name> [--args a,b,..] [--steps n] [--seed n --runs
 It sets up a call to the function (arguments in the argument registers, a stack, a return
 address where no code is), then steps the machine model and the `braid` interpreter together,
 comparing the program counter, every register and every flag after each instruction, until
-the function returns. It runs binaries of all three instruction sets; an x86-64 binary needs
+the function returns. On AArch64 the registers compared include the two halves of every
+vector register. It runs binaries of all three instruction sets; an x86-64 binary needs
 `--disasm`, as for `braid-lower`.
 
 ```sh

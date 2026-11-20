@@ -75,6 +75,46 @@ operands, and no other does. The lists were read as described under [Sources](#s
 the Arm and Intel entries are from copies and summaries of the vendors' pages and should be
 checked against the originals before they are relied on for an instruction not named above.
 
+### Vector and cryptographic instructions
+
+The same three lists speak of vector code, each in its own way.
+
+| ISA | The list says | Of the instructions the examples use |
+| --- | --- | --- |
+| AArch64 | `DIT` is stated instruction by instruction: the page of each covered instruction says it "is a data-independent-time instruction" [10, 18] | vector `ADD`, `EOR`, `SHL`, `USRA`, `USHR`, `SRI`, `SLI`, `EXT`, `REV32` and `TBL`, and `SHA256H`, `SHA256H2`, `SHA256SU0`, `SHA256SU1`, all carry the sentence. A vector floating-point addition does not |
+| x86-64 | one table of mnemonics and opcodes [11] | `VPADDD`, `PADDD`, `VPTERNLOGD`, `VPRORD`, `VPSRLD`, `PSHUFD`, `PSHUFB`, `PALIGNR`, `PBLENDW`, the moves, and `SHA256RNDS2`, `SHA256MSG1`, `SHA256MSG2` are on it. So are `PXOR`, `PSLLD` and `VPROLD`, which a compiler would use and the model lacks ([`ISA.md`](ISA.md)). Gathers and compressions are not |
+| RISC-V | Zvkt [19] adds no instruction: it asks for data-independent latency of the vector integer additions, logic, shifts, multiplications, merges, permutations and slides, with shift amounts and gather indices as control operands that are exempt | none: the pinned model has no vector extension |
+
+Two caveats come with the lists. Intel's table does not say which operand forms it covers,
+and says a listed instruction "may have variable latency for reasons unrelated to the data
+values (for example, loading data from memory ...)": with a memory operand an instruction
+is its register form and a load, and the load reveals its address here as any load does.
+And Arm's sentence about loads and stores is that their time is "insensitive to the value
+of the data being loaded or stored", which says nothing of the address; the address is a
+label here.
+
+**No instruction of the vector examples is on no list.** Every vector instruction the
+lowerings cover is on its vendor's list, so none reveals its operands; the labels of
+vectorised ChaCha20 and of SHA-256 with the SHA instructions are the addresses of their
+loads and stores and the branches of their loops. An instruction the lowerings do not
+cover has no reading, and a run with a trace has no step through it
+([`Trust.md`](Trust.md)).
+
+**How vectorised ChaCha20 is written.** In two shapes [20-24]. In the *row* form the state
+of one block is four vectors of four 32-bit lanes, a column round is four quarter rounds at
+once, and a diagonal round is a column round between two rotations of the rows' lanes
+(`pshufd` on x86-64, `ext` on AArch64). In the *lane* form sixteen vectors each hold one
+word of the state for as many blocks as the vector has lanes, and the output is transposed
+at the end. Libraries use the row form for one or two blocks and the lane form for four or
+more: OpenSSL and BoringSSL have both on each instruction set, the Linux kernel's NEON
+code has rows with `ext` for one block and lanes for four, libsodium has rows for one
+block and lanes for four and eight, and HACL* has only the lane form. The rotations of a
+lane are a byte shuffle or a reversal of halves for 16 and 8 (`pshufb`; `rev32` on 16-bit
+lanes, `tbl`), a shift to each side for 12 and 7 (`pslld` and `psrld`; `shl` with `sri` or
+`usra`), and `vprold` with AVX-512. `Examples/src/c/chacha20_vec.c` is the row form for one
+block; clang compiles it for AArch64 to `rev32`, `shl`, `usra` and `ext`, as the libraries
+write by hand.
+
 ## In the dialect
 
 A label (`Braid.Label`, in `braid/Braid/IR/Trace.lean`) is one observation:
@@ -225,3 +265,20 @@ Read for this page, with what could not be checked.
     Framework in Coq.* CPP 2020. <https://arxiv.org/pdf/1907.10674>. `ChainTrace`,
     `reachable` and `contract_induction` are in `execution/theories/` of
     <https://github.com/AU-COBRA/ConCert>.
+18. Arm A64 instruction descriptions, *Operational information* of each instruction, 2026-03
+    release. Read in a copy,
+    <https://www.scs.stanford.edu/~zyedidia/arm64/sha256h_advsimd.html> and its siblings,
+    not on Arm's site.
+19. RISC-V ISA manual, vector cryptography, *Zvkt Vector Data-Independent Execution Latency.*
+    <https://github.com/riscv/riscv-isa-manual/blob/main/src/unpriv/zvk.adoc>. Read on the
+    `main` branch, not in the ratified document.
+20. OpenSSL, `crypto/chacha/asm/chacha-x86_64.pl` and `chacha-armv8.pl`.
+    <https://github.com/openssl/openssl/tree/master/crypto/chacha/asm>
+21. T. Krovetz's vector implementation, as BoringSSL once carried it.
+    <https://github.com/google/boringssl/blob/chromium-2214/crypto/chacha/chacha_vec.c>
+22. libsodium, `crypto_stream/chacha20/dolbeau`.
+    <https://github.com/jedisct1/libsodium/tree/master/src/libsodium/crypto_stream/chacha20/dolbeau>
+23. Linux, `lib/crypto/arm64/chacha-neon-core.S` and
+    `lib/crypto/x86/chacha-avx512vl-x86_64.S`. <https://github.com/torvalds/linux/tree/master/lib/crypto>
+24. HACL*, `code/chacha20/Hacl.Impl.Chacha20.Core32xN.fst`.
+    <https://github.com/hacl-star/hacl-star/tree/main/code/chacha20>

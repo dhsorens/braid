@@ -14,7 +14,12 @@
     `div` or `idiv`, so no instruction here reveals its operands. By Intel's data operand
     independent timing, additions, logic, shifts, rotations, multiplications, conditional
     moves and `setcc` take a time that does not depend on their operands; a conditional move
-    reads its source whatever the condition.
+    reads its source whatever the condition. The vector instructions here are on the same
+    list: the moves, `paddd` and `vpaddd`, `vprord` and `vpsrld` by an immediate,
+    `vpternlogd`, `pshufd`, `pshufb`, `palignr` and `pblendw`. With register operands they
+    reveal nothing, and with an operand in memory they reveal the address and the size of
+    the vector they load or store. `pshufb` picks bytes by the bytes of an operand, and its
+    time does not depend on them.
 
   The labels of one instruction are in the order in which the model's `Operation.interp`
   and `AvxOperation.interp` make the accesses: sources before destinations as the model reads
@@ -32,10 +37,10 @@
   information as one label for the whole vector, in the form the lowering emits.
 
   Where the instruction is outside this file, `leak` is `none`, and `RunL` has no step: the
-  string instructions, `adcx`, `adox`, `mulx`, `rcl`, `rcr`, the vector instructions other
-  than the moves and the packed 32-bit additions, and any instruction at the 32-bit address
-  size. A theorem about a trace is then a theorem about a run through the other instructions
-  only.
+  string instructions, `adcx`, `adox`, `mulx`, `rcl`, `rcr`, the vector instructions the
+  lowering leaves as `trap` (`vzeroupper`, the SHA instructions, `addps`, `subps`), and any
+  instruction at the 32-bit address size. A theorem about a trace is then a theorem about a
+  run through the other instructions only.
 
   This file is trusted: a theorem about what an x86-64 program leaks says so in these terms
   (`docs/Trust.md`). It is definitions only.
@@ -154,9 +159,15 @@ def leakAvx (s : MachineData) {w : AvxWidth} : AvxOperation w → Option Trace
   | .movups dst src | .movaps dst src | .movdqu dst src | .movdqa dst src
   | .vmovups dst src | .vmovdqu dst src | .vmovdqu32 dst src | .vmovdqa32 dst src =>
     some (vecRead p s.regs src ++ vecWrite p s.regs dst)
-  | .paddd dst src => some (vecRead p s.regs src ++ vecRead p s.regs dst ++ vecWrite p s.regs dst)
+  | .paddd dst src | .pshufb dst src | .palignr dst src _ | .pblendw dst src _ =>
+    some (vecRead p s.regs src ++ vecRead p s.regs dst ++ vecWrite p s.regs dst)
   | .vpaddd dst src1 src2 =>
     some (vecRead p s.regs src2 ++ vecRead p s.regs src1 ++ vecWrite p s.regs dst)
+  | .vprord dst src _ | .vpsrld dst src _ | .pshufd dst src _ =>
+    some (vecRead p s.regs src ++ vecWrite p s.regs dst)
+  | .vpternlogd dst src2 src3 _ =>
+    some (vecRead p s.regs src3 ++ vecRead p s.regs src2 ++ vecRead p s.regs dst ++
+      vecWrite p s.regs dst)
   | .vmovq _ _ => some []
   | .vmovIn _ _ src => some (rmRead p s.regs src)
   | .vmovOut _ dst _ => some (rmWrite p s.regs dst)

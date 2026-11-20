@@ -48,9 +48,11 @@
   * **Vector instructions that reveal nothing.** Moves between and within registers (`FMOV`
     that converts nothing, `DUP`, `INS`, `UMOV`, `SMOV`), constants (`MOVI` and the other
     modified immediates, `FMOV` of a constant), the bitwise operations, `ADD` and `SUB` of
-    lanes, `ADDP` of the two halves, `CNT`, `NOT`, `RBIT`, and `FCSEL`. That these are
-    data-independent is from the same reading of Arm's list as in `docs/Leakage.md`, and
-    should be checked against it before it is relied on.
+    lanes, `ADDP` of the two halves, `CNT`, `NOT`, `RBIT`, and `FCSEL`; the shifts of lanes
+    by a constant `SHL`, `USHR`, `USRA`, `SRI` and `SLI`; `EXT`; and the reversals `REV16`,
+    `REV32` and `REV64`. The amount of such a shift and the position of an `EXT` are in the
+    code. That these are data-independent is from the same reading of Arm's list as in
+    `docs/Leakage.md`, and should be checked against it before it is relied on.
   * **Hooked functions.** A step of the model that is a call to a hooked function
     (`Arm64.Step.extern`) has no labels here, and `RunL` has no such step.
   * **Supervisor calls.** `leak` is `none` for `SVC`; `svcLeak` speaks of `SVC #0`, and only
@@ -172,15 +174,22 @@ def leak (s : Arm64.State) : Instr → Option Trace
   | .logicalImm .. | .logicalShift .. | .moveWide .. | .bitfield .. | .extr .. => some []
   | .condCompareReg .. | .condCompareImm .. | .condSelect .. => some []
   | .dataProc1 .. | .dataProc2 .. | .dataProc3 .. => some []
-  -- Vector instructions that reveal nothing: moves, constants, bitwise operations, and the
-  -- addition and subtraction of lanes. The conditions select them by their encoding.
+  -- Vector instructions that reveal nothing: moves, constants, bitwise operations, the
+  -- addition and subtraction of lanes, shifts of lanes by a constant, `EXT`, and reversals.
+  -- The conditions select them by their encoding.
   | .fmovGprVec _ _ _ opcode _ _ => if opcode = 6#3 ∨ opcode = 7#3 then some [] else none
   | .fpDataProc1 _ opcode _ _ => if opcode = 0#6 then some [] else none
   | .fpImm .. | .fpCondSelect .. | .simdInsDup .. | .simdAddpScalar .. => some []
-  | .simdImmShift _ _ immh _ _ _ _ => if immh = 0#4 then some [] else none
+  | .simdImmShift _ op immh _ opc _ _ =>
+    if immh = 0#4 then some []
+    else if opc = 10#5 ∨ (op = true ∧ (opc = 0#5 ∨ opc = 2#5 ∨ opc = 8#5)) then some []
+    else none
   | .simdThreeSame _ _ _ _ opcode _ _ =>
     if opcode = 3#5 ∨ opcode = 16#5 then some [] else none
-  | .simdTwoRegMisc _ _ _ opcode _ _ => if opcode = 5#5 then some [] else none
+  | .simdTwoRegMisc _ u size opcode _ _ =>
+    if opcode = 5#5 ∨ opcode = 0#5 ∨ (opcode = 1#5 ∧ u = false ∧ size = 0#2) then some []
+    else none
+  | .simdExt .. => some []
   -- Everything else: this file does not say.
   | _ => none
 

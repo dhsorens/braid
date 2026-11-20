@@ -150,7 +150,7 @@ def run (prog : Arm64.Program) (P : Braid.Program) :
       let next := next.filter fun s' => s'.status == .Running
       match next, (P σ.pc).bind (execBlock · σ []) with
       | some s', some (σ', _) =>
-        match firstDiff arch 32 4 [] (abs s') σ' with
+        match firstDiff arch 128 4 [] (abs s') σ' with
         | some d => .mismatch n s.pc d
         | none => run prog P fuel (n + 1) s' σ'
       | none, none => .bothStop n s.pc

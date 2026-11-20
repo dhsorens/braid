@@ -56,7 +56,7 @@ theorem leak_isEvent {s : Arm64.State} {i : Instr} {ls : Trace} (h : leak s i = 
   have hr : ∀ (a : Word) (n : Nat), (Label.read a n).isEvent = false := fun _ _ => rfl
   have hw : ∀ (a : Word) (n : Nat), (Label.write a n).isEvent = false := fun _ _ => rfl
   unfold leak at h
-  split at h <;> (try split at h) <;> cases h <;>
+  split at h <;> (try split at h) <;> (try split at h) <;> cases h <;>
     first
       | exact fun _ hl => absurd hl List.not_mem_nil
       | exact pairLeak_isEvent hr _ _

@@ -11,8 +11,11 @@
   * `wp_vloadOps`, `wp_vstoreOps`: a load or store of a vector register
   * `sound_ldrSimd`, `sound_strSimd`, `sound_ldpSimd`, `sound_stpSimd`: loads and stores
   * `sound_fmovGprVec`, `sound_fpDataProc1`: moves
-  * `sound_simdThreeSame`, `sound_simdImmShift`: operations on lanes, and constants
+  * `sound_simdThreeSame`: operations on lanes
   * `sound_simdInsDup`: moves between general registers and lanes
+  * `sound_simdImmShift`: constants, and shifts of lanes by a constant
+  * `sound_simdTwoRegMisc`: `NOT`, and the reversals of elements
+  * `sound_simdExt`: `EXT`
 -/
 
 module
@@ -598,28 +601,6 @@ theorem evalInst_movi {q op : Bool} {immb : BitVec 3} {opc : BitVec 5} {d64 : Wo
           simp_all
         · cases hm
 
-/-- A `MOVI` of a constant is sound. -/
-theorem sound_simdImmShift {q op : Bool} {immh : BitVec 4} {immb : BitVec 3} {opc : BitVec 5}
-    (h : Rel s σ) (hw : (lower s.pc (.simdImmShift q op immh immb opc rn rd)).wp σ Q) :
-    ∃ σ', Rel (prog.evalInst (.simdImmShift q op immh immb opc rn rd) s) σ' ∧ Q σ' ∧
-      KeepsCode s.mem (prog.evalInst (.simdImmShift q op immh immb opc rn rd) s).mem := by
-  simp only [lower] at hw
-  generalize hops : (if immh = 0#4 ∧ opc.getLsbD 0 = false then
-    moviImm op (opc.extractLsb' 1 4) (immb ++ rn) else none) = o at hw
-  cases o with
-  | none => exact absurd hw (by simp [Block.wp, wpOps, Term.wp])
-  | some d64 =>
-    split at hops
-    · rename_i hc
-      obtain ⟨rfl, h0⟩ := hc
-      vec_ops h hw
-      obtain ⟨σ', h', hw⟩ := wp_vset' h hw
-      simp only [Term.wp] at hw
-      refine step_done (h'.setPC _) hw ?_
-      env_simp
-      exact evalInst_movi prog rn rd h0 hops s
-    · cases hops
-
 /-! ## Operations on lanes -/
 
 theorem bv2_cases (x : BitVec 2) : x = 0#2 ∨ x = 1#2 ∨ x = 2#2 ∨ x = 3#2 := by bv_decide
@@ -841,31 +822,6 @@ theorem evalInst_not (q : Bool) (s : Arm64.State) :
     prog.evalInst (.simdTwoRegMisc q true 0#2 5#5 rn rd) s =
       (s.writeVReg128 rd (if q then ~~~(s.vregs.read rn)
         else ((~~~(s.vregs.read rn)).truncate 64).zeroExtend 128)).advancePC := rfl
-
-/-- A `NOT` of a vector register is sound. -/
-theorem sound_simdTwoRegMisc {q u : Bool} {size : BitVec 2} {opcode : BitVec 5}
-    (h : Rel s σ) (hw : (lower s.pc (.simdTwoRegMisc q u size opcode rn rd)).wp σ Q) :
-    ∃ σ', Rel (prog.evalInst (.simdTwoRegMisc q u size opcode rn rd) s) σ' ∧ Q σ' ∧
-      KeepsCode s.mem (prog.evalInst (.simdTwoRegMisc q u size opcode rn rd) s).mem := by
-  simp only [lower] at hw
-  generalize hops : notOps q u size opcode rn rd = o at hw
-  cases o with
-  | none => exact absurd hw (by simp [Block.wp, wpOps, Term.wp])
-  | some ops =>
-    simp only [notOps] at hops
-    split at hops
-    · rename_i hc
-      obtain ⟨rfl, rfl, rfl⟩ := hc
-      cases hops
-      cases q <;> simp only [Bool.false_eq_true, ↓reduceIte] at hw <;> vec_ops h hw <;>
-        obtain ⟨σ', h', hw⟩ := wp_vset' h hw <;>
-        simp only [Term.wp] at hw <;>
-        refine step_done (h'.setPC _) hw ((evalInst_not prog rn rd _ s).trans (wv_eq _ ?_)) <;>
-        env_simp <;>
-        simp only [UnOp.eval_not, Bool.false_eq_true, ↓reduceIte] <;>
-        generalize s.vregs.read rn = x <;>
-        bv_decide
-    · cases hops
 
 theorem evalInst_addp (s : Arm64.State) :
     prog.evalInst (.simdAddpScalar rn rd) s =
@@ -1126,5 +1082,501 @@ theorem sound_simdInsDup {q op : Bool} {imm5 : BitVec 5} {imm4 : BitVec 4}
         simp only [Env.set_apply, Nat.reduceEqDiff, ↓reduceIte, Bool.false_eq_true,
           BinOp.eval_lshr]
     · cases hops
+
+/-! ## Shifts of lanes by a constant -/
+
+/-- The value of a shift of lanes by a constant: the shift of each half, or of the low half
+only, with the high half clear. -/
+def shiftRes (sop : LaneShift) (e k : Nat) (q : Bool) (vn vd : BitVec 128) : BitVec 128 :=
+  (if q then sop.eval e k (vn.extractLsb' 64 64) (vd.extractLsb' 64 64) else 0#64) ++
+    sop.eval e k (vn.truncate 64) (vd.truncate 64)
+
+/-- An amount of at most 64, as a field of seven bits and its bound in the same terms. -/
+theorem amount_bv {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) :
+    ∃ kb : BitVec 7, kb.toNat = k ∧ kb ≤ BitVec.ofNat 7 e := by
+  refine ⟨BitVec.ofNat 7 k, ?_, ?_⟩
+  · rw [BitVec.toNat_ofNat]; omega
+  · rw [BitVec.le_def, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega
+
+/-- Unfold a shift of lanes of a known size on both sides, down to words. -/
+macro "lanes_simp" : tactic => `(tactic|
+  simp only [shiftRes, LaneShift.eval, shlMask, shrMask, laneOnes, UnOp.eval_zext, ↓reduceIte,
+    Nat.reduceDiv, List.range', List.range, List.range.loop, List.foldl, Nat.reduceMul,
+    Nat.reduceAdd, Bool.false_eq_true, BitVec.ofNat_toNat, BinOp.eval_lanes, BinOp.eval_add,
+    Nat.reduceEqDiff])
+
+/-- The model's shift left of lanes is the shift of each half, masked. -/
+theorem lanes_shl {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
+    (vn vd : BitVec 128) :
+    Arm64.mapSimdLanes q e vn (fun lane => lane <<< k) = shiftRes .shl e k q vn vd := by
+  obtain ⟨kb, rfl, hkb⟩ := amount_bv he hk
+  rw [mapSimdLanes_eq]
+  rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
+
+/-- The model's shift right of lanes is the shift of each half, masked. -/
+theorem lanes_ushr {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
+    (vn vd : BitVec 128) :
+    Arm64.mapSimdLanes q e vn (fun lane => lane >>> k) = shiftRes .ushr e k q vn vd := by
+  obtain ⟨kb, rfl, hkb⟩ := amount_bv he hk
+  rw [mapSimdLanes_eq]
+  rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
+
+/-- The model's shift right of a lane, which it does on integers, is a shift of bits. -/
+theorem usra_lane (e k : Nat) (x : BitVec 128) :
+    Arm64.intToSimdLane e (Arm64.aslRShr (Arm64.simdLaneUInt e x) k false) =
+      ((x &&& ((1#128 <<< e) - 1#128)) >>> k) &&& ((1#128 <<< e) - 1#128) := by
+  simp only [Arm64.intToSimdLane, Arm64.aslRShr, Arm64.simdLaneUInt, Bool.false_eq_true,
+    ↓reduceIte]
+  congr 1
+  generalize x &&& ((1#128 <<< e) - 1#128) = y
+  have h : (Int.ofNat y.toNat / Int.ofNat (1 <<< k) : Int) = ((y >>> k).toNat : Int) := by
+    rw [BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow, Nat.shiftLeft_eq, Nat.one_mul]
+    rfl
+  split
+  · rename_i hk
+    have hk : k = 0 := by simpa using hk
+    subst hk
+    simp
+  · rw [h, BitVec.ofInt_natCast, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- The model's shift right of lanes, added to the lanes of the destination, is the shift of
+each half, masked, and `BinOp.lanes` of the sum. -/
+theorem lanes_usra {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
+    (vn vd : BitVec 128) :
+    Arm64.zipSimdLanes q e vn vd (fun lane acc =>
+        acc + Arm64.intToSimdLane e (Arm64.aslRShr (Arm64.simdLaneUInt e lane) k false)) =
+      shiftRes .usra e k q vn vd := by
+  obtain ⟨kb, rfl, hkb⟩ := amount_bv he hk
+  simp only [usra_lane]
+  rw [zipSimdLanes_eq]
+  rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
+
+/-- The model's `SRI` of lanes is the shift of each half, into the bits it fills. -/
+theorem lanes_sri {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
+    (vn vd : BitVec 128) :
+    Arm64.zipSimdLanes q e vn vd (fun a d =>
+        (d &&& ~~~(((1#128 <<< e) - 1#128) >>> k)) |||
+          ((a >>> k) &&& (((1#128 <<< e) - 1#128) >>> k))) =
+      shiftRes .sri e k q vn vd := by
+  obtain ⟨kb, rfl, hkb⟩ := amount_bv he hk
+  rw [zipSimdLanes_eq]
+  rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
+
+/-- The model's `SLI` of lanes is the shift of each half, into the bits it fills. -/
+theorem lanes_sli {e k : Nat} (he : e = 8 ∨ e = 16 ∨ e = 32 ∨ e = 64) (hk : k ≤ e) (q : Bool)
+    (vn vd : BitVec 128) :
+    Arm64.zipSimdLanes q e vn vd (fun a d =>
+        (d &&& ~~~((((1#128 <<< e) - 1#128) <<< k) &&& ((1#128 <<< e) - 1#128))) |||
+          (((a <<< k) &&& ((1#128 <<< e) - 1#128)) &&&
+            ((((1#128 <<< e) - 1#128) <<< k) &&& ((1#128 <<< e) - 1#128)))) =
+      shiftRes .sli e k q vn vd := by
+  obtain ⟨kb, rfl, hkb⟩ := amount_bv he hk
+  rw [zipSimdLanes_eq]
+  rcases he with rfl | rfl | rfl | rfl <;> cases q <;> lanes_simp <;> bv_decide
+
+/-- The lanes of a shift by a constant are of 8, 16, 32 or 64 bits, and its amount to the
+left and its amount to the right are at most a lane. -/
+theorem shift_bounds {immh : BitVec 4} (immb : BitVec 3) (h0 : immh ≠ 0#4) :
+    (shiftLaneSize immh immb = 8 ∨ shiftLaneSize immh immb = 16 ∨
+        shiftLaneSize immh immb = 32 ∨ shiftLaneSize immh immb = 64) ∧
+      (immh ++ immb).toNat - shiftLaneSize immh immb ≤ shiftLaneSize immh immb ∧
+      2 * shiftLaneSize immh immb - (immh ++ immb).toNat ≤ shiftLaneSize immh immb := by
+  have h8 : 8#7 ≤ immh ++ immb := by bv_decide
+  have h8 : 8 ≤ (immh ++ immb).toNat := by simpa [BitVec.le_def] using h8
+  have hlt := (immh ++ immb).isLt
+  unfold shiftLaneSize
+  repeat' split
+  all_goals omega
+
+section
+variable {q : Bool} {immh : BitVec 4} (immb : BitVec 3) (s : Arm64.State)
+  (h0 : immh ≠ 0#4) (hq : ¬(immh.getLsbD 3 = true ∧ q = false))
+include h0 hq
+
+theorem evalInst_shl :
+    prog.evalInst (.simdImmShift q false immh immb 10#5 rn rd) s =
+      (s.writeVReg128 rd (Arm64.mapSimdLanes q (shiftLaneSize immh immb) (s.vregs.read rn)
+        (fun lane => lane <<< ((immh ++ immb).toNat - shiftLaneSize immh immb)))).advancePC := by
+  have h0' : (immh == 0#4) = false := by simpa using h0
+  have hq' : immh[3] = false ∨ q = true := by cases q <;> simp_all
+  simp [Arm64.Program.evalInst, Arm64.execInstWithSvc, h0', hq']
+  rfl
+
+theorem evalInst_ushr :
+    prog.evalInst (.simdImmShift q true immh immb 0#5 rn rd) s =
+      (s.writeVReg128 rd (Arm64.mapSimdLanes q (shiftLaneSize immh immb) (s.vregs.read rn)
+        (fun lane =>
+          lane >>> (2 * shiftLaneSize immh immb - (immh ++ immb).toNat)))).advancePC := by
+  have h0' : (immh == 0#4) = false := by simpa using h0
+  have hq' : immh[3] = false ∨ q = true := by cases q <;> simp_all
+  simp [Arm64.Program.evalInst, Arm64.execInstWithSvc, h0', hq']
+  rfl
+
+theorem evalInst_usra :
+    prog.evalInst (.simdImmShift q true immh immb 2#5 rn rd) s =
+      (s.writeVReg128 rd (Arm64.zipSimdLanes q (shiftLaneSize immh immb) (s.vregs.read rn)
+        (s.vregs.read rd) (fun lane acc => acc + Arm64.intToSimdLane (shiftLaneSize immh immb)
+          (Arm64.aslRShr (Arm64.simdLaneUInt (shiftLaneSize immh immb) lane)
+            (2 * shiftLaneSize immh immb - (immh ++ immb).toNat) false)))).advancePC := by
+  have h0' : (immh == 0#4) = false := by simpa using h0
+  have hq' : immh[3] = false ∨ q = true := by cases q <;> simp_all
+  simp [Arm64.Program.evalInst, Arm64.execInstWithSvc, Arm64.evalSimdImmShiftNonZeroExt,
+    Arm64.evalSimdImmShiftNonZeroExtSatFlags, h0', hq']
+  rfl
+
+theorem evalInst_sri :
+    prog.evalInst (.simdImmShift q true immh immb 8#5 rn rd) s =
+      (s.writeVReg128 rd (Arm64.zipSimdLanes q (shiftLaneSize immh immb) (s.vregs.read rn)
+        (s.vregs.read rd) (fun a d =>
+          (d &&& ~~~(((1#128 <<< shiftLaneSize immh immb) - 1#128) >>>
+            (2 * shiftLaneSize immh immb - (immh ++ immb).toNat))) |||
+          ((a >>> (2 * shiftLaneSize immh immb - (immh ++ immb).toNat)) &&&
+            (((1#128 <<< shiftLaneSize immh immb) - 1#128) >>>
+              (2 * shiftLaneSize immh immb - (immh ++ immb).toNat)))))).advancePC := by
+  have h0' : (immh == 0#4) = false := by simpa using h0
+  have hq' : immh[3] = false ∨ q = true := by cases q <;> simp_all
+  simp [Arm64.Program.evalInst, Arm64.execInstWithSvc, h0', hq']
+  rfl
+
+theorem evalInst_sli :
+    prog.evalInst (.simdImmShift q true immh immb 10#5 rn rd) s =
+      (s.writeVReg128 rd (Arm64.zipSimdLanes q (shiftLaneSize immh immb) (s.vregs.read rn)
+        (s.vregs.read rd) (fun a d =>
+          (d &&& ~~~((((1#128 <<< shiftLaneSize immh immb) - 1#128) <<<
+            ((immh ++ immb).toNat - shiftLaneSize immh immb)) &&&
+              ((1#128 <<< shiftLaneSize immh immb) - 1#128))) |||
+          (((a <<< ((immh ++ immb).toNat - shiftLaneSize immh immb)) &&&
+              ((1#128 <<< shiftLaneSize immh immb) - 1#128)) &&&
+            ((((1#128 <<< shiftLaneSize immh immb) - 1#128) <<<
+              ((immh ++ immb).toNat - shiftLaneSize immh immb)) &&&
+                ((1#128 <<< shiftLaneSize immh immb) - 1#128)))))).advancePC := by
+  have h0' : (immh == 0#4) = false := by simpa using h0
+  have hq' : immh[3] = false ∨ q = true := by cases q <;> simp_all
+  simp [Arm64.Program.evalInst, Arm64.execInstWithSvc, h0', hq']
+  rfl
+
+end
+
+/-- The model's shift of lanes by a constant writes the shift of each half. -/
+theorem evalInst_laneShift {q op : Bool} {immh : BitVec 4} (immb : BitVec 3) {opc : BitVec 5}
+    {sop : LaneShift} (s : Arm64.State) (h0 : immh ≠ 0#4)
+    (hs : laneShift q op immh opc = some sop) :
+    prog.evalInst (.simdImmShift q op immh immb opc rn rd) s =
+      (s.writeVReg128 rd (shiftRes sop (shiftLaneSize immh immb) (shiftAmount sop immh immb) q
+        (s.vregs.read rn) (s.vregs.read rd))).advancePC := by
+  obtain ⟨he, hl, hr⟩ := shift_bounds immb h0
+  simp only [laneShift] at hs
+  split at hs
+  · cases hs
+  rename_i hq
+  split at hs
+  · rename_i hop
+    subst hop
+    split at hs
+    · rename_i ho
+      subst ho
+      cases hs
+      rw [evalInst_shl prog rn rd immb s h0 hq, lanes_shl he hl q _ (s.vregs.read rd)]
+      rfl
+    · cases hs
+  rename_i hop
+  have hop : op = true := by simpa using hop
+  subst hop
+  split at hs
+  · rename_i ho
+    subst ho
+    cases hs
+    rw [evalInst_ushr prog rn rd immb s h0 hq, lanes_ushr he hr q _ (s.vregs.read rd)]
+    rfl
+  split at hs
+  · rename_i ho
+    subst ho
+    cases hs
+    rw [evalInst_usra prog rn rd immb s h0 hq, lanes_usra he hr q]
+    rfl
+  split at hs
+  · rename_i ho
+    subst ho
+    cases hs
+    rw [evalInst_sri prog rn rd immb s h0 hq, lanes_sri he hr q]
+    rfl
+  split at hs
+  · rename_i ho
+    subst ho
+    cases hs
+    rw [evalInst_sli prog rn rd immb s h0 hq, lanes_sli he hl q]
+    rfl
+  · cases hs
+
+/-- The operations of a shift of lanes leave the value of the shift in the destination. -/
+theorem wp_shiftOps {sop : LaneShift} {e k : Nat} {q : Bool} (h : Rel s σ)
+    (hw : (⟨shiftOps sop e k q rn rd, .jump (s.pc + 4)⟩ : Block).wp σ Q) :
+    ∃ σ', Rel ((s.writeVReg128 rd (shiftRes sop e k q (s.vregs.read rn)
+      (s.vregs.read rd))).setPC (s.pc + 4)) σ' ∧ Q σ' := by
+  cases sop <;> cases q <;>
+    simp only [shiftOps, LaneShift.ops, LaneShift.readsDst, ↓reduceIte,
+      Bool.false_eq_true] at hw <;>
+    vec_ops h hw <;>
+    obtain ⟨σ', h', hw⟩ := wp_vset' h hw <;>
+    simp only [Term.wp] at hw <;>
+    refine ⟨_, (h'.setPC (s.pc + 4)).cast ?_, hw⟩ <;>
+    env_simp <;>
+    simp only [shiftRes, LaneShift.eval, BinOp.eval_and, BinOp.eval_or, BinOp.eval_shl,
+      BinOp.eval_lshr, UnOp.eval_not, ↓reduceIte, Bool.false_eq_true]
+
+/-- A `MOVI` of a constant, or a shift of lanes by a constant, is sound. -/
+theorem sound_simdImmShift {q op : Bool} {immh : BitVec 4} {immb : BitVec 3} {opc : BitVec 5}
+    (h : Rel s σ) (hw : (lower s.pc (.simdImmShift q op immh immb opc rn rd)).wp σ Q) :
+    ∃ σ', Rel (prog.evalInst (.simdImmShift q op immh immb opc rn rd) s) σ' ∧ Q σ' ∧
+      KeepsCode s.mem (prog.evalInst (.simdImmShift q op immh immb opc rn rd) s).mem := by
+  simp only [lower] at hw
+  generalize hops : immShiftOps q op immh immb opc rn rd = o at hw
+  cases o with
+  | none => exact absurd hw (by simp [Block.wp, wpOps, Term.wp])
+  | some ops =>
+    simp only [immShiftOps] at hops
+    split at hops
+    · rename_i hi
+      subst hi
+      split at hops
+      · rename_i hb
+        generalize hm : moviImm op (opc.extractLsb' 1 4) (immb ++ rn) = m at hops
+        cases m with
+        | none => cases hops
+        | some d64 =>
+          cases hops
+          vec_ops h hw
+          obtain ⟨σ', h', hw⟩ := wp_vset' h hw
+          simp only [Term.wp] at hw
+          refine step_done (h'.setPC _) hw ?_
+          env_simp
+          exact evalInst_movi prog rn rd hb hm s
+      · cases hops
+    · rename_i hi
+      generalize hs : laneShift q op immh opc = so at hops
+      cases so with
+      | none => cases hops
+      | some sop =>
+        cases hops
+        obtain ⟨σ', h', hq⟩ := wp_shiftOps rn rd h hw
+        exact step_done h' hq (evalInst_laneShift prog rn rd immb s hi hs)
+
+/-! ## Reversals -/
+
+/-- The value of a reversal: of each half, or of the low half with the high half clear. -/
+def revRes (gs : List Nat) (q : Bool) (vn : BitVec 128) : BitVec 128 :=
+  (if q then revEval gs (vn.extractLsb' 64 64) else 0#64) ++ revEval gs (vn.truncate 64)
+
+/-- The reversals the lowering covers. -/
+theorem revGroups_cases {u : Bool} {size : BitVec 2} {opcode : BitVec 5} {gs : List Nat}
+    (hg : revGroups u size opcode = some gs) :
+    gs = [8, 16, 32] ∨ gs = [16, 32] ∨ gs = [32] ∨ gs = [8, 16] ∨ gs = [16] ∨ gs = [8] := by
+  simp only [revGroups] at hg
+  repeat' split at hg
+  all_goals first | (cases hg; done) | (cases hg; simp)
+
+/-- One reversal of the model, of a known kind, is the exchanges of groups. -/
+macro "rev_case" prog:ident s:ident rn:ident rd:ident q:ident : tactic => `(tactic|
+  (refine (rfl : Arm64.Program.evalInst $prog _ $s =
+      (Arm64.State.writeVReg128 $s $rd _).advancePC).trans
+      (congrArg (fun v => (Arm64.State.writeVReg128 $s $rd v).advancePC) ?_)
+   cases $q:ident <;>
+     simp [revRes, revEval, swapEval, swapMask, laneOnes, Arm64.State.readVReg128,
+       Arm64.rev16_64, Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
+       List.range'] <;>
+     generalize Arm64.VRegFile.read (Arm64.State.vregs $s) $rn = x <;>
+     bv_decide))
+
+/-- The model's reversal writes the exchanges of groups of each half. -/
+theorem evalInst_rev {q u : Bool} {size : BitVec 2} {opcode : BitVec 5} {gs : List Nat}
+    (s : Arm64.State) (hg : revGroups u size opcode = some gs) :
+    prog.evalInst (.simdTwoRegMisc q u size opcode rn rd) s =
+      (s.writeVReg128 rd (revRes gs q (s.vregs.read rn))).advancePC := by
+  simp only [revGroups] at hg
+  split at hg
+  · rename_i ho
+    subst ho
+    rcases bv2_cases size with rfl | rfl | rfl | rfl <;> cases u <;>
+      simp only [↓reduceIte, BitVec.reduceEq, Bool.true_eq_false, Option.some.injEq,
+        reduceCtorEq] at hg <;>
+      subst hg <;>
+      rev_case prog s rn rd q
+  · split at hg
+    · rename_i hc
+      obtain ⟨rfl, rfl, rfl⟩ := hc
+      cases hg
+      rev_case prog s rn rd q
+    · cases hg
+
+/-- An exchange of groups leaves its value in `d`, and keeps the values below `d`. -/
+theorem wp_swapOps {σ : State} {g d x : Nat} {ρ : Env} {Q : Env → State → Prop}
+    {rest : List Op} (hx : x < d) (hw : wpOps (swapOps g d x ++ rest) ρ σ Q) :
+    ∃ ρ' : Env, ρ' d = swapEval g (ρ x) ∧ (∀ y, y < d → ρ' y = ρ y) ∧ wpOps rest ρ' σ Q := by
+  have h1 : x ≠ d + 1 := by omega
+  have h2 : x ≠ d + 2 := by omega
+  have h3 : x ≠ d + 3 := by omega
+  have h4 : x ≠ d + 4 := by omega
+  simp only [swapOps, List.cons_append, List.nil_append, wpOps, Op.wp] at hw
+  refine ⟨_, ?_, fun y hy => ?_, hw⟩
+  · simp [h1, h2, h3, h4, swapEval]
+  · env_below hy
+
+/-- The exchanges of a reversal leave its value, and keep the values below `d`. -/
+theorem wp_revOps {σ : State} (gs : List Nat) {d x : Nat} {ρ : Env} {Q : Env → State → Prop}
+    {rest : List Op} (hx : x < d) (hw : wpOps (revOps gs d x ++ rest) ρ σ Q) :
+    ∃ ρ' : Env, ρ' (revVar gs d x) = revEval gs (ρ x) ∧ (∀ y, y < d → ρ' y = ρ y) ∧
+      wpOps rest ρ' σ Q := by
+  induction gs generalizing d x ρ with
+  | nil => exact ⟨ρ, rfl, fun _ _ => rfl, hw⟩
+  | cons g gs ih =>
+    simp only [revOps, List.append_assoc] at hw
+    obtain ⟨ρ₁, e₁, hlt₁, hw⟩ := wp_swapOps hx hw
+    obtain ⟨ρ₂, e₂, hlt₂, hw⟩ := ih (show d < d + 10 by omega) hw
+    refine ⟨ρ₂, ?_, fun y hy => ?_, hw⟩
+    · rw [revVar, revEval, e₂, e₁]
+    · rw [hlt₂ y (by omega), hlt₁ y hy]
+
+/-- The operations of a reversal leave its value in the destination. -/
+theorem wp_revVecOps {gs : List Nat} {q : Bool}
+    (hgs : gs = [8, 16, 32] ∨ gs = [16, 32] ∨ gs = [32] ∨ gs = [8, 16] ∨ gs = [16] ∨ gs = [8])
+    (h : Rel s σ) (hw : (⟨revVecOps gs q rn rd, .jump (s.pc + 4)⟩ : Block).wp σ Q) :
+    ∃ σ', Rel ((s.writeVReg128 rd (revRes gs q (s.vregs.read rn))).setPC (s.pc + 4)) σ' ∧
+      Q σ' := by
+  have hv : revVar gs 10 0 < 50 := by
+    rcases hgs with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+  simp only [revVecOps, Block.wp, List.append_assoc] at hw
+  have hw := wp_vget h hw
+  obtain ⟨ρ₁, e₁, hlt₁, hw⟩ := wp_revOps gs (show 0 < 10 by decide) hw
+  cases q
+  · simp only [Bool.false_eq_true, ↓reduceIte, List.cons_append, List.nil_append, wpOps,
+      Op.wp] at hw
+    obtain ⟨σ', h', hw⟩ := wp_vset' h hw
+    simp only [Term.wp] at hw
+    refine ⟨_, (h'.setPC (s.pc + 4)).cast ?_, hw⟩
+    simp only [revRes, Env.set_same, Env.set_other _ _ (Nat.ne_of_lt hv), e₁, Bool.false_eq_true,
+      ↓reduceIte]
+    rfl
+  · simp only [↓reduceIte] at hw
+    obtain ⟨ρ₂, e₂, hlt₂, hw⟩ := wp_revOps gs (show 1 < 50 by decide) hw
+    obtain ⟨σ', h', hw⟩ := wp_vset' h hw
+    simp only [Term.wp] at hw
+    refine ⟨_, (h'.setPC (s.pc + 4)).cast ?_, hw⟩
+    simp only [revRes, e₂, hlt₂ _ hv, e₁, hlt₁ 1 (by decide), ↓reduceIte]
+    rfl
+
+/-- A `NOT` of a vector register, or a reversal of its elements, is sound. -/
+theorem sound_simdTwoRegMisc {q u : Bool} {size : BitVec 2} {opcode : BitVec 5}
+    (h : Rel s σ) (hw : (lower s.pc (.simdTwoRegMisc q u size opcode rn rd)).wp σ Q) :
+    ∃ σ', Rel (prog.evalInst (.simdTwoRegMisc q u size opcode rn rd) s) σ' ∧ Q σ' ∧
+      KeepsCode s.mem (prog.evalInst (.simdTwoRegMisc q u size opcode rn rd) s).mem := by
+  simp only [lower] at hw
+  generalize hops : notOps q u size opcode rn rd = o at hw
+  cases o with
+  | none =>
+    simp only at hw
+    generalize hg : revGroups u size opcode = g at hw
+    cases g with
+    | none => exact absurd hw (by simp [Block.wp, wpOps, Term.wp])
+    | some gs =>
+      obtain ⟨σ', h', hq⟩ := wp_revVecOps rn rd (revGroups_cases hg) h hw
+      exact step_done h' hq (evalInst_rev prog rn rd s hg)
+  | some ops =>
+    simp only [notOps] at hops
+    split at hops
+    · rename_i hc
+      obtain ⟨rfl, rfl, rfl⟩ := hc
+      cases hops
+      cases q <;> simp only [Bool.false_eq_true, ↓reduceIte] at hw <;> vec_ops h hw <;>
+        obtain ⟨σ', h', hw⟩ := wp_vset' h hw <;>
+        simp only [Term.wp] at hw <;>
+        refine step_done (h'.setPC _) hw ((evalInst_not prog rn rd _ s).trans (wv_eq _ ?_)) <;>
+        env_simp <;>
+        simp only [UnOp.eval_not, Bool.false_eq_true, ↓reduceIte] <;>
+        generalize s.vregs.read rn = x <;>
+        bv_decide
+    · cases hops
+
+/-! ## `EXT` -/
+
+theorem bv4_cases (x : BitVec 4) :
+    x = 0#4 ∨ x = 1#4 ∨ x = 2#4 ∨ x = 3#4 ∨ x = 4#4 ∨ x = 5#4 ∨ x = 6#4 ∨ x = 7#4 ∨
+      x = 8#4 ∨ x = 9#4 ∨ x = 10#4 ∨ x = 11#4 ∨ x = 12#4 ∨ x = 13#4 ∨ x = 14#4 ∨ x = 15#4 := by
+  bv_decide
+
+/-- The 64 bits from bit `k` of `b:a`, for `k` below 64. -/
+def extVal (k : Nat) (a b : Word) : Word :=
+  if k = 0 then a else (a >>> BitVec.ofNat 64 k) ||| (b <<< BitVec.ofNat 64 (64 - k))
+
+/-- The value of an `EXT`: the two words from byte `imm4` of the four words of `vm:vn`, or
+the one word from byte `imm4` of the low halves, with the high half clear. -/
+def extRes (q : Bool) (imm4 : BitVec 4) (vn vm : BitVec 128) : BitVec 128 :=
+  if q then
+    if imm4.toNat < 8 then
+      extVal (8 * (imm4.toNat % 8)) (vn.extractLsb' 64 64) (vm.truncate 64) ++
+        extVal (8 * (imm4.toNat % 8)) (vn.truncate 64) (vn.extractLsb' 64 64)
+    else
+      extVal (8 * (imm4.toNat % 8)) (vm.truncate 64) (vm.extractLsb' 64 64) ++
+        extVal (8 * (imm4.toNat % 8)) (vn.extractLsb' 64 64) (vm.truncate 64)
+  else 0#64 ++ extVal (8 * (imm4.toNat % 8)) (vn.truncate 64) (vm.truncate 64)
+
+/-- The model's `EXT` writes the words from byte `imm4`. -/
+theorem evalInst_ext (q : Bool) (imm4 : BitVec 4) (s : Arm64.State)
+    (hq : ¬(q = false ∧ imm4.getLsbD 3 = true)) :
+    prog.evalInst (.simdExt q rm imm4 rn rd) s =
+      (s.writeVReg128 rd (extRes q imm4 (s.vregs.read rn) (s.vregs.read rm))).advancePC := by
+  rcases bv4_cases imm4 with
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  cases q <;>
+  first
+  | (exfalso; revert hq; decide)
+  | (refine (rfl : prog.evalInst _ s = (s.writeVReg128 rd _).advancePC).trans
+        (congrArg (fun v => (s.writeVReg128 rd v).advancePC) ?_)
+     simp [extRes, extVal, Arm64.State.readVReg128]
+     generalize s.vregs.read rn = x
+     generalize s.vregs.read rm = y
+     bv_decide)
+
+/-- Run the operations of one form of `EXT` and compare the value they leave. -/
+macro "ext_case" h:ident hw:ident : tactic => `(tactic|
+  (vec_ops $h $hw
+   obtain ⟨σ', h', $hw:ident⟩ := wp_vset' $h $hw
+   simp only [Term.wp] at $hw:ident
+   refine ⟨_, (Rel.setPC h' _).cast ?_, $hw⟩
+   env_simp
+   simp only [extVal, BinOp.eval_or, BinOp.eval_shl, BinOp.eval_lshr, ↓reduceIte, *]))
+
+/-- The operations of an `EXT` leave its value in the destination. -/
+theorem wp_extOps {q : Bool} {imm4 : BitVec 4} {ops : List Op} (h : Rel s σ)
+    (hops : extOps q rm imm4 rn rd = some ops)
+    (hw : (⟨ops, .jump (s.pc + 4)⟩ : Block).wp σ Q) :
+    ¬(q = false ∧ imm4.getLsbD 3 = true) ∧
+      ∃ σ', Rel ((s.writeVReg128 rd (extRes q imm4 (s.vregs.read rn)
+        (s.vregs.read rm))).setPC (s.pc + 4)) σ' ∧ Q σ' := by
+  simp only [extOps, extWord] at hops
+  unfold extRes
+  generalize 8 * (imm4.toNat % 8) = k at hops ⊢
+  cases q <;> simp only [Bool.false_eq_true, ↓reduceIte] at hops ⊢
+  · split at hops
+    · cases hops
+    rename_i hb
+    refine ⟨fun hc => hb hc.2, ?_⟩
+    split at hops <;> cases hops <;> ext_case h hw
+  · refine ⟨by simp, ?_⟩
+    by_cases ha : imm4.toNat < 8 <;> simp only [ha, ↓reduceIte, Nat.reduceAdd] at hops ⊢ <;>
+      split at hops <;> cases hops <;> ext_case h hw
+
+/-- An `EXT`, the bytes of a pair of vector registers from a constant position, is sound. -/
+theorem sound_simdExt {q : Bool} {imm4 : BitVec 4}
+    (h : Rel s σ) (hw : (lower s.pc (.simdExt q rm imm4 rn rd)).wp σ Q) :
+    ∃ σ', Rel (prog.evalInst (.simdExt q rm imm4 rn rd) s) σ' ∧ Q σ' ∧
+      KeepsCode s.mem (prog.evalInst (.simdExt q rm imm4 rn rd) s).mem := by
+  simp only [lower] at hw
+  generalize hops : extOps q rm imm4 rn rd = o at hw
+  cases o with
+  | none => exact absurd hw (by simp [Block.wp, wpOps, Term.wp])
+  | some ops =>
+    obtain ⟨hq, σ', h', hq'⟩ := wp_extOps rm rn rd h hops hw
+    exact step_done h' hq' (evalInst_ext prog rm rn rd q imm4 s hq)
 
 end Lowering.Arm

@@ -3,13 +3,15 @@
 
   The vector registers and vectors in memory, a word at a time. A 512-bit register of the
   model is eight `braid` registers, and a vector in memory is loaded and stored as its words,
-  low word first. These lemmas relate the words to the model's one wide value.
+  low word first. These lemmas relate the words to the model's one wide value, and a word of
+  the result of each of the model's operations on vectors to the words of its operands.
 
   ## Main definitions
 
   * `setWords`: a state with a run of registers written
   * `joinWords`: the number whose 64-bit digits are given words
   * `storeSeq`: a run of word stores
+  * `alignSrc`, `alignBit`: a word and a bit of a block of two words of each of two vectors
 
   ## Main results
 
@@ -17,6 +19,11 @@
   * `loadInt_of_loads`: word loads `braid` allows are one wide load of the model
   * `storeInt_of_storeSeq`: word stores `braid` allows are one wide store of the model
   * `vecWord_packedBinOp_add`: a packed 32-bit addition is `BinOp.lanes 32 .add` on each word
+  * `lane_ofLanes`, `getLsbD_ofLanes`: the lanes and the bits of the model's `ofLanes`
+  * `vecWord_rotateRight`, `vecWord_shiftRight`: a rotation and a shift of 32-bit lanes
+  * `vecWord_ternaryLogic`, `ternaryLogic_eq_ternLanes`: a bitwise function by its truth table
+  * `vecWord_shuffleDwords`, `vecWord_shuffleBytes`: shuffles of 32-bit lanes and of bytes
+  * `vecWord_blendWords`, `vecWord_alignBytes`: a blend of 16-bit lanes, a shift of bytes
 -/
 
 module
@@ -522,5 +529,483 @@ theorem vecWord_packedBinOp_add {n : Nat} (a b : BitVec n) (j : Nat) (hj : 64 * 
       (BinOp.lanes 32 .add).eval (vecWord a j) (vecWord b j) := by
   rw [eval_lanes_add, vecWord_lanes, lane_packedBinOp _ _ _ _ (by omega),
     lane_packedBinOp _ _ _ _ (by omega), vecWord_low, vecWord_low, vecWord_high, vecWord_high]
+
+/-! ## Lanes -/
+
+theorem getLsbD_foldl_lanes (w c : Nat) (hc : 0 < c) (f : Nat → BitVec c) (n q : Nat) :
+    ((List.range n).foldl (fun acc i => acc ||| ((f i).setWidth w <<< (c * i))) 0#w).getLsbD q =
+      (decide (q < w) && decide (q / c < n) && (f (q / c)).getLsbD (q % c)) := by
+  induction n with
+  | zero => simp
+  | succ n ih =>
+    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, BitVec.getLsbD_or,
+      ih, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_setWidth]
+    by_cases hw : q < w
+    · rcases Nat.lt_trichotomy (q / c) n with h | h | h
+      · have h1 : q < c * n := by rw [Nat.mul_comm]; exact (Nat.div_lt_iff_lt_mul hc).1 h
+        have h2 : q / c < n + 1 := by omega
+        simp [hw, h, h1, h2]
+      · subst h
+        have h1 : ¬ q < c * (q / c) := Nat.not_lt.2 (Nat.mul_div_le q c)
+        have h2 : q - c * (q / c) = q % c := by
+          have := Nat.div_add_mod q c
+          omega
+        have h3 : q % c < w := Nat.lt_of_le_of_lt (Nat.mod_le q c) hw
+        simp [hw, h1, h2, h3]
+      · have h1 : ¬ q / c < n := by omega
+        have h2 : ¬ q / c < n + 1 := by omega
+        have h3 : c * (n + 1) ≤ q := by
+          rw [Nat.mul_comm]; exact (Nat.le_div_iff_mul_le hc).1 h
+        have h4 : c ≤ q - c * n := by rw [Nat.mul_succ] at h3; omega
+        simp [h1, h2, BitVec.getLsbD_of_ge _ _ h4]
+    · simp [hw]
+
+theorem getLsbD_ofLanes (w c : Nat) (hc : 0 < c) (f : Nat → BitVec c) (q : Nat) :
+    (BitVec.ofLanes w c f).getLsbD q =
+      (decide (q < w) && decide (q / c < w / c) && (f (q / c)).getLsbD (q % c)) :=
+  getLsbD_foldl_lanes w c hc f (w / c) q
+
+/-- Lane `i` of the vector of given lanes is the lane given. -/
+theorem lane_ofLanes (w c : Nat) (hc : 0 < c) (f : Nat → BitVec c) (i : Nat)
+    (hi : c * (i + 1) ≤ w) : (BitVec.ofLanes w c f).extractLsb' (c * i) c = f i := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro t ht
+  have h1 : c * i + t < w := by rw [Nat.mul_succ] at hi; omega
+  have h2 : (c * i + t) / c = i := by
+    rw [Nat.mul_add_div hc, Nat.div_eq_of_lt ht, Nat.add_zero]
+  have h3 : (c * i + t) % c = t := by rw [Nat.mul_add_mod, Nat.mod_eq_of_lt ht]
+  have h4 : i < w / c := by
+    apply (Nat.le_div_iff_mul_le hc).2
+    rw [Nat.mul_comm]
+    exact hi
+  simp only [BitVec.getLsbD_extractLsb', ht, decide_true, Bool.true_and, BitVec.ofLanes]
+  rw [getLsbD_foldl_lanes w c hc, h2, h3]
+  simp [h1, h4]
+
+/-- A word of a vector with each 32-bit lane mapped is its two halves mapped. -/
+theorem vecWord_mapLanes {n : Nat} (f : BitVec 32 → BitVec 32) (a : BitVec n) (j : Nat)
+    (hj : 64 * (j + 1) ≤ n) :
+    vecWord (a.mapLanes 32 f) j =
+      f ((vecWord a j).extractLsb' 32 32) ++ f ((vecWord a j).extractLsb' 0 32) := by
+  rw [vecWord_lanes, vecWord_low, vecWord_high]
+  simp only [BitVec.mapLanes, BitVec.lane]
+  rw [lane_ofLanes _ _ (by decide) _ _ (by omega), lane_ofLanes _ _ (by decide) _ _ (by omega)]
+
+/-! ## Rotations and shifts of lanes -/
+
+theorem rotateRight_lane (x : BitVec 32) (c : BitVec 8) :
+    x.rotateRight (c.toNat % 32) =
+      x >>> ((c &&& 31#8).zeroExtend 32) ||| x <<< (32#32 - (c &&& 31#8).zeroExtend 32) := by
+  have e1 : ((c &&& 31#8).zeroExtend 32).toNat = c.toNat % 32 := by
+    have e : c &&& 31#8 = c % 32#8 := by bv_decide
+    rw [e]
+    simp only [BitVec.truncate_eq_setWidth, BitVec.toNat_setWidth, BitVec.toNat_umod,
+      BitVec.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
+    omega
+  have e2 : (32#32 - (c &&& 31#8).zeroExtend 32).toNat = 32 - c.toNat % 32 := by
+    rw [BitVec.toNat_sub_of_le (by bv_decide), e1]
+    rfl
+  rw [BitVec.rotateRight_def, BitVec.shiftLeft_eq', BitVec.ushiftRight_eq', e1, e2,
+    Nat.mod_mod_of_dvd _ (Nat.dvd_refl 32)]
+
+/-- A word of the model's rotation of 32-bit lanes is `rorLanes` of the word. -/
+theorem vecWord_rotateRight {n : Nat} (a : BitVec n) (c : BitVec 8) (j : Nat)
+    (hj : 64 * (j + 1) ≤ n) :
+    vecWord (a.mapLanes 32 (·.rotateRight (c.toNat % 32))) j = rorLanes c (vecWord a j) := by
+  rw [vecWord_mapLanes _ _ _ hj, rotateRight_lane, rotateRight_lane]
+  generalize vecWord a j = x
+  simp only [rorLanes, rorCount, dup32]
+  bv_decide
+
+/-- A word of the model's shift of 32-bit lanes is `shrLanes` of the word. -/
+theorem vecWord_shiftRight {n : Nat} (a : BitVec n) (c : BitVec 8) (j : Nat)
+    (hj : 64 * (j + 1) ≤ n) :
+    vecWord (a.mapLanes 32 (fun x => if c.toNat < 32 then x >>> c.toNat else 0#32)) j =
+      shrLanes c (vecWord a j) := by
+  have e : ∀ x : BitVec 32,
+      (if c.toNat < 32 then x >>> c.toNat else 0#32) = if c < 32#8 then x >>> c else 0#32 := by
+    intro x
+    have h : c.toNat < 32 ↔ c < 32#8 := by rw [BitVec.lt_def]; rfl
+    simp only [h, BitVec.ushiftRight_eq']
+  rw [vecWord_mapLanes _ _ _ hj, e, e]
+  generalize vecWord a j = x
+  simp only [shrLanes, dup32]
+  bv_decide
+
+/-! ## Bitwise functions -/
+
+theorem vecWord_or {n : Nat} (x y : BitVec n) (j : Nat) :
+    vecWord (x ||| y) j = vecWord x j ||| vecWord y j := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp [vecWord, hi]
+
+theorem vecWord_and {n : Nat} (x y : BitVec n) (j : Nat) :
+    vecWord (x &&& y) j = vecWord x j &&& vecWord y j := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp [vecWord, hi]
+
+theorem vecWord_not {n : Nat} (x : BitVec n) (j : Nat) (hj : 64 * (j + 1) ≤ n) :
+    vecWord (~~~x) j = ~~~vecWord x j := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  have : 64 * j + i < n := by omega
+  simp [vecWord, hi, this]
+
+/-- A word of the model's bitwise function of three vectors is the function of the words. -/
+theorem vecWord_ternaryLogic {n : Nat} (a b c : BitVec n) (t : BitVec 8) (j : Nat)
+    (hj : 64 * (j + 1) ≤ n) :
+    vecWord (BitVec.ternaryLogic a b c t) j =
+      BitVec.ternaryLogic (vecWord a j) (vecWord b j) (vecWord c j) t := by
+  have hp : ∀ (bit : Bool) (v : BitVec n),
+      vecWord (if bit then v else ~~~v) j = if bit then vecWord v j else ~~~vecWord v j := by
+    intro bit v
+    cases bit
+    · exact vecWord_not v j hj
+    · rfl
+  have key : ∀ (l : List Nat) (acc : BitVec n),
+      vecWord (l.foldl (fun acc k =>
+        if t.getLsbD k then
+          acc ||| ((if k / 4 % 2 == 1 then a else ~~~a) &&& (if k / 2 % 2 == 1 then b else ~~~b) &&&
+            (if k % 2 == 1 then c else ~~~c))
+        else acc) acc) j =
+      l.foldl (fun acc k =>
+        if t.getLsbD k then
+          acc ||| ((if k / 4 % 2 == 1 then vecWord a j else ~~~vecWord a j) &&&
+            (if k / 2 % 2 == 1 then vecWord b j else ~~~vecWord b j) &&&
+            (if k % 2 == 1 then vecWord c j else ~~~vecWord c j))
+        else acc) (vecWord acc j) := by
+    intro l
+    induction l with
+    | nil => intro acc; rfl
+    | cons k l ih =>
+      intro acc
+      rw [List.foldl_cons, List.foldl_cons, ih]
+      congr 1
+      cases t.getLsbD k
+      · rfl
+      · simp only [↓reduceIte, vecWord_or, vecWord_and, hp]
+  have h0 : vecWord (0#n) j = 0#64 := by
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    simp [vecWord]
+  simp only [BitVec.ternaryLogic]
+  rw [key, h0]
+
+/-- `ternLanes` is the model's bitwise function of three words. -/
+theorem ternaryLogic_eq_ternLanes (a b c : Word) (t : BitVec 8) :
+    BitVec.ternaryLogic a b c t = ternLanes t a b c := by
+  simp only [BitVec.ternaryLogic, ternLanes, bitMask,
+    show List.range 8 = [0, 1, 2, 3, 4, 5, 6, 7] from rfl, List.foldl_cons, List.foldl_nil]
+  simp only [Nat.reduceDiv, Nat.reduceMod, Nat.reduceBEq, Nat.reduceMul, Nat.reduceAdd,
+    ↓reduceIte, Bool.false_eq_true]
+  bv_decide
+
+theorem ternaryLogic_5a (a b c : Word) : BitVec.ternaryLogic a b c 0x5a#8 = a ^^^ c := by
+  rw [ternaryLogic_eq_ternLanes]
+  simp only [ternLanes, bitMask]
+  bv_decide
+
+theorem ternaryLogic_3c (a b c : Word) : BitVec.ternaryLogic a b c 0x3c#8 = a ^^^ b := by
+  rw [ternaryLogic_eq_ternLanes]
+  simp only [ternLanes, bitMask]
+  bv_decide
+
+theorem ternaryLogic_66 (a b c : Word) : BitVec.ternaryLogic a b c 0x66#8 = b ^^^ c := by
+  rw [ternaryLogic_eq_ternLanes]
+  simp only [ternLanes, bitMask]
+  bv_decide
+
+theorem ternaryLogic_96 (a b c : Word) : BitVec.ternaryLogic a b c 0x96#8 = a ^^^ b ^^^ c := by
+  rw [ternaryLogic_eq_ternLanes]
+  simp only [ternLanes, bitMask]
+  bv_decide
+
+/-! ## Shuffles -/
+
+/-- A 32-bit lane of a vector is a half of a word, brought down by a shift. -/
+theorem lane_eq_vecWord {n : Nat} (a : BitVec n) (i : Nat) :
+    a.extractLsb' (32 * i) 32 =
+      (vecWord a (i / 2) >>> BitVec.ofNat 64 (32 * (i % 2))).setWidth 32 := by
+  rcases Nat.mod_two_eq_zero_or_one i with h | h
+  · have e : i = 2 * (i / 2) := by omega
+    rw [h]
+    conv => lhs; rw [e]
+    rw [← vecWord_low]
+    generalize vecWord a (i / 2) = x
+    bv_decide
+  · have e : i = 2 * (i / 2) + 1 := by omega
+    rw [h]
+    conv => lhs; rw [e]
+    rw [← vecWord_high]
+    generalize vecWord a (i / 2) = x
+    bv_decide
+
+/-- A word of the model's shuffle of 32-bit lanes: each half is the half of a word that
+`shufLane` names. -/
+theorem vecWord_shuffleDwords {n : Nat} (a : BitVec n) (imm : BitVec 8) (j : Nat)
+    (hj : 64 * (j + 1) ≤ n) :
+    vecWord (a.shuffleDwords imm) j =
+      (vecWord a (shufLane imm (2 * j) / 2) >>>
+          BitVec.ofNat 64 (32 * (shufLane imm (2 * j) % 2)) &&& 0xffffffff#64) |||
+        (vecWord a (shufLane imm (2 * j + 1) / 2) >>>
+          BitVec.ofNat 64 (32 * (shufLane imm (2 * j + 1) % 2))) <<< 32#64 := by
+  rw [vecWord_lanes]
+  simp only [BitVec.shuffleDwords, BitVec.lane]
+  rw [lane_ofLanes _ _ (by decide) _ _ (by omega), lane_ofLanes _ _ (by decide) _ _ (by omega)]
+  rw [← shufLane, ← shufLane, lane_eq_vecWord, lane_eq_vecWord]
+  generalize vecWord a (shufLane imm (2 * j) / 2) >>>
+    BitVec.ofNat 64 (32 * (shufLane imm (2 * j) % 2)) = x
+  generalize vecWord a (shufLane imm (2 * j + 1) / 2) >>>
+    BitVec.ofNat 64 (32 * (shufLane imm (2 * j + 1) % 2)) = y
+  bv_decide
+
+/-! ## Blends -/
+
+/-- A word of the model's blend of 16-bit lanes is a choice between the words of its
+operands, by `blendMask`. -/
+theorem vecWord_blendWords {n : Nat} (a b : BitVec n) (imm : BitVec 8) (j : Nat)
+    (hj : 64 * (j + 1) ≤ n) :
+    vecWord (a.blendWords b imm) j =
+      vecWord a j ^^^ ((vecWord a j ^^^ vecWord b j) &&& blendMask imm j) := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  have h1 : 64 * j + i < n := by omega
+  have h2 : (64 * j + i) / 16 = 4 * j + i / 16 := by omega
+  have h3 : (64 * j + i) % 16 = i % 16 := by omega
+  have h4 : 4 * j + i / 16 < n / 16 := by omega
+  have h5 : i / 16 < 64 / 16 := by omega
+  have h6 : 16 * (4 * j + i / 16) + i % 16 = 64 * j + i := by omega
+  have h7 : i % 16 < 16 := by omega
+  simp only [vecWord, BitVec.blendWords, blendMask, BitVec.lane, BitVec.getLsbD_extractLsb',
+    BitVec.getLsbD_xor, BitVec.getLsbD_and, getLsbD_ofLanes _ _ (show 0 < 16 by decide), hi, h1,
+    h2, h3, h4, h5, decide_true, Bool.true_and]
+  have h8 : (BitVec.allOnes 16).getLsbD (i % 16) = true := by
+    rw [BitVec.getLsbD_allOnes]
+    exact decide_eq_true h7
+  cases imm.getLsbD ((4 * j + i / 16) % 8)
+  · simp [h6, h7]
+  · simp only [↓reduceIte, h8]
+    simp [h6, h7]
+
+/-! ## Shifts of bytes -/
+
+/-- Word `q` of the block of word `j`, of two words of `lo` below two words of `hi`; zero
+above them. -/
+def alignSrc {n : Nat} (hi lo : BitVec n) (j q : Nat) : Word :=
+  if q < 2 then vecWord lo (2 * (j / 2) + q)
+  else if q < 4 then vecWord hi (2 * (j / 2) + q - 2) else 0#64
+
+/-- Bit `x` of the block of word `j`. -/
+def alignBit {n : Nat} (hi lo : BitVec n) (j x : Nat) : Bool :=
+  if x < 128 then lo.getLsbD (128 * (j / 2) + x)
+  else if x < 256 then hi.getLsbD (128 * (j / 2) + x - 128) else false
+
+theorem getLsbD_alignSrc {n : Nat} (hi lo : BitVec n) (j q x : Nat) :
+    (alignSrc hi lo j q).getLsbD x = (decide (x < 64) && alignBit hi lo j (64 * q + x)) := by
+  by_cases hx : x < 64
+  · by_cases h2 : q < 2
+    · have h : 64 * q + x < 128 := by omega
+      have e : 64 * (2 * (j / 2) + q) + x = 128 * (j / 2) + (64 * q + x) := by omega
+      simp [alignSrc, alignBit, vecWord, hx, h2, h, e]
+    · by_cases h4 : q < 4
+      · have h : ¬ 64 * q + x < 128 := by omega
+        have h' : 64 * q + x < 256 := by omega
+        have e : 64 * (2 * (j / 2) + q - 2) + x = 128 * (j / 2) + (64 * q + x) - 128 := by
+          omega
+        simp [alignSrc, alignBit, vecWord, hx, h2, h4, h, h', e]
+      · have h : ¬ 64 * q + x < 128 := by omega
+        have h' : ¬ 64 * q + x < 256 := by omega
+        simp [alignSrc, alignBit, h2, h4, h, h']
+  · simp [hx, BitVec.getLsbD_of_ge _ _ (Nat.le_of_not_lt hx)]
+
+/-- A word of the model's shift of bytes is two words of the block, shifted and or-ed. -/
+theorem vecWord_alignBytes {n : Nat} (hi lo : BitVec n) (imm : BitVec 8) (j : Nat)
+    (hj : 128 * (j / 2 + 1) ≤ n) :
+    vecWord (hi.alignBytes lo imm) j =
+      alignSrc hi lo j (alignWord imm.toNat j) >>>
+          BitVec.ofNat 64 (8 * alignByte imm.toNat j) |||
+        alignSrc hi lo j (alignWord imm.toNat j + 1) <<<
+          BitVec.ofNat 64 (64 - 8 * alignByte imm.toNat j) := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi'
+  have hr : alignByte imm.toNat j < 8 := Nat.mod_lt _ (by decide)
+  have hq : 8 * (j % 2) + imm.toNat = 8 * alignWord imm.toNat j + alignByte imm.toNat j :=
+    (Nat.div_add_mod _ 8).symm
+  generalize alignWord imm.toNat j = q at hq ⊢
+  generalize alignByte imm.toNat j = r at hr hq ⊢
+  have e1 : (BitVec.ofNat 64 (8 * r)).toNat = 8 * r := by
+    rw [BitVec.toNat_ofNat]; omega
+  have e2 : (BitVec.ofNat 64 (64 - 8 * r)).toNat = 64 - 8 * r := by
+    rw [BitVec.toNat_ofNat]; omega
+  have lhs : (vecWord (hi.alignBytes lo imm) j).getLsbD i =
+      alignBit hi lo j (64 * q + 8 * r + i) := by
+    have h1 : 64 * j + i < n := by omega
+    have h2 : (64 * j + i) / 8 = 8 * j + i / 8 := by omega
+    have h3 : (64 * j + i) % 8 = i % 8 := by omega
+    have h4 : 8 * j + i / 8 < n / 8 := by omega
+    have h5 : (8 * j + i / 8) % 16 = 8 * (j % 2) + i / 8 := by omega
+    have h6 : (8 * j + i / 8) / 16 = j / 2 := by omega
+    have h7 : i % 8 < 8 := by omega
+    simp only [vecWord, BitVec.alignBytes, BitVec.lane, BitVec.getLsbD_extractLsb',
+      getLsbD_ofLanes _ _ (show 0 < 8 by decide), hi', h1, h2, h3, h4, h5, h6, decide_true,
+      Bool.true_and]
+    by_cases c1 : 8 * (j % 2) + i / 8 + imm.toNat < 16
+    · have h : 64 * q + 8 * r + i < 128 := by omega
+      have e : 8 * (16 * (j / 2) + (8 * (j % 2) + i / 8 + imm.toNat)) + i % 8 =
+          128 * (j / 2) + (64 * q + 8 * r + i) := by omega
+      simp [alignBit, c1, h, h7, e]
+    · by_cases c2 : 8 * (j % 2) + i / 8 + imm.toNat < 32
+      · have h : ¬ 64 * q + 8 * r + i < 128 := by omega
+        have h' : 64 * q + 8 * r + i < 256 := by omega
+        have e : 8 * (16 * (j / 2) + (8 * (j % 2) + i / 8 + imm.toNat) - 16) + i % 8 =
+            128 * (j / 2) + (64 * q + 8 * r + i) - 128 := by omega
+        simp [alignBit, c1, c2, h, h', h7, e]
+      · have h : ¬ 64 * q + 8 * r + i < 128 := by omega
+        have h' : ¬ 64 * q + 8 * r + i < 256 := by omega
+        simp [alignBit, c1, c2, h, h']
+  rw [lhs, BitVec.getLsbD_or, BitVec.ushiftRight_eq', BitVec.shiftLeft_eq',
+    BitVec.getLsbD_ushiftRight, BitVec.getLsbD_shiftLeft, getLsbD_alignSrc, getLsbD_alignSrc,
+    e1, e2]
+  by_cases c : 8 * r + i < 64
+  · have h : i < 64 - 8 * r := by omega
+    have e : 64 * q + (8 * r + i) = 64 * q + 8 * r + i := by omega
+    simp [c, h, hi', e]
+  · have h : ¬ i < 64 - 8 * r := by omega
+    have h' : i - (64 - 8 * r) < 64 := by omega
+    have e : 64 * (q + 1) + (i - (64 - 8 * r)) = 64 * q + 8 * r + i := by omega
+    simp [c, h, h', hi', e]
+
+/-! ## Shuffles of bytes -/
+
+/-- A word of the vector of given bytes is the word of its eight bytes. -/
+theorem vecWord_ofLanes {n : Nat} (f : Nat → BitVec 8) (j : Nat) (hj : 64 * (j + 1) ≤ n) :
+    vecWord (BitVec.ofLanes n 8 f) j = BitVec.ofLanes 64 8 fun t => f (8 * j + t) := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  have h1 : 64 * j + i < n := by omega
+  have h2 : (64 * j + i) / 8 = 8 * j + i / 8 := by omega
+  have h3 : (64 * j + i) % 8 = i % 8 := by omega
+  have h4 : 8 * j + i / 8 < n / 8 := by omega
+  have h5 : i / 8 < 64 / 8 := by omega
+  simp only [vecWord, BitVec.getLsbD_extractLsb', getLsbD_ofLanes _ _ (show 0 < 8 by decide),
+    hi, h1, h2, h3, h4, h5, decide_true, Bool.true_and]
+
+/-- A byte of a vector is a byte of a word, brought down by a shift. -/
+theorem byte_eq_vecWord {n : Nat} (m : BitVec n) (j t : Nat) (ht : t < 8) :
+    m.extractLsb' (8 * (8 * j + t)) 8 =
+      (vecWord m j >>> BitVec.ofNat 64 (8 * t)).setWidth 8 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro u hu
+  have e : (BitVec.ofNat 64 (8 * t)).toNat = 8 * t := by rw [BitVec.toNat_ofNat]; omega
+  have h1 : 8 * t + u < 64 := by omega
+  have h2 : 64 * j + (8 * t + u) = 8 * (8 * j + t) + u := by omega
+  simp [vecWord, BitVec.ushiftRight_eq', e, hu, h1, h2]
+
+/-- A byte of a block of 16 is a byte of one of its two words. -/
+theorem byte_eq_block {n : Nat} (a : BitVec n) (j y : Nat) (hy : y < 16) :
+    a.extractLsb' (8 * (16 * (j / 2) + y)) 8 =
+      if y < 8 then (vecWord a (2 * (j / 2)) >>> (8 * y)).setWidth 8
+      else (vecWord a (2 * (j / 2) + 1) >>> (8 * (y - 8))).setWidth 8 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro u hu
+  by_cases h : y < 8
+  · have h1 : 8 * y + u < 64 := by omega
+    have h2 : 64 * (2 * (j / 2)) + (8 * y + u) = 8 * (16 * (j / 2) + y) + u := by omega
+    simp [vecWord, h, hu, h1, h2]
+  · have h1 : 8 * (y - 8) + u < 64 := by omega
+    have h2 : 64 * (2 * (j / 2) + 1) + (8 * (y - 8) + u) = 8 * (16 * (j / 2) + y) + u := by
+      omega
+    simp [vecWord, h, hu, h1, h2]
+
+/-- The byte an index picks from a block of two words, by two shifts. -/
+theorem byte_of_index (x : BitVec 8) (lo hi : Word) :
+    (if x.msb then 0#8
+      else if x.toNat % 16 < 8 then (lo >>> (8 * (x.toNat % 16))).setWidth 8
+      else (hi >>> (8 * (x.toNat % 16 - 8))).setWidth 8) =
+    (lo >>> ((x.zeroExtend 64 &&& 0x8f#64) <<< 3#64) |||
+      hi >>> ((x.zeroExtend 64 &&& 0x8f#64) <<< 3#64 - 64#64)).setWidth 8 := by
+  have hz : x.toNat % 16 = (x % 16#8).toNat := by rw [BitVec.toNat_umod]; rfl
+  rw [hz]
+  generalize hz' : x % 16#8 = z
+  have hlt := z.isLt
+  by_cases h8 : z.toNat < 8
+  · have s1 : 8 * z.toNat = (8#64 * z.zeroExtend 64).toNat := by
+      simp only [BitVec.truncate_eq_setWidth, BitVec.toNat_mul, BitVec.toNat_setWidth,
+        BitVec.toNat_ofNat]
+      omega
+    have h8' : z < 8#8 := by rw [BitVec.lt_def]; exact h8
+    simp only [h8, ↓reduceIte]
+    rw [s1, ← BitVec.ushiftRight_eq']
+    bv_decide
+  · have h8' : 8#8 ≤ z := by rw [BitVec.le_def]; exact Nat.le_of_not_lt h8
+    have s2 : 8 * (z.toNat - 8) = (8#64 * (z - 8#8).zeroExtend 64).toNat := by
+      have e : (z - 8#8).toNat = z.toNat - 8 := BitVec.toNat_sub_of_le h8'
+      simp only [BitVec.truncate_eq_setWidth, BitVec.toNat_mul, BitVec.toNat_setWidth,
+        BitVec.toNat_ofNat, e]
+      omega
+    simp only [h8, ↓reduceIte]
+    rw [s2, ← BitVec.ushiftRight_eq']
+    bv_decide
+
+theorem ofLanes_congr (w c : Nat) (hc : 0 < c) {f g : Nat → BitVec c}
+    (h : ∀ t, t < w / c → f t = g t) : BitVec.ofLanes w c f = BitVec.ofLanes w c g := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro q _
+  rw [getLsbD_ofLanes w c hc, getLsbD_ofLanes w c hc]
+  by_cases hq : q / c < w / c
+  · rw [h _ hq]
+  · simp [hq]
+
+/-- A word of the model's shuffle of bytes is its eight bytes, each `bshufLane` of the word
+of indices and the two words of its block. -/
+theorem vecWord_shuffleBytes {n : Nat} (a m : BitVec n) (j : Nat)
+    (hj : 128 * (j / 2 + 1) ≤ n) :
+    vecWord (a.shuffleBytes m) j =
+      0#64 ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 0
+        ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 1
+        ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 2
+        ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 3
+        ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 4
+        ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 5
+        ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 6
+        ||| bshufLane (vecWord m j) (vecWord a (2 * (j / 2))) (vecWord a (2 * (j / 2) + 1)) 7 := by
+  have key : ∀ t, t < 64 / 8 →
+      (if (m.lane 8 (8 * j + t)).msb then 0#8
+        else a.lane 8 (16 * ((8 * j + t) / 16) + (m.lane 8 (8 * j + t)).toNat % 16)) =
+      (vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) t |||
+        vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) t - 64#64)).setWidth 8 := by
+    intro t ht
+    have e : (8 * j + t) / 16 = j / 2 := by omega
+    simp only [BitVec.lane, e]
+    rw [byte_eq_vecWord m j t (by omega)]
+    generalize hx : (vecWord m j >>> BitVec.ofNat 64 (8 * t)).setWidth 8 = x
+    rw [byte_eq_block a j _ (Nat.mod_lt _ (by decide)), byte_of_index]
+    have ec : (x.zeroExtend 64 &&& 0x8f#64) <<< 3#64 = bshufCount (vecWord m j) t := by
+      rw [← hx, bshufCount]
+      generalize vecWord m j >>> BitVec.ofNat 64 (8 * t) = y
+      bv_decide
+    rw [ec]
+  rw [BitVec.shuffleBytes, vecWord_ofLanes _ _ (by omega), ofLanes_congr 64 8 (by decide) key]
+  simp only [BitVec.ofLanes, bshufLane,
+    show List.range (64 / 8) = [0, 1, 2, 3, 4, 5, 6, 7] from rfl, List.foldl_cons, List.foldl_nil]
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 0 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 0 - 64#64) = x0
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 1 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 1 - 64#64) = x1
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 2 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 2 - 64#64) = x2
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 3 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 3 - 64#64) = x3
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 4 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 4 - 64#64) = x4
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 5 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 5 - 64#64) = x5
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 6 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 6 - 64#64) = x6
+  generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 7 |||
+    vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 7 - 64#64) = x7
+  bv_decide
 
 end Lowering.X86

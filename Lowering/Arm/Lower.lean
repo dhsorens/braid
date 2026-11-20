@@ -13,7 +13,10 @@
   on the two halves one after the other, and an operation on lanes is `BinOp.lanes` on each
   half. Covered: loads and stores of vector registers, moves between general and vector
   registers and lanes, the bitwise operations and the addition and subtraction of lanes,
-  and the constants of `MOVI` and `FMOV`.
+  the constants of `MOVI` and `FMOV`, the shifts of lanes by a constant (`SHL`, `USHR`,
+  `USRA`, `SRI`, `SLI`), `EXT`, and the reversals `REV16`, `REV32` and `REV64`. A shift of
+  lanes is a shift of each half and a mask that clears what crossed from one lane into the
+  next, and a reversal is the same on groups of lanes.
 
   Whenever the model would not simply run the instruction (a permission fault, a stack
   pointer that is not aligned, a supervisor call, a breakpoint), the block faults. The model
@@ -757,6 +760,184 @@ def notOps (q u : Bool) (size : BitVec 2) (opcode : BitVec 5) (rn rd : Arm64.VRe
       (if q then [.get 2 (vregHi rn), .un 3 .not 2] else [.const 3 0#64]) ++ vset rd 1 3)
   else none
 
+/-- The lowest bit of every lane of `n` bits. A value of `n` bits times this word is the
+value in every lane. -/
+def laneOnes (n : Nat) : Word :=
+  if n = 8 then 0x0101010101010101#64
+  else if n = 16 then 0x0001000100010001#64
+  else if n = 32 then 0x0000000100000001#64
+  else 1#64
+
+/-- The low `g` bits of every lane of `2 * g` bits. -/
+def swapMask (g : Nat) : Word := (UnOp.zext g).eval (-1#64) * laneOnes (2 * g)
+
+/-- Exchange each group of `g` bits of `x` with the group next to it: the bits of every
+lane of `2 * g` bits in `x`, with the two halves of the lane exchanged. Uses `d + 1` to
+`d + 7`. -/
+def swapOps (g : Nat) (d x : Var) : List Op :=
+  [.const (d + 1) (BitVec.ofNat 64 g), .bin (d + 2) .lshr x (d + 1),
+    .const (d + 3) (swapMask g), .bin (d + 4) .and (d + 2) (d + 3),
+    .bin (d + 5) .shl x (d + 1), .un (d + 6) .not (d + 3), .bin (d + 7) .and (d + 5) (d + 6),
+    .bin d .or (d + 4) (d + 7)]
+
+/-- The value `swapOps` leaves: `x` with each group of `g` bits exchanged with the next. -/
+def swapEval (g : Nat) (x : Word) : Word :=
+  ((x >>> BitVec.ofNat 64 g) &&& swapMask g) ||| ((x <<< BitVec.ofNat 64 g) &&& ~~~swapMask g)
+
+/-- The sizes of the groups that a reversal exchanges, the smallest first: reversing the
+elements of `e` bits in each container of `c` bits is exchanging groups of `e` bits, then of
+`2 * e`, up to half the container. `REV16` is of bytes in 16 bits, `REV32` of bytes or of 16
+bits in 32, and `REV64` of bytes, of 16 or of 32 bits in 64. `none` for the other
+`simdTwoRegMisc` instructions. -/
+def revGroups (u : Bool) (size : BitVec 2) (opcode : BitVec 5) : Option (List Nat) :=
+  if opcode = 0#5 then
+    if u = false then
+      if size = 0#2 then some [8, 16, 32] else if size = 1#2 then some [16, 32]
+      else if size = 2#2 then some [32] else none
+    else if size = 0#2 then some [8, 16] else if size = 1#2 then some [16] else none
+  else if opcode = 1#5 ∧ u = false ∧ size = 0#2 then some [8]
+  else none
+
+/-- The exchanges of groups of the sizes `gs`, one after the other, of the value `x`. The
+`i`-th leaves its value in `d + 10 * i`, and the last value is the result. -/
+def revOps : List Nat → (d x : Var) → List Op
+  | [], _, _ => []
+  | g :: gs, d, x => swapOps g d x ++ revOps gs (d + 10) d
+
+/-- The SSA value that holds the result of `revOps gs d x`. -/
+def revVar : List Nat → (d x : Var) → Var
+  | [], _, x => x
+  | _ :: gs, d, _ => revVar gs (d + 10) d
+
+/-- The value `revOps` leaves. -/
+def revEval : List Nat → Word → Word
+  | [], x => x
+  | g :: gs, x => revEval gs (swapEval g x)
+
+/-- A reversal of the elements of a vector register, on both halves or on the low one with
+the high one clear. -/
+def revVecOps (gs : List Nat) (q : Bool) (rn rd : Arm64.VReg) : List Op :=
+  vget 0 rn ++ revOps gs 10 0 ++ (if q then revOps gs 50 1 else [.const 50 0#64]) ++
+    vset rd (revVar gs 10 0) (if q then revVar gs 50 1 else 50)
+
+/-- A shift of the lanes of a vector register by a constant: `SHL`, `USHR`, `USRA`, which
+adds the shifted lanes to those of the destination, and `SRI` and `SLI`, which keep the bits
+of the destination that the shift does not fill. -/
+inductive LaneShift where
+  | shl | ushr | usra | sri | sli
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The bits of every lane of `e` bits that a shift left by `k` fills from the same lane. -/
+def shlMask (e k : Nat) : Word := (UnOp.zext e).eval (-1#64 <<< k) * laneOnes e
+
+/-- The bits of every lane of `e` bits that a shift right by `k` fills from the same lane. -/
+def shrMask (e k : Nat) : Word := ((UnOp.zext e).eval (-1#64) >>> k) * laneOnes e
+
+/-- The value of a shift by `k` of the lanes of `e` bits of one half: of `x`, and the
+destination `z`. -/
+def LaneShift.eval (e k : Nat) : LaneShift → Word → Word → Word
+  | .shl, x, _ => (x <<< BitVec.ofNat 64 k) &&& shlMask e k
+  | .ushr, x, _ => (x >>> BitVec.ofNat 64 k) &&& shrMask e k
+  | .usra, x, z => (BinOp.lanes e .add).eval z ((x >>> BitVec.ofNat 64 k) &&& shrMask e k)
+  | .sri, x, z => (z &&& ~~~shrMask e k) ||| ((x >>> BitVec.ofNat 64 k) &&& shrMask e k)
+  | .sli, x, z => (z &&& ~~~shlMask e k) ||| ((x <<< BitVec.ofNat 64 k) &&& shlMask e k)
+
+/-- The operations of one half, of `x` and the destination `z`, into `d`: the shift of the
+whole half, and the mask that clears the bits that came from the next lane. Uses `d + 1` to
+`d + 6`. -/
+def LaneShift.ops (e k : Nat) : LaneShift → (d x z : Var) → List Op
+  | .shl, d, x, _ =>
+    [.const (d + 1) (BitVec.ofNat 64 k), .bin (d + 2) .shl x (d + 1),
+      .const (d + 3) (shlMask e k), .bin d .and (d + 2) (d + 3)]
+  | .ushr, d, x, _ =>
+    [.const (d + 1) (BitVec.ofNat 64 k), .bin (d + 2) .lshr x (d + 1),
+      .const (d + 3) (shrMask e k), .bin d .and (d + 2) (d + 3)]
+  | .usra, d, x, z =>
+    [.const (d + 1) (BitVec.ofNat 64 k), .bin (d + 2) .lshr x (d + 1),
+      .const (d + 3) (shrMask e k), .bin (d + 4) .and (d + 2) (d + 3),
+      .bin d (.lanes e .add) z (d + 4)]
+  | .sri, d, x, z =>
+    [.const (d + 1) (BitVec.ofNat 64 k), .bin (d + 2) .lshr x (d + 1),
+      .const (d + 3) (shrMask e k), .bin (d + 4) .and (d + 2) (d + 3), .un (d + 5) .not (d + 3),
+      .bin (d + 6) .and z (d + 5), .bin d .or (d + 6) (d + 4)]
+  | .sli, d, x, z =>
+    [.const (d + 1) (BitVec.ofNat 64 k), .bin (d + 2) .shl x (d + 1),
+      .const (d + 3) (shlMask e k), .bin (d + 4) .and (d + 2) (d + 3), .un (d + 5) .not (d + 3),
+      .bin (d + 6) .and z (d + 5), .bin d .or (d + 6) (d + 4)]
+
+/-- Whether a shift reads the destination. -/
+def LaneShift.readsDst : LaneShift → Bool
+  | .shl | .ushr => false
+  | .usra | .sri | .sli => true
+
+/-- The shift of a `simdImmShift` instruction whose `immh` is not zero, where it is one the
+lowering covers. `none` for the signed, rounding, saturating, narrowing and widening shifts,
+and for lanes of 64 bits in half a register, which the model does not define. -/
+def laneShift (q op : Bool) (immh : BitVec 4) (opc : BitVec 5) : Option LaneShift :=
+  if immh.getLsbD 3 = true ∧ q = false then none
+  else if op = false then (if opc = 10#5 then some .shl else none)
+  else if opc = 0#5 then some .ushr
+  else if opc = 2#5 then some .usra
+  else if opc = 8#5 then some .sri
+  else if opc = 10#5 then some .sli
+  else none
+
+/-- The size in bits of the lanes of a shift by a constant: the highest set bit of `immh`
+says 8, 16, 32 or 64. This is the model's expression. -/
+def shiftLaneSize (immh : BitVec 4) (immb : BitVec 3) : Nat :=
+  if (immh ++ immb).toNat ≥ 64 then 64 else if (immh ++ immb).toNat ≥ 32 then 32
+  else if (immh ++ immb).toNat ≥ 16 then 16 else 8
+
+/-- The amount of a shift by a constant: `immh:immb` less the size of the lanes for a shift
+left, and twice the size of the lanes less `immh:immb` for a shift right. -/
+def shiftAmount (sop : LaneShift) (immh : BitVec 4) (immb : BitVec 3) : Nat :=
+  match sop with
+  | .shl | .sli => (immh ++ immb).toNat - shiftLaneSize immh immb
+  | .ushr | .usra | .sri => 2 * shiftLaneSize immh immb - (immh ++ immb).toNat
+
+/-- A shift of the lanes of `e` bits of a vector register by `k`, half by half. With `q`
+clear it works on the low halves only and clears the high half of the destination. -/
+def shiftOps (sop : LaneShift) (e k : Nat) (q : Bool) (rn rd : Arm64.VReg) : List Op :=
+  vget 0 rn ++ (if sop.readsDst then vget 2 rd else []) ++ sop.ops e k 10 0 2 ++
+    (if q then sop.ops e k 20 1 3 else [.const 20 0#64]) ++ vset rd 10 20
+
+/-- A `simdImmShift` instruction: with `immh` zero a `MOVI` of a constant `moviImm` covers,
+and otherwise a shift of lanes by a constant that `laneShift` covers. `none` for the rest. -/
+def immShiftOps (q op : Bool) (immh : BitVec 4) (immb : BitVec 3) (opc : BitVec 5)
+    (rn rd : Arm64.VReg) : Option (List Op) :=
+  if immh = 0#4 then
+    if opc.getLsbD 0 = false then
+      (moviImm op (opc.extractLsb' 1 4) (immb ++ rn)).map fun d64 =>
+        [.const 0 d64, .const 1 (if q then d64 else 0#64)] ++ vset rd 0 1
+    else none
+  else
+    (laneShift q op immh opc).map fun sop =>
+      shiftOps sop (shiftLaneSize immh immb) (shiftAmount sop immh immb) q rn rd
+
+/-- `(a >>> k) ||| (b <<< (64 - k))` into `d`: the 64 bits from bit `k` of `b:a`, for `k`
+from 1 to 63. Uses `d + 1` to `d + 4`. -/
+def extWord (d a b : Var) (k : Nat) : List Op :=
+  [.const (d + 1) (BitVec.ofNat 64 k), .bin (d + 2) .lshr a (d + 1),
+    .const (d + 3) (BitVec.ofNat 64 (64 - k)), .bin (d + 4) .shl b (d + 3),
+    .bin d .or (d + 2) (d + 4)]
+
+/-- `EXT`: the bytes of `rm:rn` from byte `imm4` on, 16 of them, or 8 of the low halves with
+the high half of the destination clear. The four words of `rn` and `rm` are in the values 0
+to 3. A result word that starts on a word is that word, and another is the end of one word
+and the start of the next. `none` for the encoding the model does not define. -/
+def extOps (q : Bool) (rm : Arm64.VReg) (imm4 : BitVec 4) (rn rd : Arm64.VReg) :
+    Option (List Op) :=
+  let k := 8 * (imm4.toNat % 8)
+  let a : Var := if imm4.toNat < 8 then 0 else 1
+  if q = true then
+    if k = 0 then some (vget 0 rn ++ vget 2 rm ++ vset rd a (a + 1))
+    else some (vget 0 rn ++ vget 2 rm ++ extWord 10 a (a + 1) k ++ extWord 20 (a + 1) (a + 2) k ++
+      vset rd 10 20)
+  else if imm4.getLsbD 3 = true then none
+  else if k = 0 then some ([.get 0 (vregLo rn), .const 20 0#64] ++ vset rd 0 20)
+  else some ([.get 0 (vregLo rn), .get 2 (vregLo rm)] ++ extWord 10 0 2 k ++ [.const 20 0#64] ++
+    vset rd 10 20)
+
 /-- The size in bits of the lanes that the `imm5` field of a `simdInsDup` instruction names:
 the position of its lowest set bit says 8, 16, 32 or 64. -/
 def laneSize (imm5 : BitVec 5) : Nat :=
@@ -772,14 +953,6 @@ def lanePos (imm5 : BitVec 5) : Nat :=
   else if imm5.extractLsb' 0 2 = 2#2 then (imm5.toNat >>> 2) * 16
   else if imm5.extractLsb' 0 3 = 4#3 then (imm5.toNat >>> 3) * 32
   else (imm5.toNat >>> 4) * 64
-
-/-- The lowest bit of every lane of `n` bits. A value of `n` bits times this word is the
-value in every lane. -/
-def laneOnes (n : Nat) : Word :=
-  if n = 8 then 0x0101010101010101#64
-  else if n = 16 then 0x0001000100010001#64
-  else if n = 32 then 0x0000000100000001#64
-  else 1#64
 
 /-- A move between a general register and a lane of a vector register, or of a lane into
 every lane: `DUP` from a general register and from a lane, `INS` from a general register,
@@ -948,10 +1121,8 @@ def lower (pc : Word) (i : Instr) : Block :=
   | .fpDataProc3 .. => ⟨[], .trap "fpDataProc3"⟩
   | .fpFixedConv .. => ⟨[], .trap "fpFixedConv"⟩
   | .simdImmShift q op immh immb opc rn rd =>
-    match if immh = 0#4 ∧ opc.getLsbD 0 = false then
-        moviImm op (opc.extractLsb' 1 4) (immb ++ rn) else none with
-    | some d64 =>
-      ⟨[.const 0 d64, .const 1 (if q then d64 else 0#64)] ++ vset rd 0 1, .jump (pc + 4)⟩
+    match immShiftOps q op immh immb opc rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
     | none => ⟨[], .trap "simdImmShift"⟩
   | .simdInsDup q op imm5 imm4 rn rd =>
     match insDupOps q op imm5 imm4 rn rd with
@@ -964,10 +1135,16 @@ def lower (pc : Word) (i : Instr) : Block :=
   | .simdTwoRegMisc q u size opcode rn rd =>
     match notOps q u size opcode rn rd with
     | some ops => ⟨ops, .jump (pc + 4)⟩
-    | none => ⟨[], .trap "simdTwoRegMisc"⟩
+    | none =>
+      match revGroups u size opcode with
+      | some gs => ⟨revVecOps gs q rn rd, .jump (pc + 4)⟩
+      | none => ⟨[], .trap "simdTwoRegMisc"⟩
   | .simdAcrossLanes .. => ⟨[], .trap "simdAcrossLanes"⟩
   | .simdPermute .. => ⟨[], .trap "simdPermute"⟩
-  | .simdExt .. => ⟨[], .trap "simdExt"⟩
+  | .simdExt q rm imm4 rn rd =>
+    match extOps q rm imm4 rn rd with
+    | some ops => ⟨ops, .jump (pc + 4)⟩
+    | none => ⟨[], .trap "simdExt"⟩
   | .simdTbl .. => ⟨[], .trap "simdTbl"⟩
   | .simdAddpScalar rn rd =>
     ⟨[.get 0 (vregLo rn), .get 1 (vregHi rn), .bin 2 .add 0 1, .const 3 0#64] ++ vset rd 2 3,

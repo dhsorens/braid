@@ -76,6 +76,23 @@ lower_c() {
   done
 }
 
+# Vectorised ChaCha20 (docs/ISA.md). On AArch64 it is chacha20_vec.c with vector registers
+# allowed. On x86-64 the compiled C uses instructions the model does not read, and the
+# function is Examples/src/asm/chacha20_vec.x86.S, by hand in the model's instructions. It is
+# not lowered for RISC-V, whose model has no vector extension.
+lower_vec() {
+  for isa in $ISAS; do
+    case $isa in
+      arm) "$CLANG" --target=aarch64-unknown-linux-gnu $CFLAGS \
+             -c Examples/src/c/chacha20_vec.c -o Examples/bin/chacha20_vec.arm.o ;;
+      x86) "$CLANG" --target=x86_64-unknown-linux-gnu -mavx512f -mavx512vl \
+             -c Examples/src/asm/chacha20_vec.x86.S -o Examples/bin/chacha20_vec.x86.o ;;
+      *) continue ;;
+    esac
+    link_and_lower "$isa" chacha20_vec ChaCha20Vec chacha20_block_vec
+  done
+}
+
 # A source of the ladder: name, source, module, functions. It is compiled and lowered twice:
 # at the first optimisation level into <Module>, and at the second into <Module>.O2.
 lower_ladder() {
@@ -278,4 +295,5 @@ if want sha256; then
   lower_ladder sha256 Examples/src/c/sha256.c Sha256 sha256_round sha256_schedule sha256_compress
 fi
 if want crc32; then lower_ladder crc32 Examples/src/c/crc32.c Crc32 crc32; fi
+if want chacha20vec; then lower_vec; fi
 if want sha256main; then lower_program; fi

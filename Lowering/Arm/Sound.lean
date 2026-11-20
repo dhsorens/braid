@@ -966,6 +966,7 @@ theorem lower_step (prog : Arm64.Program) {i : Instr} (h : Rel s σ)
   case simdTwoRegMisc => exact sound_simdTwoRegMisc prog _ _ h hw
   case simdAddpScalar => exact sound_simdAddpScalar prog _ _ h hw
   case simdInsDup => exact sound_simdInsDup prog _ _ h hw
+  case simdExt => exact sound_simdExt prog _ _ _ h hw
   all_goals exact absurd hw (by simp [lower, Block.wp, wpOps, Term.wp])
 
 /-- **One instruction of the AArch64 lowering is sound.** If the block of the instruction

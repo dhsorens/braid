@@ -166,3 +166,59 @@ nearly all the others are vector instructions.
    then shifts; nothing else in the examples met it.
 
 Instructions the model lacks are contributed to Kraken, not added here.
+
+## Vector code: a survey
+
+`Examples/src/c/chacha20_vec.c` is the ChaCha20 block function over four rows of four 32-bit
+lanes, in C with the compilers' vector types and no intrinsics. It was compiled for each
+instruction set at the level of `Examples/build.sh` (`-O1 -fno-vectorize`), with vector
+registers allowed, and lowered with `braid-lower --stats`. An instruction that does not
+lower is of one of three kinds: the model has it and the lowering did not cover it (a
+`trap`); the model's parser or decoder does not read it (undecoded); the model does not have
+it. This table is what the lowering looked like before the work it sized.
+
+| Target | Instructions | Lowered | `trap`: the model has it | Undecoded: the model does not read it |
+| --- | --- | --- | --- | --- |
+| AArch64, NEON | 54 | 34 | 20: `shl` and `usra` by lane (12), `ext` (6), `rev32` (2) | 0 |
+| x86-64, SSE2 | 75 | 37 | 6: `pshufd` | 32: `pxor`, `por`, `pslld`, `psrld` (8 each) |
+| x86-64, SSSE3 | 71 | 39 | 12: `pshufd`, `pshufb` | 20: `pxor` (8), `pslld`, `psrld`, `por` (4 each) |
+| x86-64, AVX2 | 61 | 25 | 4 | 32: `vpxor` (8), `vpshufb` (7), `vpshufd` (5), `vpslld`, `vmovdqa`, `vpor` (4 each) |
+| x86-64, AVX-512VL | 48 | 25 | 0 | 23: `vprold`, `vpxor` (8 each), `vpshufd` (6), `vmovdqa` (1) |
+| RISC-V, RV64IM | 248 | 248 | 0 | 0 |
+| RISC-V, RV64IMV | 79 | 10 | 0 | 69: every instruction of the vector extension |
+
+**AArch64.** Everything is in the model, and the four forms were lowered
+([`Lowering/README.md`](../Lowering/README.md)).
+
+**x86-64.** The compiled function cannot be lowered at any level of the vector extensions:
+Kraken has no exclusive or of vector registers under any name (`pxor`, `vpxor`, `vpxord`),
+no shift of lanes to the left (`pslld`, `vpslld`), no `por`, and of the two rotations of
+lanes it has `vprord` and not `vprold`, which is the one clang emits. Its vector operations
+are the constructors of `AvxOperation`: the moves, `paddd` and `vpaddd`, `pshufb`, `pshufd`,
+`palignr`, `pblendw`, `vprord`, `vpsrld`, `vpternlogd`, and the three SHA-256 instructions.
+Those are enough to write the function by hand: an exclusive or is `vpternlogd` with the
+table `0x5a`, and a rotation to the left by `n` is `vprord` by `32 - n`.
+`Examples/src/asm/chacha20_vec.x86.S` is the block function written so, for AVX-512VL, and
+it is the x86-64 code that is lowered and proved. So on x86-64 the theorem is about
+hand-written assembly in the model's instructions and not about a compiler's output for the
+C source; the instructions named above are what the model would need for the latter.
+
+**RISC-V.** The pinned model has nothing of the vector extension: its decoder reads no
+instruction of it. Compiled for RV64IM the vector types of the C source become scalar code,
+248 instructions that all lower, which is ChaCha20 once more and not vector code. Nothing
+about vector code is proved on RISC-V.
+
+### The SHA extensions
+
+`Examples/src/c/sha256_ni.c` is the SHA-256 compression function from the compilers'
+intrinsics, compiled with `+sha2` on AArch64 and with `-msha -msse4.1` on x86-64. Before
+the work it sized:
+
+| Target | Instructions | Lowered | `trap`: the model has it | Undecoded |
+| --- | --- | --- | --- | --- |
+| AArch64, SHA-2 | 42 | 36 | 6: `sha256h`, `sha256h2` (2 each), `sha256su1`, `sha256su0` | 0 |
+| x86-64, SHA | 56 | 39 | 17: `pshufd`, `palignr`, `pblendw`, `sha256rnds2`, `sha256msg1`, `sha256msg2` | 0 |
+
+Both models give every one of these a meaning, so nothing here is a gap of a model. RISC-V
+has no instruction for SHA-256 rounds in the pinned model (the scalar `Zknh` extension is
+not in it either).

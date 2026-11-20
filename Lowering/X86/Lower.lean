@@ -17,10 +17,18 @@
   register above its width, and one of the legacy encodings keeps them. An aligned move is a
   `guard` on its address.
 
-  Instructions outside the lowering (a 32-bit address size, string instructions, the vector
-  shuffles and floating point, and the rarer arithmetic) become a `trap`. A shift by `cl` changes the flags
-  only if its count is not zero, which is known only when it runs: each flag is a `select`
-  between its old value and its new one.
+  A vector instruction works on the words of its operands. A shift or a rotation of 32-bit
+  lanes is a shift of each word under a constant mask of the bits that stay in their lane; a
+  bitwise function given by a truth table is exclusive ors and ands of the words; a shuffle of
+  32-bit lanes takes each half of a word from the half of a word the immediate names; a blend
+  of 16-bit lanes is a choice under a constant mask; a shift of bytes across two vectors is
+  two words shifted and or-ed; and a shuffle of bytes brings each byte down by a shift whose
+  count is computed from its index.
+
+  Instructions outside the lowering (a 32-bit address size, string instructions, the SHA
+  instructions and floating point, and the rarer arithmetic) become a `trap`. A shift by `cl`
+  changes the flags only if its count is not zero, which is known only when it runs: each
+  flag is a `select` between its old value and its new one.
 
   ## Main definitions
 
@@ -558,6 +566,184 @@ def writeVec (n : Var) {w : AvxWidth} (legacy al : Bool) (d : AvxRegOrMem w) (v 
 def binWords (d : Var) (op : BinOp) (a b : Var) (k : Nat) : List Op :=
   (List.range k).map fun j => .bin (d + j) op (a + j) (b + j)
 
+/-- The operation `op` on `k` pairs of values, into the values `d` up: pair `j` is the values
+`fa j` and `fb j`. -/
+def zipWords (d : Var) (op : BinOp) (fa fb : Nat → Var) (k : Nat) : List Op :=
+  (List.range k).map fun j => .bin (d + j) op (fa j) (fb j)
+
+/-- The constants `f 0` to `f (k - 1)`, into the values `n` up. -/
+def constWords (n : Var) (f : Nat → Word) (k : Nat) : List Op :=
+  (List.range k).map fun j => .const (n + j) (f j)
+
+/-- The word with `x` in each of its two 32-bit lanes. -/
+def dup32 (x : BitVec 32) : Word := x ++ x
+
+/-- The count of a rotation of 32-bit lanes to the right by `c`. -/
+def rorCount (c : BitVec 8) : Word := (c &&& 31#8).zeroExtend 64
+
+/-- Each 32-bit lane of the word `x` rotated to the right by `c` modulo 32: the word shifted
+right and the word shifted left, each under the mask of the bits that stay in their lane. -/
+def rorLanes (c : BitVec 8) (x : Word) : Word :=
+  (x >>> rorCount c &&& dup32 (0xffffffff#32 >>> rorCount c)) |||
+    (x <<< (32#64 - rorCount c) &&& dup32 (0xffffffff#32 <<< (32#64 - rorCount c)))
+
+/-- Each 32-bit lane of the word `x` shifted right by `c`; zero if `c` is 32 or more. -/
+def shrLanes (c : BitVec 8) (x : Word) : Word :=
+  x >>> c.zeroExtend 64 &&& dup32 (0xffffffff#32 >>> c)
+
+/-- Rotate each 32-bit lane of the `k` words in the values 0 up to the right by `c` modulo
+32, into the values 80 up: `rorLanes c` of each word. Uses values from 40 to 79. -/
+def rorWords (c : BitVec 8) (k : Nat) : List Op :=
+  [.const 40 (rorCount c), .const 41 (dup32 (0xffffffff#32 >>> rorCount c)),
+    .const 42 (32#64 - rorCount c),
+    .const 43 (dup32 (0xffffffff#32 <<< (32#64 - rorCount c)))] ++
+  zipWords 48 .lshr (0 + ·) (fun _ => 40) k ++ zipWords 56 .and (48 + ·) (fun _ => 41) k ++
+  zipWords 64 .shl (0 + ·) (fun _ => 42) k ++ zipWords 72 .and (64 + ·) (fun _ => 43) k ++
+  zipWords 80 .or (56 + ·) (72 + ·) k
+
+/-- Shift each 32-bit lane of the `k` words in the values 0 up to the right by `c`, into the
+values 56 up: `shrLanes c` of each word. Uses values from 40 to 55. -/
+def shrWords (c : BitVec 8) (k : Nat) : List Op :=
+  [.const 40 (c.zeroExtend 64), .const 41 (dup32 (0xffffffff#32 >>> c))] ++
+  zipWords 48 .lshr (0 + ·) (fun _ => 40) k ++ zipWords 56 .and (48 + ·) (fun _ => 41) k
+
+/-- The word of all ones if `b`, and zero otherwise. -/
+def bitMask (b : Bool) : Word := if b then -1#64 else 0#64
+
+/-- The bitwise function of three words with the truth table `t`: bit `4x + 2y + z` of `t`
+is the result where a bit of `a` is `x`, of `b` is `y` and of `c` is `z`. It is a choice by
+`a` between two functions of `b` and `c`, each a choice by `b` between two functions of `c`,
+and a choice by `s` between `u` and `v` is `v ^^^ (s &&& (v ^^^ u))`. -/
+def ternLanes (t : BitVec 8) (a b c : Word) : Word :=
+  let h (i : Nat) : Word :=
+    (c &&& bitMask (t.getLsbD (2 * i) != t.getLsbD (2 * i + 1))) ^^^ bitMask (t.getLsbD (2 * i))
+  let g0 := h 0 ^^^ (b &&& (h 0 ^^^ h 1))
+  let g1 := h 2 ^^^ (b &&& (h 2 ^^^ h 3))
+  g0 ^^^ (a &&& (g0 ^^^ g1))
+
+/-- The bitwise function with the truth table `t` of the `k` words in the values 80 up, 40 up
+and 0 up, into the values 256 up. The tables that are an exclusive or of two or of all three
+operands (`0x5a`, `0x3c`, `0x66`, `0x96`) are that exclusive or. Any other table is
+`ternLanes t` of each three words. Uses values from 120 to 255. -/
+def ternWords (t : BitVec 8) (k : Nat) : List Op :=
+  if t = 0x5a#8 then zipWords 256 .xor (80 + ·) (0 + ·) k
+  else if t = 0x3c#8 then zipWords 256 .xor (80 + ·) (40 + ·) k
+  else if t = 0x66#8 then zipWords 256 .xor (40 + ·) (0 + ·) k
+  else if t = 0x96#8 then
+    zipWords 248 .xor (80 + ·) (40 + ·) k ++ zipWords 256 .xor (248 + ·) (0 + ·) k
+  else
+    [.const 120 (bitMask (t.getLsbD 0 != t.getLsbD 1)), .const 121 (bitMask (t.getLsbD 0)),
+      .const 122 (bitMask (t.getLsbD 2 != t.getLsbD 3)), .const 123 (bitMask (t.getLsbD 2)),
+      .const 124 (bitMask (t.getLsbD 4 != t.getLsbD 5)), .const 125 (bitMask (t.getLsbD 4)),
+      .const 126 (bitMask (t.getLsbD 6 != t.getLsbD 7)), .const 127 (bitMask (t.getLsbD 6))] ++
+    zipWords 128 .and (0 + ·) (fun _ => 120) k ++ zipWords 136 .xor (128 + ·) (fun _ => 121) k ++
+    zipWords 144 .and (0 + ·) (fun _ => 122) k ++ zipWords 152 .xor (144 + ·) (fun _ => 123) k ++
+    zipWords 160 .and (0 + ·) (fun _ => 124) k ++ zipWords 168 .xor (160 + ·) (fun _ => 125) k ++
+    zipWords 176 .and (0 + ·) (fun _ => 126) k ++ zipWords 184 .xor (176 + ·) (fun _ => 127) k ++
+    zipWords 192 .xor (136 + ·) (152 + ·) k ++ zipWords 200 .and (40 + ·) (192 + ·) k ++
+    zipWords 208 .xor (136 + ·) (200 + ·) k ++
+    zipWords 216 .xor (168 + ·) (184 + ·) k ++ zipWords 224 .and (40 + ·) (216 + ·) k ++
+    zipWords 232 .xor (168 + ·) (224 + ·) k ++
+    zipWords 240 .xor (208 + ·) (232 + ·) k ++ zipWords 248 .and (80 + ·) (240 + ·) k ++
+    zipWords 256 .xor (208 + ·) (248 + ·) k
+
+/-- The 32-bit lane that lane `i` of a shuffle by `imm` takes: within its block of four
+lanes, the one numbered by bits `2 * (i % 4)` and `2 * (i % 4) + 1` of `imm`. -/
+def shufLane (imm : BitVec 8) (i : Nat) : Nat := 4 * (i / 4) + (imm.toNat >>> (2 * (i % 4))) % 4
+
+/-- Shuffle the 32-bit lanes of the `k` words in the values 0 up by `imm`, into the values 96
+up. The low half of word `j` is lane `shufLane imm (2 * j)`, a half of word
+`shufLane imm (2 * j) / 2` that a shift by 0 or by 32 brings down, and the high half is lane
+`shufLane imm (2 * j + 1)`, brought down and shifted up. Uses values from 40 to 95. -/
+def shufWords (imm : BitVec 8) (k : Nat) : List Op :=
+  [.const 40 32, .const 41 0xffffffff] ++
+  constWords 48 (fun j => BitVec.ofNat 64 (32 * (shufLane imm (2 * j) % 2))) k ++
+  constWords 56 (fun j => BitVec.ofNat 64 (32 * (shufLane imm (2 * j + 1) % 2))) k ++
+  zipWords 64 .lshr (fun j => 0 + shufLane imm (2 * j) / 2) (48 + ·) k ++
+  zipWords 72 .and (64 + ·) (fun _ => 41) k ++
+  zipWords 80 .lshr (fun j => 0 + shufLane imm (2 * j + 1) / 2) (56 + ·) k ++
+  zipWords 88 .shl (80 + ·) (fun _ => 40) k ++ zipWords 96 .or (72 + ·) (88 + ·) k
+
+/-- The 16-bit lanes of word `j` that a blend by `imm` takes from its second operand, as a
+mask: lane `i` of a vector is taken where bit `i % 8` of `imm` is set. -/
+def blendMask (imm : BitVec 8) (j : Nat) : Word :=
+  BitVec.ofLanes 64 16 fun t => if imm.getLsbD ((4 * j + t) % 8) then BitVec.allOnes 16 else 0#16
+
+/-- Blend the 16-bit lanes of the `k` words in the values 40 up with those of the words in the
+values 0 up, into the values 104 up: a word `a` and a word `b` give
+`a ^^^ ((a ^^^ b) &&& blendMask imm j)`. Uses values from 80 to 103. -/
+def blendWords (imm : BitVec 8) (k : Nat) : List Op :=
+  constWords 80 (blendMask imm) k ++ zipWords 88 .xor (40 + ·) (0 + ·) k ++
+  zipWords 96 .and (88 + ·) (80 + ·) k ++ zipWords 104 .xor (40 + ·) (96 + ·) k
+
+/-- Where word `j` of a shift of bytes by `n` starts, in its block of four words (two of the
+low operand below two of the high one): the number of the word. -/
+def alignWord (n j : Nat) : Nat := (8 * (j % 2) + n) / 8
+
+/-- Where word `j` of a shift of bytes by `n` starts in the word `alignWord n j`: the number
+of the byte. -/
+def alignByte (n j : Nat) : Nat := (8 * (j % 2) + n) % 8
+
+/-- The value holding word `q` of the block of word `j`: a word of the low operand, in the
+values 0 up, a word of the high operand, in the values 40 up, or the zero in the value 80. -/
+def alignVar (j q : Nat) : Nat :=
+  if q < 2 then 0 + (2 * (j / 2) + q) else if q < 4 then 40 + (2 * (j / 2) + q - 2) else 80
+
+/-- Shift the bytes of each block of two of the `k` words in the values 40 up, above the two
+words of the same block in the values 0 up, to the right by `n` bytes, into the values 120
+up. Word `j` is the word `alignWord n j` of the block shifted right by `alignByte n j` bytes,
+or-ed with the next word shifted left by the rest; a shift by 64 gives zero. Uses values from
+80 to 119. -/
+def alignWords (n k : Nat) : List Op :=
+  [.const 80 0#64] ++
+  constWords 88 (fun j => BitVec.ofNat 64 (8 * alignByte n j)) k ++
+  constWords 96 (fun j => BitVec.ofNat 64 (64 - 8 * alignByte n j)) k ++
+  zipWords 104 .lshr (fun j => alignVar j (alignWord n j)) (88 + ·) k ++
+  zipWords 112 .shl (fun j => alignVar j (alignWord n j + 1)) (96 + ·) k ++
+  zipWords 120 .or (104 + ·) (112 + ·) k
+
+/-- The count of the shift that brings down the byte that byte `b` of the word `m` of indices
+picks from a block of 16 bytes: eight times the low four bits of the index, and 1024 or more
+if its top bit is set. -/
+def bshufCount (m : Word) (b : Nat) : Word :=
+  (m >>> BitVec.ofNat 64 (8 * b) &&& 0x8f#64) <<< 3#64
+
+/-- Byte `b` of a word of a shuffle of bytes, in its place: the byte that byte `b` of `m`
+picks from the block of the words `lo` and `hi`, and zero if the top bit of the index is
+set. A shift by 64 or more gives zero, so at most one of the two shifts gives the byte. -/
+def bshufLane (m lo hi : Word) (b : Nat) : Word :=
+  ((lo >>> bshufCount m b ||| hi >>> (bshufCount m b - 64#64)) &&& 0xff#64) <<<
+    BitVec.ofNat 64 (8 * b)
+
+/-- Byte `b` of each of the `k` words of a shuffle of bytes, or-ed into the words in the
+values `n - 16` up, into the values `n + 80` up: `bshufLane` of the word of indices in the
+values 0 up and the two words of its block in the values 40 up. The values 80 to 83 hold
+`0x8f`, 3, 64 and `0xff`. Uses values from `n` to `n + 79`. -/
+def bshufByte (n b k : Nat) : List Op :=
+  [.const n (BitVec.ofNat 64 (8 * b))] ++
+  zipWords (n + 8) .lshr (0 + ·) (fun _ => n) k ++
+  zipWords (n + 16) .and (n + 8 + ·) (fun _ => 80) k ++
+  zipWords (n + 24) .shl (n + 16 + ·) (fun _ => 81) k ++
+  zipWords (n + 32) .lshr (fun j => 40 + 2 * (j / 2)) (n + 24 + ·) k ++
+  zipWords (n + 40) .sub (n + 24 + ·) (fun _ => 82) k ++
+  zipWords (n + 48) .lshr (fun j => 40 + (2 * (j / 2) + 1)) (n + 40 + ·) k ++
+  zipWords (n + 56) .or (n + 32 + ·) (n + 48 + ·) k ++
+  zipWords (n + 64) .and (n + 56 + ·) (fun _ => 83) k ++
+  zipWords (n + 72) .shl (n + 64 + ·) (fun _ => n) k ++
+  zipWords (n + 80) .or (n - 16 + ·) (n + 72 + ·) k
+
+/-- Shuffle the bytes of each block of two of the `k` words in the values 40 up by the bytes
+of the words in the values 0 up, into the values 864 up: zero or-ed with `bshufLane` of each
+of the eight bytes of a word. Uses values from 80 to 863. -/
+def bshufWords (k : Nat) : List Op :=
+  [.const 80 0x8f#64, .const 81 3#64, .const 82 64#64, .const 83 0xff#64] ++
+  constWords 96 (fun _ => 0#64) k ++
+  bshufByte 112 0 k ++ bshufByte 208 1 k ++ bshufByte 304 2 k ++ bshufByte 400 3 k ++
+  bshufByte 496 4 k ++ bshufByte 592 5 k ++ bshufByte 688 6 k ++ bshufByte 784 7 k
+
+/-- The low byte of an immediate. -/
+def imm8 (c : ConstExpr) : BitVec 8 := (c.interp p).toBitVec.take 8
+
 /-- A move of a vector. -/
 def moveVec {w : AvxWidth} (legacy al : Bool) (dst src : AvxRegOrMem w) : List Op :=
   readVec p 0 al src ++ writeVec p 40 legacy al dst 0
@@ -587,6 +773,27 @@ def lowerAvx {w : AvxWidth} : AvxOperation w → Option (List Op)
   | .vpaddd dst src1 src2 =>
     some (readVec p 0 false src2 ++ readVec p 40 false src1 ++
       binWords 80 (.lanes 32 .add) 40 0 (vecWords w) ++ writeVec p 96 false false dst 80)
+  | .vprord dst src imm =>
+    some (readVec p 0 false src ++ rorWords (imm8 p imm) (vecWords w) ++
+      writeVec p 96 false false dst 80)
+  | .vpsrld dst src imm =>
+    some (readVec p 0 false src ++ shrWords (imm8 p imm) (vecWords w) ++
+      writeVec p 64 false false dst 56)
+  | .vpternlogd dst src2 src3 imm =>
+    some (readVec p 0 false src3 ++ readVec p 40 false src2 ++ readVec p 80 false dst ++
+      ternWords (imm8 p imm) (vecWords w) ++ writeVec p 264 false false dst 256)
+  | .pblendw dst src imm =>
+    some (readVec p 0 true src ++ readVec p 40 false dst ++
+      blendWords (imm8 p imm) (vecWords w) ++ writeVec p 112 true false dst 104)
+  | .palignr dst src imm =>
+    some (readVec p 0 true src ++ readVec p 40 false dst ++
+      alignWords (imm8 p imm).toNat (vecWords w) ++ writeVec p 128 true false dst 120)
+  | .pshufb dst src =>
+    some (readVec p 0 true src ++ readVec p 40 false dst ++ bshufWords (vecWords w) ++
+      writeVec p 872 true false dst 864)
+  | .pshufd dst src imm =>
+    some (readVec p 0 true src ++ shufWords (imm8 p imm) (vecWords w) ++
+      writeVec p 104 true false dst 96)
   | _ => none
 
 end

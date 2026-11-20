@@ -376,6 +376,44 @@ theorem all_silent_insDupOps {q op : Bool} {imm5 : BitVec 5} {imm4 : BitVec 4}
   repeat' split at h
   all_goals first | (cases h; done) | (cases h; simp)
 
+theorem all_silent_immShiftOps {q op : Bool} {immh : BitVec 4} {immb : BitVec 3}
+    {opc : BitVec 5} {rn rd : Arm64.VReg} {ops : List Op}
+    (h : immShiftOps q op immh immb opc rn rd = some ops) : ops.all silent = true := by
+  simp only [immShiftOps] at h
+  split at h
+  · split at h
+    · cases hm : moviImm op (opc.extractLsb' 1 4) (immb ++ rn) with
+      | none => simp [hm] at h
+      | some d64 =>
+        simp only [hm, Option.map_some, Option.some.injEq] at h
+        subst h
+        simp
+    · cases h
+  · cases hs : laneShift q op immh opc with
+    | none => simp [hs] at h
+    | some sop =>
+      simp only [hs, Option.map_some, Option.some.injEq] at h
+      subst h
+      cases sop <;> cases q <;> simp [shiftOps, LaneShift.ops, LaneShift.readsDst]
+
+theorem all_silent_swapOps (g : Nat) (d x : Var) : (swapOps g d x).all silent = true := by
+  simp [swapOps]
+
+theorem all_silent_revOps (gs : List Nat) (d x : Var) : (revOps gs d x).all silent = true := by
+  induction gs generalizing d x with
+  | nil => rfl
+  | cons g gs ih => simp [revOps, all_silent_swapOps, ih]
+
+theorem all_silent_revVecOps (gs : List Nat) (q : Bool) (rn rd : Arm64.VReg) :
+    (revVecOps gs q rn rd).all silent = true := by
+  cases q <;> simp [revVecOps, all_silent_revOps]
+
+theorem all_silent_extOps {q : Bool} {rm : Arm64.VReg} {imm4 : BitVec 4} {rn rd : Arm64.VReg}
+    {ops : List Op} (h : extOps q rm imm4 rn rd = some ops) : ops.all silent = true := by
+  simp only [extOps] at h
+  repeat' split at h
+  all_goals first | (cases h; done) | (cases h; simp [extWord])
+
 @[local simp] theorem all_silent_vecOps (op : VecOp) (q : Bool) (rm rn rd : Arm64.VReg) :
     (vecOps op q rm rn rd).all silent = true := by
   cases op <;> cases q <;> simp [vecOps, VecOp.ops]
@@ -434,7 +472,7 @@ theorem leak_lower (h : Rel s σ) (i : Instr) (hv : Nat → Word) {Q : State →
   case sysReg | dcZva | system | udf | crc32 | stxr | ldxp | stxp | cas | casp | ldapurStlur
       | ldrSimdLit | st1SinglePost | simdLdSt1Single | simdLdSt1Multi | simdLdStMulti | simdLd1r
       | fpDataProc2 | fpCompare | fpCondCompare | fpDataProc3 | fpFixedConv | simdAcrossLanes
-      | simdPermute | simdExt | simdTbl | simdDupScalar | simdPmull | simdThreeDiff | aes
+      | simdPermute | simdTbl | simdDupScalar | simdPmull | simdThreeDiff | aes
       | cryptoSha2Reg | cryptoSha3Reg | cryptoSha512Reg2 | cryptoSha512Reg3 | cryptoSha3FourReg
       | cryptoXar =>
     exact (not_wp_trap hw).elim
@@ -585,26 +623,51 @@ theorem leak_lower (h : Rel s σ) (i : Instr) (hv : Nat → Word) {Q : State →
       rw [leak_of_silent_jump (by simp)]
   case simdTwoRegMisc q u size opcode rn rd =>
     cases hops : notOps q u size opcode rn rd with
-    | none => simp only [lower, hops] at hw; exact (not_wp_trap hw).elim
+    | none =>
+      cases hg : revGroups u size opcode with
+      | none => simp only [lower, hops, hg] at hw; exact (not_wp_trap hw).elim
+      | some gs =>
+        have hc : opcode = 0#5 ∨ (opcode = 1#5 ∧ u = false ∧ size = 0#2) := by
+          by_cases h0 : opcode = 0#5
+          · exact .inl h0
+          · by_cases h1 : opcode = 1#5 ∧ u = false ∧ size = 0#2
+            · exact .inr h1
+            · simp [revGroups, h0, h1] at hg
+        simp only [lower, hops, hg, leak, hc, or_true, ↓reduceIte]
+        rw [leak_of_silent_jump (all_silent_revVecOps ..)]
     | some ops =>
       have hc : opcode = 5#5 := by
         by_cases h5 : opcode = 5#5
         · exact h5
         · simp [notOps, h5] at hops
       subst hc
-      simp only [lower, hops, leak, ↓reduceIte]
+      simp only [lower, hops, leak, true_or, ↓reduceIte]
       rw [leak_of_silent_jump (all_silent_notOps hops)]
   case simdImmShift q op immh immb opc rn rd =>
-    by_cases h0 : immh = 0#4
-    · subst h0
-      simp only [lower, leak, ↓reduceIte] at hw ⊢
-      generalize (if True ∧ opc.getLsbD 0 = false
-        then moviImm op (opc.extractLsb' 1 4) (immb ++ rn) else none) = m at hw ⊢
-      cases m with
-      | none => exact (not_wp_trap hw).elim
-      | some d64 => rw [leak_of_silent_jump (by simp)]
-    · simp only [lower, h0, false_and, ↓reduceIte] at hw
-      exact (not_wp_trap hw).elim
+    cases hops : immShiftOps q op immh immb opc rn rd with
+    | none => simp only [lower, hops] at hw; exact (not_wp_trap hw).elim
+    | some ops =>
+      have hc : immh = 0#4 ∨ opc = 10#5 ∨ (op = true ∧ (opc = 0#5 ∨ opc = 2#5 ∨ opc = 8#5)) := by
+        by_cases h0 : immh = 0#4
+        · exact .inl h0
+        · refine .inr ?_
+          cases hs : laneShift q op immh opc with
+          | none => simp [immShiftOps, h0, hs] at hops
+          | some sop =>
+            simp only [laneShift] at hs
+            repeat' split at hs
+            all_goals first | (cases hs; done) | simp_all
+      simp only [lower, hops, leak]
+      rw [leak_of_silent_jump (all_silent_immShiftOps hops)]
+      rcases hc with hc | hc
+      · simp only [hc, ↓reduceIte]
+      · by_cases h0 : immh = 0#4 <;> simp only [h0, hc, ↓reduceIte]
+  case simdExt q rm imm4 rn rd =>
+    cases hops : extOps q rm imm4 rn rd with
+    | none => simp only [lower, hops] at hw; exact (not_wp_trap hw).elim
+    | some ops =>
+      simp only [lower, hops, leak]
+      rw [leak_of_silent_jump (all_silent_extOps hops)]
 
 /-! ## Programs -/
 

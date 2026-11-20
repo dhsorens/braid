@@ -95,6 +95,13 @@ How the machine appears in `braid`:
   (`Regs.vlo k`, printed `v<k>.lo`) and its bits 64 to 127 in register `65 + 2 * k`
   (`Regs.vhi k`, printed `v<k>.hi`). A vector instruction works on one half after the other,
   and an operation on lanes is `BinOp.lanes` on each half.
+- A shift of lanes by a constant is the shift of each half by that constant and an `and` with
+  a constant mask, which clears the bits that crossed from one lane into the next. `USRA`
+  then adds the lanes with `BinOp.lanes`, and `SRI` and `SLI` keep the bits of the destination
+  outside the mask. A reversal of elements exchanges neighbouring groups of bits in the same
+  way, the smallest groups first: `REV32` of 16-bit lanes is one exchange of groups of 16
+  bits. `EXT` takes each word of its result from one word of its operands, or from the end
+  of one and the start of the next with two shifts and an `or`.
 - The model runs one thread, so a load-acquire, a store-release and an atomic
   read-modify-write are a load, a store, and the two with the operation between, each with
   a `guard` that the address is aligned.
@@ -112,13 +119,14 @@ instructions:
 | `fmovGprVec` | `FMOV` between `W`, `X` and `S`, `D`, `V.D[1]` | conversions between integers and floating point |
 | `fpDataProc1`, `fpImm`, `fpCondSelect` | `FMOV` of a register or a constant, `FCSEL` (`S` and `D`) | arithmetic, conversions, half precision |
 | `simdThreeSame` | `AND`, `BIC`, `ORR`, `ORN`, `EOR`, `BSL`, `ADD` and `SUB` of lanes of 8 to 64 bits | `BIT`, `BIF`, comparisons, shifts, `MUL`, `ADDP`, saturating and floating point |
-| `simdImmShift` | `MOVI` of a byte, a byte mask, or a shifted 32- or 16-bit constant | `MVNI`, `ORR`, `BIC`, `FMOV` constants, shifts by a constant |
+| `simdImmShift` | `MOVI` of a byte, a byte mask, or a shifted 32- or 16-bit constant; `SHL`, `USHR`, `USRA`, `SRI` and `SLI` of lanes of 8 to 64 bits, in 64 or 128 bits | `MVNI`, `ORR`, `BIC`, `FMOV` constants, the signed, rounding, saturating, narrowing and widening shifts |
 | `simdInsDup` | `DUP` from a general register and from a lane, `INS` from a general register, `UMOV`, `SMOV` | `INS` from a lane |
-| `simdTwoRegMisc`, `simdAddpScalar` | `NOT`, scalar `ADDP` | the rest of `simdTwoRegMisc` |
+| `simdTwoRegMisc`, `simdAddpScalar` | `NOT`, `REV16`, `REV32` of bytes and of 16 bits, `REV64` of bytes, of 16 and of 32 bits, scalar `ADDP` | the rest of `simdTwoRegMisc` |
+| `simdExt` | `EXT` at every position, in 64 or 128 bits | |
 
 Not yet covered: compare-and-swap, store-exclusives and the exclusive pairs, `LDAPUR` and
 `STLUR`, CRC, system registers and calls, floating-point arithmetic and comparisons,
-`simdAcrossLanes`, `simdPermute`, `simdExt`, `simdTbl`, `simdDupScalar`, `simdPmull`,
+`simdAcrossLanes`, `simdPermute`, `simdTbl`, `simdDupScalar`, `simdPmull`,
 `simdThreeDiff`, and AES and SHA. On a whole Go binary, 97% of 118,148 instructions lower to
 something other than `trap`. Of the 1,105 that trap, the largest groups are `STXR` (369), AES
 (191) and `CAS` (119). Before the vector instructions, `LDAR`, `STLR`, `CLZ` and `RBIT` were
@@ -138,7 +146,7 @@ to the model's own `Eventually` with no step count in between.
 | `Flags.lean` | the model's integer-valued flag conditions, as overflow predicates |
 | `Rel.lean` | `Rel`, and what each piece of a block does to related states |
 | `Ops.lean`, `Shift.lean`, `ShiftCl.lean`, `DShift.lean`, `Rotate.lean`, `Carry.lean`, `Mul.lean` | each instruction, lowered soundly |
-| `Vec.lean` | a vector as its 64-bit words: registers, wide loads and stores, packed addition |
+| `Vec.lean` | a vector as its 64-bit words: registers, wide loads and stores, packed addition, lanes of the model's `ofLanes`, rotations, shifts, truth tables and shuffles of lanes |
 | `Avx.lean` | each vector instruction, lowered soundly |
 | `Sound.lean` | control flow, `lower_sound`, `lowerProgram_sound` |
 | `Layout.lean` | the lines of a binary as an executable of the model |
@@ -159,7 +167,8 @@ How the machine appears in `braid`:
 - A vector in memory is loaded and stored a word at a time, low word first. A write of a
   vector register by a VEX or EVEX instruction clears the words above its width, and one by
   a legacy SSE instruction keeps them, as in the model. A move that must be aligned (`movaps`,
-  `movdqa`, `vmovdqa32`, and the source of `paddd`) has a `guard` on its address.
+  `movdqa`, `vmovdqa32`, and the source of `paddd`, `pshufd`, `pblendw`, `palignr` and
+  `pshufb`) has a `guard` on its address.
 - A value narrower than 64 bits is held zero-extended. Reading `eax` is a `get` and a `zext`;
   writing it clears the upper half, and writing `ax` or `al` keeps the other bits.
 - A flag the model leaves undefined is a `havoc`. So is the auxiliary carry flag, always: no
@@ -184,8 +193,36 @@ Vector instructions:
 | `vmovups`, `vmovdqu`, `vmovdqu32`, `vmovdqa32` | register and memory, in both directions | 128, 256, 512 |
 | `vmovq`, `vmovIn`, `vmovOut` (`movd` and `movq` with a general register or memory) | yes | every width |
 | `paddd`, `vpaddd` | `BinOp.lanes 32 .add` on each word | 128, 256, 512 |
-| `vzeroupper`, `vpsrld`, `vprord`, `vpternlogd`, `pshufd`, `pblendw`, `pshufb`, `palignr` | `trap` | |
-| `sha256rnds2`, `sha256msg1`, `sha256msg2`, `addps`, `subps` | `trap` | |
+| `vprord` by an immediate | each word shifted right and shifted left, each under a constant mask, and the two or-ed (`rorLanes`) | 128, 256, 512 |
+| `vpsrld` by an immediate | each word shifted right, under a constant mask (`shrLanes`) | 128, 256, 512 |
+| `vpternlogd` | every truth table: one `xor` of words for `0x5a`, `0x3c` and `0x66`, two for `0x96`, and for any other table seventeen `and`s and `xor`s with constants from the table (`ternLanes`) | 128, 256, 512 |
+| `pshufd` | each half of a word is a half of a source word, shifted into place (`shufLane`) | 128, 256, 512 |
+| `pblendw` | a choice between two words under a constant mask of 16-bit lanes (`blendMask`) | 128, 256, 512 |
+| `palignr` | two words of the block of 32 bytes, one shifted right and the next shifted left, or-ed (`alignWord`, `alignByte`) | 128, 256, 512 |
+| `pshufb` | each byte brought down by a shift whose count comes from its index byte, eight to a word (`bshufLane`) | 128, 256, 512 |
+| `vzeroupper`, `sha256rnds2`, `sha256msg1`, `sha256msg2`, `addps`, `subps` | `trap` | |
+
+Each of these takes its source from a register or from memory and writes a register or
+memory, as the model allows. `pshufd`, `pblendw`, `palignr` and `pshufb` are legacy SSE
+instructions: they keep the destination's words above its width and have a `guard` that a
+source in memory is aligned. They use no operation of the dialect beyond shifts, `and`, `or`,
+`xor` and `sub` of 64-bit words and constants, so a proof about a lowered block is a
+`bv_decide` goal about words. A rotation of the two 32-bit lanes
+of a word `x` to the right by `c` is
+
+```
+(x >>> c &&& m) ||| (x <<< (32 - c) &&& m')
+```
+
+where `m` has the low `32 - c` bits of each lane and `m'` the others. `vecWord_rotateRight`,
+`vecWord_shiftRight`, `vecWord_ternaryLogic`, `vecWord_shuffleDwords`, `vecWord_blendWords`,
+`vecWord_alignBytes` and `vecWord_shuffleBytes` say that a word of the model's result is that
+function of the words of its operands.
+
+`pshufb` picks each byte of its result by a byte of its second operand, so its block is long:
+ten operations for each byte of each word. The count of the shift is eight times the low four
+bits of the index, and a shift by 64 or more gives zero, which is how an index of 8 to 15
+falls to the second word of the block and an index with its top bit set gives zero.
 
 Three places where a block says less than the model, each sound: the auxiliary carry flag is
 always undefined; the overflow flag of `adc`, `sbb` and `imul` is undefined, and so is the
@@ -197,7 +234,7 @@ between it and the old one.
 
 Not yet covered, and lowered to `trap`: `adcx`, `adox`, `mulx`, the rotations through carry,
 rotations and double shifts by `cl`, the widening multiplications at 8 and 16 bits, the string
-instructions, a 32-bit address size, and the vector instructions in the last two rows of the
+instructions, a 32-bit address size, and the vector instructions in the last row of the
 table above. The model itself has no
 `div`, `idiv`, `xchg`, `cqo`, bit tests or atomics ([`docs/ISA.md`](../docs/ISA.md)). On a
 whole Go binary, 96% of 113,547 instructions lower to something other than `trap`. The rest

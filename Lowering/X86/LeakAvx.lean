@@ -4,7 +4,9 @@
   The labels of a lowered vector instruction of x86-64 are the labels of the instruction
   (`Lowering.X86.Leak`). A vector in memory is loaded and stored a word at a time, and the
   labels are one for each word, lowest first. A vector register is words of `braid` state
-  that are not general registers, so writing one leaves every address as it was.
+  that are not general registers, so writing one leaves every address as it was. The
+  operations between the read and the write of a rotation, a shift, a bitwise function, a
+  shuffle or a blend are constants and operations on words, which emit nothing.
 
   ## Main definitions
 
@@ -52,6 +54,31 @@ theorem setRegs_quiet {r : Nat} (hr : 16 ≤ r) (g : Nat → Var) (k : Nat) :
 theorem binWords_quiet (d a b : Var) (k : Nat) :
     (binWords d (.lanes 32 .add) a b k).all isQuiet = true := by
   simp [binWords, isQuiet, BinOp.leaks]
+
+theorem rorWords_quiet (c : BitVec 8) (k : Nat) : (rorWords c k).all isQuiet = true := by
+  simp [rorWords, zipWords, isQuiet, BinOp.leaks]
+
+theorem shrWords_quiet (c : BitVec 8) (k : Nat) : (shrWords c k).all isQuiet = true := by
+  simp [shrWords, zipWords, isQuiet, BinOp.leaks]
+
+theorem ternWords_quiet (t : BitVec 8) (k : Nat) : (ternWords t k).all isQuiet = true := by
+  unfold ternWords
+  repeat' split
+  all_goals simp [zipWords, isQuiet, BinOp.leaks]
+
+theorem shufWords_quiet (imm : BitVec 8) (k : Nat) :
+    (shufWords imm k).all isQuiet = true := by
+  simp [shufWords, zipWords, constWords, isQuiet, BinOp.leaks]
+
+theorem blendWords_quiet (imm : BitVec 8) (k : Nat) :
+    (blendWords imm k).all isQuiet = true := by
+  simp [blendWords, zipWords, constWords, isQuiet, BinOp.leaks]
+
+theorem alignWords_quiet (n k : Nat) : (alignWords n k).all isQuiet = true := by
+  simp [alignWords, zipWords, constWords, isQuiet, BinOp.leaks]
+
+theorem bshufWords_quiet (k : Nat) : (bshufWords k).all isQuiet = true := by
+  simp [bshufWords, bshufByte, zipWords, constWords, isQuiet, BinOp.leaks]
 
 theorem alignOps_quiet (n a : Var) (bytes : Nat) (al : Bool) :
     (alignOps n a bytes al).all isQuiet = true := by
@@ -169,6 +196,13 @@ theorem writeVec_emits (n : Nat) {w : AvxWidth} (legacy al : Bool) (d : AvxRegOr
 instruction. -/
 macro "x86_emits_vec" : tactic => `(tactic|
   repeat' first
+    | with_reducible exact Emits.quiet (rorWords_quiet _ _)
+    | with_reducible exact Emits.quiet (shrWords_quiet _ _)
+    | with_reducible exact Emits.quiet (ternWords_quiet _ _)
+    | with_reducible exact Emits.quiet (shufWords_quiet _ _)
+    | with_reducible exact Emits.quiet (blendWords_quiet _ _)
+    | with_reducible exact Emits.quiet (alignWords_quiet _ _)
+    | with_reducible exact Emits.quiet (bshufWords_quiet _)
     | apply Emits.append
     | apply Emits.appendT
     | exact Emits.quiet (by rfl)
