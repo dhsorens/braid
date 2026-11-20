@@ -52,11 +52,14 @@ macro "braid_traced" : tactic => `(tactic| apply Subtype.mk)
 
 /-- Find the trace a run has left: the goal is `t ++ [l₁] ++ … ++ [lₙ] = t ++ ?ls`, with the
 labels added one at a time and with the traces of the triples that were called, and `?ls`
-becomes the list of them. -/
+becomes the list of them, or the empty list for a run that left no label. The labels are
+gathered before the two sides are compared: comparing them as they stand can unfold a
+trace that was called for. -/
 macro "braid_trace_find" : tactic =>
   `(tactic| first
-      | rfl
-      | (simp only [List.append_assoc, List.cons_append, List.nil_append]; rfl))
+      | (simp only [List.append_assoc, List.cons_append, List.nil_append]; rfl)
+      | exact (List.append_nil _).symm
+      | rfl)
 
 /-- Finish a traced triple whose trace was left open by `braid_traced`: the symbolic state
 is the postcondition, and the trace to be found is the one the run has left. -/
