@@ -93,6 +93,21 @@ lower_vec() {
   done
 }
 
+# SHA-256 with the processors' SHA instructions (docs/ISA.md): sha256_ni.c, from intrinsics.
+# Not lowered for RISC-V, whose model has no such instruction.
+lower_ni() {
+  for isa in $ISAS; do
+    case $isa in
+      arm) t="--target=aarch64-unknown-linux-gnu -march=armv8-a+sha2" ;;
+      x86) t="--target=x86_64-unknown-linux-gnu -msha -msse4.1 -mssse3" ;;
+      *) continue ;;
+    esac
+    # shellcheck disable=SC2086
+    "$CLANG" $t $CFLAGS -c Examples/src/c/sha256_ni.c -o "Examples/bin/sha256_ni.$isa.o"
+    link_and_lower "$isa" sha256_ni Sha256Ni sha256_compress_ni
+  done
+}
+
 # A source of the ladder: name, source, module, functions. It is compiled and lowered twice:
 # at the first optimisation level into <Module>, and at the second into <Module>.O2.
 lower_ladder() {
@@ -296,4 +311,5 @@ if want sha256; then
 fi
 if want crc32; then lower_ladder crc32 Examples/src/c/crc32.c Crc32 crc32; fi
 if want chacha20vec; then lower_vec; fi
+if want sha256ni; then lower_ni; fi
 if want sha256main; then lower_program; fi
