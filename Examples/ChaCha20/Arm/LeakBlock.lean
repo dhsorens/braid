@@ -152,7 +152,7 @@ def block_head_run (inp sp₀ : Word) : { ls : Trace // ∀ (s : List W32) (fr s
   braid_forget_flag 1
   braid_forget_flag 2
   braid_forget_flag 3
-  braid_done_traced 31
+  braid_done_long 31
 
 /-- **The stores after the loop of rounds and the trace of their run.** The sixteen
 registers of the state are stored to the frame, a pair at a time, whose contents are then
@@ -305,7 +305,7 @@ def block_sum_run (out inp sp₀ r : Word) : { ls : Trace // ∀ (s : List W32)
   braid_forget_flag 1
   braid_forget_flag 2
   braid_forget_flag 3
-  braid_done_traced 21
+  braid_done_long 21
 
 /-- **`chacha20_block` and the trace of its run**, whatever the sixteen words of the input
 are. The trace found is a function of its two arguments, the stack pointer and the return

@@ -195,7 +195,7 @@ def entry_run (inp sp₀ : Word) : { ls : Trace // ∀ (out : Word)
   case hupd => braid_upd
   case hn => rfl
   forget_regs
-  braid_done_traced 25
+  braid_done_long 25
 
 /-- **The exit of `chacha20_block` and the trace of its run**, from the end of the loop of
 rounds, whatever the registers of the state, the frame and the input hold. The trace found
@@ -286,7 +286,7 @@ def exit_run (out inp sp₀ r : Word) : { ls : Trace // ∀
   braid_forget 10
   braid_forget 11
   forget_flags
-  braid_done_traced 27
+  braid_done_long 27
 
 /-- **`chacha20_block` and the trace of its run**, whatever the sixteen words of the input
 are. The trace found is a function of its two arguments, the stack pointer and the return

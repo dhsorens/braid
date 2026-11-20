@@ -37,6 +37,7 @@
   * `braid_traced`: open a definition of a trace with its traced triple
   * `braid_done`, again: finish, and find the trace that was left open
   * `braid_done_traced n`: the same, taking the `n` atoms of a large state one at a time
+  * `braid_done_long n`: the same, for a run of seventy labels or more
 -/
 
 module
@@ -66,14 +67,12 @@ labels added one at a time and with the traces of the triples that were called, 
 becomes the list of them, or the empty list for a run that left no label. The labels are
 gathered before the two sides are compared: comparing them as they stand can unfold a
 trace that was called for. A run of some seventy labels or more is too long to gather at
-once, and its labels are then gathered from the last to the first, one rule for each. -/
+once: `braid_done_long` is for those. -/
 macro "braid_trace_find" : tactic =>
   `(tactic| first
       | (simp only [List.append_assoc, List.cons_append, List.nil_append]; rfl)
       | exact (List.append_nil _).symm
-      | rfl
-      | (apply Trace.gather_start; repeat apply Trace.gather_snoc
-         rfl))
+      | rfl)
 
 /-- Finish a traced triple whose trace was left open by `braid_traced`: the symbolic state
 is the postcondition, and the trace to be found is the one the run has left. -/
@@ -95,5 +94,17 @@ macro "braid_done_traced " n:num : tactic =>
              · iterate $n (apply Atoms.Split.cons; · braid_extract)
                exact Atoms.Split.nil
              · braid_trace_find))
+
+/-- `braid_done_traced n` for a long run that called no traced triple: seventy labels or
+more, each added by the stepper. The labels are gathered from the last to the first, one
+rule for each, so that the trace is not reassociated as a whole. -/
+macro "braid_done_long " n:num : tactic =>
+  `(tactic| (braid_norm
+             refine TripleT.done_split ?_ ?_
+             · iterate $n (apply Atoms.Split.cons; · braid_extract)
+               exact Atoms.Split.nil
+             · apply Trace.gather_start
+               repeat apply Trace.gather_snoc
+               rfl))
 
 end Braid

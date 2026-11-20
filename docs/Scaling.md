@@ -242,6 +242,66 @@ those of the round and the schedule; the whole file takes 3 to 5 seconds more
 every instruction set, against a limit of 15 minutes, and in no more than 1.3 times the
 time of the functional proof, against a limit of twice.
 
+## Vector code
+
+Two functions on vector registers are proved on AArch64 and x86-64: the ChaCha20 block
+function over four rows of lanes (`Examples/ChaCha20Vec`), and the SHA-256 compression
+function with the processors' SHA instructions (`Examples/Sha256Ni`). A vector register is
+words of the dialect's state, so the stepper runs on them as on any register; what is new is
+the size of a block. A lane shift or a shuffle is ten to twenty operations, and an
+instruction that does four rounds of SHA-256 is 142.
+
+Processor seconds (user and system) of `lake env lean` on the files of each proof: what the
+function computes (`_spec` and `_correct`), and what it reveals (the runs that find the
+trace, and `_leakage`).
+
+| | functional | leakage | ratio |
+| --- | --- | --- | --- |
+| `chacha20_block_vec`, AArch64 | 8.1 | 5.3 | 0.65 |
+| `chacha20_block_vec`, x86-64 | 10.6 | 5.9 | 0.56 |
+| `sha256_compress_ni`, AArch64 | 14.1 | 7.7 | 0.55 |
+| `sha256_compress_ni`, x86-64 | 16.7 | 8.3 | 0.50 |
+
+Every leakage proof checks in under ten seconds, against a limit of 15 minutes, and in less
+time than its functional proof, against a limit of twice.
+
+Two things kept these short.
+
+- **A long block is stepped by a lemma, not by the stepper.** Run by the stepper, the 142
+  operations of `sha256h` leave a term in which each round appears again inside the next.
+  The functional proofs do not run such a block: each SHA instruction has a triple, proved
+  once from the lowering's own lemma about its operations, that says the destination goes
+  from its two words to named functions of the operands' words, and the proof calls it at
+  each occurrence. The named functions are then rewritten to the specification's rounds by
+  a lemma proved one round at a time. The leakage proofs do let the stepper run these
+  blocks, on words whose values are forgotten at once, which is cheap.
+- **Lanes are packed, not split.** Two 32-bit lanes in a word are `pack a b`, and each
+  operation of a lowered block (a shift under a lane mask, a lane-wise addition) is that
+  operation on `a` and on `b` by a rewriting lemma. One `simp only` with those lemmas turns
+  half a round of ChaCha20 into `pack` of expressions on 32-bit words, with no `bv_decide`
+  over a whole vector.
+
+### The benchmark, before and after
+
+The lowerings grew by some thirty instruction forms, and the logic by a file. The benchmark
+of the first section, on the commit before that work (`83433b3`) and after, at N = 1000:
+processor seconds for the image alone and for the image with its proof, each the least of
+five runs on the same generated file, the two trees taken in turn, and the difference per
+instruction.
+
+| | image, before | image, after | with proof, before | with proof, after | ms per instruction, before | after |
+| --- | --- | --- | --- | --- | --- | --- |
+| RISC-V | 3.24 | 3.23 | 4.52 | 4.56 | 1.3 | 1.3 |
+| AArch64 | 4.05 | 4.32 | 5.62 | 5.68 | 1.6 | 1.4 |
+| x86-64 | 8.31 | 8.19 | 17.47 | 17.32 | 9.2 | 9.1 |
+
+The stepper is no slower. The one figure that moved is the check of an AArch64 image,
+about a quarter of a second more for a thousand instructions: the certificate of an image
+is checked by evaluating the lowering on each instruction, and the AArch64 lowering now
+has more cases to go through. The machine was running other work during the measurement;
+the median of the five runs is within 0.7 seconds of the least in every cell, and single
+runs under load were as much as two seconds above it.
+
 ## The ladder
 
 The benchmark is straight-line code. The ladder is real functions of growing size, each
