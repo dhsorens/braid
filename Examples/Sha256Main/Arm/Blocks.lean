@@ -2,9 +2,10 @@
   Examples.Sha256Main.Arm.Blocks
 
   The loop of `main` over the blocks of the padded message, on AArch64: each turn pads a
-  block (`words_loop`) and calls the compression function on it (`compress_call`, which is
-  the specification and the leakage of `sha256_compress` as they are proved about the binary
-  of `sha256.c`).
+  block (`words_loop`, proved about the program's own code and carried to the whole program
+  with `own_le`) and calls the compression function on it (`compress_call`, which is the
+  specification and the leakage of `sha256_compress` as they are proved about the binary of
+  `sha256.c`).
 
   ## Main definitions
 
@@ -18,6 +19,7 @@
 
 module
 
+public import Examples.Sha256Main.Arm.Program
 public import Examples.Sha256Main.Arm.Pad
 
 @[expose] public section
@@ -84,8 +86,8 @@ theorem block_step (msg : List (BitVec 8)) (b : Nat) (H : List W32) (ms fvs fws 
   have e0 : (Atom.prop (cellsAt 4 true 0x20c30#64
       (w32s ((List.range 0).map (blockWord msg b))))).interp = Atoms.interp [] := rfl
   braid_fold e0
-  braid_call words_loop msg b hn hb rest 0 c 0#64 v21 v25 _ _ _ _ _ 0x20c30#64 _ _ _ _ _
-    (by omega) rfl (by simpa using h21) (by simpa using h25) (by simp)
+  braid_call (words_loop msg b hn hb rest 0 c 0#64 v21 v25 _ _ _ _ _ 0x20c30#64 _ _ _ _ _
+    (by omega) rfl (by simpa using h21) (by simpa using h25) (by simp)).mono own_le
   have hr : rest.length = 15 := by omega
   rw [hr]
   braid_name_reg 8

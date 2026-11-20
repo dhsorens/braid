@@ -7,6 +7,9 @@
   depends on the length of the message and not on its bytes. This file runs one byte, one
   word of four bytes, and the sixteen words of a block, each with what it reveals.
 
+  The triples are about `ownProgram`, the code of `_start` and `main` alone, and this file
+  imports nothing about the compression function: they hold of any binary with this `main`.
+
   ## Main definitions
 
   * `accByte`: a byte shifted into the low half of a register
@@ -21,7 +24,9 @@
 
 module
 
-public import Examples.Sha256Main.Arm.Program
+public import Examples.Sha256Main.Arm.Own
+public import Examples.Sha256Main.Shared
+public import Examples.Sha256.RunTo
 
 @[expose] public section
 
@@ -86,7 +91,7 @@ theorem byte_step (msg : List (BitVec 8)) (k : Nat) (v11 v12 v13 v14 v15 e : Wor
     (h13 : v13 = BitVec.ofNat 64 k)
     (h14 : v14 = BitVec.ofNat 64 (8 * (total msg.length - 1 - k)))
     (he : (v12 + 8#64 = 0#64 ∧ e = 0x20408#64) ∨ (v12 + 8#64 ≠ 0#64 ∧ e = 0x2044c#64)) :
-    TripleT program
+    TripleT ownProgram
       (Atoms.interp [.pc 0x2044c#64, .reg x11 v11, .reg x12 v12, .reg x13 v13, .reg x14 v14,
         .reg x15 v15, .reg x19 (BitVec.ofNat 64 msg.length),
         .reg x22 (BitVec.ofNat 64 (8 * msg.length)), .reg x23 0x20ce8#64,
@@ -196,7 +201,7 @@ theorem word_step (msg : List (BitVec 8)) (b j : Nat) (v8 v9 v10 v11 v12 v13 v14
     (h10 : v10 = BitVec.ofNat 64 (8 * (total msg.length - 1 - (64 * b + 4 * j))))
     (hq : q = 0x20c30#64 + BitVec.ofNat 64 (4 * j)) (hd : done.length = j)
     (he : (v8 + 1#64 = 16#64 ∧ e = 0x203dc#64) ∨ (v8 + 1#64 ≠ 16#64 ∧ e = 0x20420#64)) :
-    TripleT program
+    TripleT ownProgram
       (Atoms.interp [.pc 0x20420#64, .reg x8 v8, .reg x9 v9, .reg x10 v10, .reg x11 v11,
         .reg x12 v12, .reg x13 v13, .reg x14 v14, .reg x15 v15,
         .reg x19 (BitVec.ofNat 64 msg.length),
@@ -279,7 +284,7 @@ theorem words_loop (msg : List (BitVec 8)) (b : Nat)
       v9 = BitVec.ofNat 64 (64 * b + 4 * j) →
       v10 = BitVec.ofNat 64 (8 * (total msg.length - 1 - (64 * b + 4 * j))) →
       q = 0x20c30#64 + BitVec.ofNat 64 (4 * j) →
-    TripleT program
+    TripleT ownProgram
       (Atoms.interp [.pc 0x20420#64, .reg x8 v8, .reg x9 v9, .reg x10 v10, .reg x11 v11,
         .reg x12 v12, .reg x13 v13, .reg x14 v14, .reg x15 v15,
         .reg x19 (BitVec.ofNat 64 msg.length),

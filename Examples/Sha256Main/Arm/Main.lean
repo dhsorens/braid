@@ -5,8 +5,9 @@
   with its sections in memory and nothing else assumed, to the exit call. The sections are
   turned into what the code uses (the table of round constants, the two addresses the code
   loads, the stack frame of `main` and that of `sha256_compress`), and the run is `_start`,
-  the prologue, the loop over the blocks, the loop that writes the digest out as bytes, the
-  call that writes them out and the call that exits.
+  the prologue, the loop over the blocks, the loop that writes the digest out as bytes
+  (`out_loop`, proved about the program's own code and carried here with `own_le`), the call
+  that writes them out and the call that exits.
 
   ## Main definitions
 
@@ -21,6 +22,7 @@
 
 module
 
+public import Examples.Sha256Main.Arm.Blocks
 public import Examples.Sha256Main.Arm.Output
 
 @[expose] public section
@@ -230,8 +232,8 @@ theorem sha256_main_trace (msg : List (BitVec 8)) (hn : msg.length < 2 ^ 32)
   braid_name_flag 2
   braid_name_flag 3
   braid_sym_run_to 0x20490
-  braid_call out_loop xs x (List.replicate 7 0#64) 0#64 0 0x20c10#64 0x20c70#64 0#64 _
-    _ _ _ _ _ (by simp; omega) (by omega) rfl rfl
+  braid_call (out_loop xs x (List.replicate 7 0#64) 0#64 0 0x20c10#64 0x20c70#64 0#64 _
+    _ _ _ _ _ (by simp; omega) (by omega) rfl rfl).mono own_le
   rw [← hsha]
   have hl32 : (sha256 msg).length = 32 := by
     rw [hsha, flatMap_wordBytes_length, List.length_cons]; omega

@@ -5,6 +5,9 @@
   value, most significant byte first. The compiled code reverses the bytes of the word and
   stores it as one word of four bytes, at an address that is not a multiple of four.
 
+  The triple is about `ownProgram`, the code of `_start` and `main` alone, and this file
+  imports nothing about the compression function: it holds of any binary with this `main`.
+
   ## Main definitions
 
   * `outLeak`: what the loop reveals
@@ -16,7 +19,9 @@
 
 module
 
-public import Examples.Sha256Main.Arm.Blocks
+public import Examples.Sha256Main.Arm.Own
+public import Examples.Sha256Main.Shared
+public import Examples.Sha256.RunTo
 
 @[expose] public section
 
@@ -68,7 +73,7 @@ theorem out_loop : ∀ (xs : List W32) (x : W32) (cs : List Word) (c : Word) (i 
     (oq hq v8 v11 : Word) (fn fz fc fv : Bool) (t : Trace), cs.length = xs.length →
     i + xs.length + 1 = 8 → v8 = BitVec.ofNat 64 i →
     hq = 0x20c70#64 + BitVec.ofNat 64 (4 * i) →
-    TripleT program
+    TripleT ownProgram
       (Atoms.interp [.pc 0x20490#64, .reg x8 v8, .reg x9 (oq + 1#64), .reg x10 0x20c70#64,
         .reg x11 v11, .flag Flags.n fn, .flag Flags.z fz, .flag Flags.c fc, .flag Flags.v fv,
         .prop (cellsAt 4 true oq (c :: cs)), .prop (cellsAt 4 true hq (w32s (x :: xs)))]) t

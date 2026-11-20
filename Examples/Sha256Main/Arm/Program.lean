@@ -9,17 +9,20 @@
 
   ## Main definitions
 
-  * `program`: the lowered code of the whole binary
+  * `program`: the lowered code of the whole binary (its own code, `_start` and `main`, is
+    `ownProgram` of `Examples.Sha256Main.Arm.Own`)
 
   ## Main results
 
+  * `blocks_nodup`: no two blocks of the program are at one address
+  * `own_le`: the program's own code, `_start` and `main`, is part of the program
   * `program_of_compress`: the code of `sha256_compress` is part of the program
   * `compress_call`: a call of `sha256_compress`: what it computes and what it reveals
 -/
 
 module
 
-public import Examples.Sha256Main.Arm.Image
+public import Examples.Sha256Main.Arm.Own
 public import Examples.Sha256Main.Shared
 public import Examples.Sha256.Arm.Compress
 public import Examples.Sha256.Arm.LeakCompress
@@ -33,6 +36,16 @@ open Braid Examples Examples.Sha256 Lowering.Arm Lowering.Arm.Regs
 /-- The lowered code of the whole binary. -/
 def program : Program := Program.ofList sha256_main_blocks
 
+/-- No two blocks of the program are at one address. -/
+theorem blocks_nodup : (sha256_main_blocks.map (·.1)).Nodup := by decide +kernel
+
+/-- The program's own code is part of the program: what is proved of `ownProgram` holds of
+the program (`TripleT.mono`). -/
+theorem own_le (a : Word) (b : Block) (h : ownProgram a = some b) : program a = some b := by
+  refine Program.ofList_mono (fun p hp => ?_) blocks_nodup a b h
+  rw [sha256_main_blocks, List.append_assoc]
+  exact List.mem_append_right _ hp
+
 /-- The compression function of this binary is that of the binary of `sha256.c`, block for
 block. -/
 theorem compress_blocks : sha256_compress.blocks = Sha256.Arm.sha256_compress.blocks := rfl
@@ -40,7 +53,7 @@ theorem compress_blocks : sha256_compress.blocks = Sha256.Arm.sha256_compress.bl
 /-- The code of `sha256_compress` is part of the program. -/
 theorem program_of_compress (a : Word) (b : Block)
     (h : Sha256.Arm.sha256_compress.program a = some b) : program a = some b := by
-  refine Program.ofList_mono (fun p hp => ?_) (by decide +kernel) a b h
+  refine Program.ofList_mono (fun p hp => ?_) blocks_nodup a b h
   rw [sha256_main_blocks, compress_blocks]
   exact List.mem_append_left _ (List.mem_append_left _ hp)
 
