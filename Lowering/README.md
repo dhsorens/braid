@@ -167,8 +167,8 @@ How the machine appears in `braid`:
 - A vector in memory is loaded and stored a word at a time, low word first. A write of a
   vector register by a VEX or EVEX instruction clears the words above its width, and one by
   a legacy SSE instruction keeps them, as in the model. A move that must be aligned (`movaps`,
-  `movdqa`, `vmovdqa32`, and the source of `paddd`, `pshufd`, `pblendw`, `palignr` and
-  `pshufb`) has a `guard` on its address.
+  `movdqa`, `vmovdqa32`, and the source of `paddd`, `pshufd`, `pblendw`, `palignr`,
+  `pshufb` and the SHA-256 instructions) has a `guard` on its address.
 - A value narrower than 64 bits is held zero-extended. Reading `eax` is a `get` and a `zext`;
   writing it clears the upper half, and writing `ax` or `al` keeps the other bits.
 - A flag the model leaves undefined is a `havoc`. So is the auxiliary carry flag, always: no
@@ -200,13 +200,16 @@ Vector instructions:
 | `pblendw` | a choice between two words under a constant mask of 16-bit lanes (`blendMask`) | 128, 256, 512 |
 | `palignr` | two words of the block of 32 bytes, one shifted right and the next shifted left, or-ed (`alignWord`, `alignByte`) | 128, 256, 512 |
 | `pshufb` | each byte brought down by a shift whose count comes from its index byte, eight to a word (`bshufLane`) | 128, 256, 512 |
-| `vzeroupper`, `sha256rnds2`, `sha256msg1`, `sha256msg2`, `addps`, `subps` | `trap` | |
+| `sha256msg1`, `sha256msg2` | on the low two words: a mixing of 32-bit lanes by masked shifts, then `BinOp.lanes 32 .add` (`msg1Lo`, `msg1Hi`, `msg2Lo`, `msg2Hi`) | 128, 256, 512 |
+| `sha256rnds2` | on the low two words and the low word of `xmm0`: two rounds on working words each in the low half of a value (`rnds2Lo`, `rnds2Hi`) | 128, 256, 512 |
+| `vzeroupper`, `addps`, `subps` | `trap` | |
 
 Each of these takes its source from a register or from memory and writes a register or
 memory, as the model allows. `pshufd`, `pblendw`, `palignr` and `pshufb` are legacy SSE
 instructions: they keep the destination's words above its width and have a `guard` that a
-source in memory is aligned. They use no operation of the dialect beyond shifts, `and`, `or`,
-`xor` and `sub` of 64-bit words and constants, so a proof about a lowered block is a
+source in memory is aligned; so do the SHA-256 instructions. They use no operation of the
+dialect beyond shifts, `and`, `or`, `xor`, `add` and `sub` of 64-bit words, constants, and
+for the schedule instructions `BinOp.lanes 32 .add`, so a proof about a lowered block is a
 `bv_decide` goal about words. A rotation of the two 32-bit lanes
 of a word `x` to the right by `c` is
 
@@ -218,6 +221,17 @@ where `m` has the low `32 - c` bits of each lane and `m'` the others. `vecWord_r
 `vecWord_shiftRight`, `vecWord_ternaryLogic`, `vecWord_shuffleDwords`, `vecWord_blendWords`,
 `vecWord_alignBytes` and `vecWord_shuffleBytes` say that a word of the model's result is that
 function of the words of its operands.
+
+The SHA-256 instructions read and write the low 128 bits; at 256 and 512 bits the model
+clears the rest of the width, and so does the block. `sha256msg2` is 30 operations and ten
+constants, and `sha256msg1` 36 and twelve. `sha256rnds2` is 65 operations and eight constants:
+five shifts take the high halves of the operand words, each round is 27 operations, and a
+rotation of a working word `x` below `2 ^ 32` is one shift of `x ||| x <<< 32`. A sum is left
+with whatever it carries into its high half, and only the two working words the second round
+rotates are masked. `vecWord_msg1_zero`, `vecWord_msg1_one`, `vecWord_msg2_zero`,
+`vecWord_msg2_one` and `vecWord_rounds2` say that the two words of the model's result are
+those functions of the operand words, and `round_eq` that `rndA` and `rndE` are a round of
+the model.
 
 `pshufb` picks each byte of its result by a byte of its second operand, so its block is long:
 ten operations for each byte of each word. The count of the shift is eight times the low four

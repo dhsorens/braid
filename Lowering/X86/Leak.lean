@@ -16,10 +16,11 @@
     moves and `setcc` take a time that does not depend on their operands; a conditional move
     reads its source whatever the condition. The vector instructions here are on the same
     list: the moves, `paddd` and `vpaddd`, `vprord` and `vpsrld` by an immediate,
-    `vpternlogd`, `pshufd`, `pshufb`, `palignr` and `pblendw`. With register operands they
-    reveal nothing, and with an operand in memory they reveal the address and the size of
-    the vector they load or store. `pshufb` picks bytes by the bytes of an operand, and its
-    time does not depend on them.
+    `vpternlogd`, `pshufd`, `pshufb`, `palignr`, `pblendw`, and `sha256rnds2`, `sha256msg1`
+    and `sha256msg2`. With register operands they reveal nothing, and with an operand in
+    memory they reveal the address and the size of the vector they load or store. `pshufb`
+    picks bytes by the bytes of an operand, and its time does not depend on them.
+    `sha256rnds2` also reads `xmm0`, a register.
 
   The labels of one instruction are in the order in which the model's `Operation.interp`
   and `AvxOperation.interp` make the accesses: sources before destinations as the model reads
@@ -38,8 +39,8 @@
 
   Where the instruction is outside this file, `leak` is `none`, and `RunL` has no step: the
   string instructions, `adcx`, `adox`, `mulx`, `rcl`, `rcr`, the vector instructions the
-  lowering leaves as `trap` (`vzeroupper`, the SHA instructions, `addps`, `subps`), and any
-  instruction at the 32-bit address size. A theorem about a trace is then a theorem about a
+  lowering leaves as `trap` (`vzeroupper`, `addps`, `subps`), and any instruction at the
+  32-bit address size. A theorem about a trace is then a theorem about a
   run through the other instructions only.
 
   This file is trusted: a theorem about what an x86-64 program leaks says so in these terms
@@ -159,7 +160,8 @@ def leakAvx (s : MachineData) {w : AvxWidth} : AvxOperation w → Option Trace
   | .movups dst src | .movaps dst src | .movdqu dst src | .movdqa dst src
   | .vmovups dst src | .vmovdqu dst src | .vmovdqu32 dst src | .vmovdqa32 dst src =>
     some (vecRead p s.regs src ++ vecWrite p s.regs dst)
-  | .paddd dst src | .pshufb dst src | .palignr dst src _ | .pblendw dst src _ =>
+  | .paddd dst src | .pshufb dst src | .palignr dst src _ | .pblendw dst src _
+  | .sha256rnds2 dst src | .sha256msg1 dst src | .sha256msg2 dst src =>
     some (vecRead p s.regs src ++ vecRead p s.regs dst ++ vecWrite p s.regs dst)
   | .vpaddd dst src1 src2 =>
     some (vecRead p s.regs src2 ++ vecRead p s.regs src1 ++ vecWrite p s.regs dst)

@@ -5,9 +5,10 @@
   memory, the moves between general and vector registers, the packed 32-bit addition, the
   rotation and the shift of 32-bit lanes by an immediate, the bitwise function of three
   vectors given by a truth table, the shuffles of 32-bit lanes and of bytes, the blend of
-  16-bit lanes and the shift of bytes across two vectors. A piece of a block (reading a
-  vector operand, writing one, an alignment check, the operation on the words) is related to
-  the model's function for the same thing, and an instruction is those lemmas in order.
+  16-bit lanes, the shift of bytes across two vectors, and the three SHA-256 instructions. A
+  piece of a block (reading a vector operand, writing one, an alignment check, the operation
+  on the words) is related to the model's function for the same thing, and an instruction is
+  those lemmas in order.
 
   ## Main definitions
 
@@ -19,6 +20,8 @@
   * `wp_zipWords`, `wp_constWords`: a run of operations, one for each word
   * `wp_rorWords`, `wp_shrWords`, `wp_ternWords`, `wp_shufWords`, `wp_blendWords`,
     `wp_alignWords`, `wp_bshufWords`: the operation on the words
+  * `wp_msg1Words`, `wp_msg2Words`, `wp_rnds2Words`: the two result words of a SHA-256
+    instruction
   * `lowerAvx_sound`: every vector instruction
 -/
 
@@ -152,7 +155,8 @@ theorem wp_constWords {n k : Nat} {f : Nat → Word} (hw : wpOps (constWords n f
 /-- The rotation of lanes sets the values 80 up to `rorLanes` of the words in the values 0
 up. -/
 theorem wp_rorWords {c : BitVec 8} {k : Nat} (hk : k ≤ 8) (hw : wpOps (rorWords c k) ρ σ Q) :
-    ∃ ρ', Agree 40 ρ ρ' ∧ (∀ j, j < k → ρ' (80 + j) = rorLanes c (ρ (0 + j))) ∧ Q ρ' σ := by
+    ∃ ρ', Agree 40 ρ ρ' ∧ (∀ j, j < k → ρ' (80 + j) = rorLanes c (ρ (0 + j))) ∧
+      Q ρ' σ := by
   simp only [rorWords, List.cons_append, List.nil_append, Braid.wpOps_append, wpOps, Op.wp]
     at hw
   obtain ⟨ρ1, f1, v1, hw⟩ := wp_zipWords (fun j hj => ⟨by omega, by omega⟩) hw
@@ -169,7 +173,8 @@ theorem wp_rorWords {c : BitVec 8} {k : Nat} (hk : k ≤ 8) (hw : wpOps (rorWord
 /-- The shift of lanes sets the values 56 up to `shrLanes` of the words in the values 0
 up. -/
 theorem wp_shrWords {c : BitVec 8} {k : Nat} (hk : k ≤ 8) (hw : wpOps (shrWords c k) ρ σ Q) :
-    ∃ ρ', Agree 40 ρ ρ' ∧ (∀ j, j < k → ρ' (56 + j) = shrLanes c (ρ (0 + j))) ∧ Q ρ' σ := by
+    ∃ ρ', Agree 40 ρ ρ' ∧ (∀ j, j < k → ρ' (56 + j) = shrLanes c (ρ (0 + j))) ∧
+      Q ρ' σ := by
   simp only [shrWords, List.cons_append, List.nil_append, Braid.wpOps_append, wpOps, Op.wp]
     at hw
   obtain ⟨ρ1, f1, v1, hw⟩ := wp_zipWords (fun j hj => ⟨by omega, by omega⟩) hw
@@ -260,9 +265,11 @@ theorem wp_shufWords {imm : BitVec 8} {k : Nat} (hk : k ≤ 8) (hk2 : k % 2 = 0)
     at hw
   obtain ⟨ρ1, f1, v1, hw⟩ := wp_constWords hw
   obtain ⟨ρ2, f2, v2, hw⟩ := wp_constWords hw
-  obtain ⟨ρ3, f3, v3, hw⟩ := wp_zipWords (fun j hj => ⟨by have := hl0 j hj; omega, by omega⟩) hw
+  obtain ⟨ρ3, f3, v3, hw⟩ := wp_zipWords
+    (fun j hj => ⟨by have := hl0 j hj; omega, by omega⟩) hw
   obtain ⟨ρ4, f4, v4, hw⟩ := wp_zipWords (fun j hj => ⟨by omega, by omega⟩) hw
-  obtain ⟨ρ5, f5, v5, hw⟩ := wp_zipWords (fun j hj => ⟨by have := hl1 j hj; omega, by omega⟩) hw
+  obtain ⟨ρ5, f5, v5, hw⟩ := wp_zipWords
+    (fun j hj => ⟨by have := hl1 j hj; omega, by omega⟩) hw
   obtain ⟨ρ6, f6, v6, hw⟩ := wp_zipWords (fun j hj => ⟨by omega, by omega⟩) hw
   obtain ⟨ρ7, f7, v7, hw⟩ := wp_zipWords (fun j hj => ⟨by omega, by omega⟩) hw
   refine ⟨ρ7, fun x hx => ?_, fun j hj => ?_, hw⟩
@@ -411,6 +418,204 @@ theorem wp_bshufWords {k : Nat} (hk : k ≤ 8) (hw : wpOps (bshufWords k) ρ σ 
   · simp (disch := omega) only [g9, g8, g7, g6, g5, g4, g3, g2, f1, set_ne]
   · simp (disch := omega) only [u9, u8, u7, u6, u5, u4, u3, u2, g8, g7, g6, g5, g4, g3, g2, v1,
       f1, set_ne]
+
+/-! ## SHA-256 -/
+
+/-- The values `k` up hold the ten constants of `sigLanes r1 r2 s`. -/
+def SigConsts (ρ : Env) (k : Nat) (r1 r2 s : BitVec 8) : Prop :=
+  ρ k = rorCount r1 ∧ ρ (k + 1) = dup32 (0xffffffff#32 >>> rorCount r1) ∧
+  ρ (k + 2) = 32#64 - rorCount r1 ∧
+  ρ (k + 3) = dup32 (0xffffffff#32 <<< (32#64 - rorCount r1)) ∧
+  ρ (k + 4) = rorCount r2 ∧ ρ (k + 5) = dup32 (0xffffffff#32 >>> rorCount r2) ∧
+  ρ (k + 6) = 32#64 - rorCount r2 ∧
+  ρ (k + 7) = dup32 (0xffffffff#32 <<< (32#64 - rorCount r2)) ∧
+  ρ (k + 8) = s.zeroExtend 64 ∧ ρ (k + 9) = dup32 (0xffffffff#32 >>> s)
+
+/-- The constants of a mixing of lanes are in the values `k` up, and no other value is
+set. -/
+theorem wp_sigConsts {k : Nat} {r1 r2 s : BitVec 8} (hw : wpOps (sigConsts k r1 r2 s) ρ σ Q) :
+    ∃ ρ', (∀ y : Nat, ¬ (k ≤ y ∧ y < k + 10) → ρ' y = ρ y) ∧
+      SigConsts ρ' k r1 r2 s ∧ Q ρ' σ := by
+  simp only [sigConsts, wpOps, Op.wp] at hw
+  refine ⟨_, fun y hy => ?_, ?_, hw⟩
+  · simp (disch := omega) only [set_ne]
+  · unfold SigConsts
+    simp (disch := omega) only [set_ne, Env.set_same, and_self]
+
+/-- The mixing of lanes and the addition set the value `d` to the value `a` plus, lane by
+lane, `sigLanes` of the value `x`, and no other value outside `n` to `n + 13`. -/
+theorem wp_sigOps {n k x d a : Nat} (r1 r2 s : BitVec 8) (hk : k + 10 ≤ n)
+    (hx : ¬ (n ≤ x ∧ x < n + 14)) (ha : ¬ (n ≤ a ∧ a < n + 14)) (hd : n + 14 ≤ d)
+    (hc : SigConsts ρ k r1 r2 s) (hw : wpOps (sigOps n k x d a) ρ σ Q) :
+    ∃ ρ', (∀ y : Nat, ¬ (n ≤ y ∧ y < n + 14) → y ≠ d → ρ' y = ρ y) ∧
+      ρ' d = (BinOp.lanes 32 .add).eval (ρ a) (sigLanes r1 r2 s (ρ x)) ∧ Q ρ' σ := by
+  obtain ⟨c0, c1, c2, c3, c4, c5, c6, c7, c8, c9⟩ := hc
+  simp only [sigOps, wpOps, Op.wp] at hw
+  refine ⟨_, fun y hy hy' => ?_, ?_, hw⟩
+  · simp (disch := omega) only [set_ne]
+  · simp (disch := omega) only [set_ne, Env.set_same, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9,
+      BinOp.eval_or, BinOp.eval_and, BinOp.eval_xor, BinOp.eval_shl, BinOp.eval_lshr]
+    rfl
+
+/-- The join sets the value `n + 3` to the high half of the value `x` below the low half of
+the value `y`, and no value outside `n` to `n + 3`. -/
+theorem wp_joinOps {n x y : Nat} (hx : x < n) (hy : y < n) (hw : wpOps (joinOps n x y) ρ σ Q) :
+    ∃ ρ', (∀ z : Nat, ¬ (n ≤ z ∧ z < n + 4) → ρ' z = ρ z) ∧
+      ρ' (n + 3) = ρ x >>> 32#64 ||| ρ y <<< 32#64 ∧ Q ρ' σ := by
+  simp only [joinOps, wpOps, Op.wp] at hw
+  refine ⟨_, fun z hz => ?_, ?_, hw⟩
+  · simp (disch := omega) only [set_ne]
+  · simp (disch := omega) only [set_ne, Env.set_same, BinOp.eval_or, BinOp.eval_shl,
+      BinOp.eval_lshr]
+
+/-- A round sets the value `n + 25` to `rndA` and the value `n + 26` to `rndE` of the values
+it is given, and no value below `n`. -/
+theorem wp_rndOps {n a b c d e f g h k : Nat} (hn : 89 ≤ n)
+    (hin : a < n ∧ b < n ∧ c < n ∧ d < n ∧ e < n ∧ f < n ∧ g < n ∧ h < n ∧ k < n)
+    (hc : ρ 81 = 32#64 ∧ ρ 82 = 6#64 ∧ ρ 83 = 11#64 ∧ ρ 84 = 25#64 ∧ ρ 85 = 2#64 ∧
+      ρ 86 = 13#64 ∧ ρ 87 = 22#64)
+    (hw : wpOps (rndOps n a b c d e f g h k) ρ σ Q) :
+    ∃ ρ', (∀ y : Nat, y < n → ρ' y = ρ y) ∧
+      ρ' (n + 25) = rndA (ρ a) (ρ b) (ρ c) (ρ e) (ρ f) (ρ g) (ρ h) (ρ k) ∧
+      ρ' (n + 26) = rndE (ρ d) (ρ e) (ρ f) (ρ g) (ρ h) (ρ k) ∧ Q ρ' σ := by
+  obtain ⟨c1, c2, c3, c4, c5, c6, c7⟩ := hc
+  obtain ⟨ha, hb, hc, hd, he, hf, hg, hh, hk⟩ := hin
+  simp only [rndOps, wpOps, Op.wp] at hw
+  refine ⟨_, fun y hy => ?_, ?_, ?_, hw⟩
+  · simp (disch := omega) only [set_ne]
+  · simp (disch := omega) only [set_ne, Env.set_same, c1, c2, c3, c4, c5, c6, c7,
+      BinOp.eval_or, BinOp.eval_and, BinOp.eval_xor, BinOp.eval_shl, BinOp.eval_lshr,
+      BinOp.eval_add]
+    rfl
+  · simp (disch := omega) only [set_ne, Env.set_same, c1, c2, c3, c4, c5, c6, c7,
+      BinOp.eval_or, BinOp.eval_and, BinOp.eval_xor, BinOp.eval_shl, BinOp.eval_lshr,
+      BinOp.eval_add]
+    rfl
+
+/-- What the two rounds start from. -/
+theorem wp_rnds2Pre (hw : wpOps rnds2Pre ρ σ Q) :
+    ∃ ρ', Agree 80 ρ ρ' ∧ ρ' 80 = σ.regs (vecReg .mm0 0) ∧
+      (ρ' 81 = 32#64 ∧ ρ' 82 = 6#64 ∧ ρ' 83 = 11#64 ∧ ρ' 84 = 25#64 ∧ ρ' 85 = 2#64 ∧
+        ρ' 86 = 13#64 ∧ ρ' 87 = 22#64) ∧ ρ' 88 = 0xffffffff#64 ∧
+      ρ' 90 = ρ 0 >>> 32#64 ∧ ρ' 91 = ρ 40 >>> 32#64 ∧ ρ' 92 = ρ 1 >>> 32#64 ∧
+      ρ' 93 = ρ 41 >>> 32#64 ∧ ρ' 94 = σ.regs (vecReg .mm0 0) >>> 32#64 ∧ Q ρ' σ := by
+  simp only [rnds2Pre, wpOps, Op.wp] at hw
+  refine ⟨_, fun y hy => ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hw⟩
+  · simp (disch := omega) only [set_ne]
+  all_goals simp (disch := omega) only [set_ne, Env.set_same, BinOp.eval_lshr, and_self]
+
+theorem wp_rnds2Mask (hw : wpOps rnds2Mask ρ σ Q) :
+    ∃ ρ', (∀ y : Nat, y ≠ 123 → y ≠ 124 → ρ' y = ρ y) ∧
+      ρ' 123 = ρ 121 &&& ρ 88 ∧ ρ' 124 = ρ 122 &&& ρ 88 ∧ Q ρ' σ := by
+  simp only [rnds2Mask, wpOps, Op.wp] at hw
+  refine ⟨_, fun y h1 h2 => ?_, ?_, ?_, hw⟩
+  all_goals simp (disch := omega) only [set_ne, Env.set_same, BinOp.eval_and]
+
+theorem wp_rnds2Pack (hw : wpOps rnds2Pack ρ σ Q) :
+    ∃ ρ', Agree 155 ρ ρ' ∧ ρ' 200 = ρ 124 ||| ρ 154 <<< ρ 81 ∧
+      ρ' 201 = ρ 123 ||| ρ 153 <<< ρ 81 ∧
+      (∀ y : Nat, 202 ≤ y → ρ' y = ρ y) ∧ Q ρ' σ := by
+  simp only [rnds2Pack, wpOps, Op.wp] at hw
+  refine ⟨_, fun y hy => ?_, ?_, ?_, fun y hy => ?_, hw⟩
+  all_goals simp (disch := omega) only [set_ne, Env.set_same, BinOp.eval_or, BinOp.eval_shl]
+
+/-- The operations of `sha256msg2` set the values 200 and 201 to `msg2Lo` and `msg2Hi`, and
+the `k` values after them to zero. -/
+theorem wp_msg2Words {k : Nat} (hw : wpOps (msg2Words k) ρ σ Q) :
+    ∃ ρ', Agree 80 ρ ρ' ∧ ρ' 200 = msg2Lo (ρ 40) (ρ 1) ∧
+      ρ' 201 = msg2Hi (ρ 41) (msg2Lo (ρ 40) (ρ 1)) ∧
+      (∀ j, j < k → ρ' (202 + j) = 0#64) ∧ Q ρ' σ := by
+  simp only [msg2Words, Braid.wpOps_append] at hw
+  obtain ⟨ρ0, f0, hc, hw⟩ := wp_sigConsts hw
+  obtain ⟨ρ1, f1, v1, hw⟩ := wp_sigOps 17 19 10 (by omega) (by omega) (by omega) (by omega)
+    hc hw
+  obtain ⟨c0, c1, c2, c3, c4, c5, c6, c7, c8, c9⟩ := hc
+  obtain ⟨ρ2, f2, v2, hw⟩ := wp_sigOps 17 19 10 (by omega) (by omega) (by omega) (by omega)
+    (by unfold SigConsts
+        simp (disch := omega) only [f1, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, and_self]) hw
+  obtain ⟨ρ3, f3, v3, hw⟩ := wp_constWords hw
+  refine ⟨ρ3, fun x hx => ?_, ?_, ?_, v3, hw⟩
+  · simp (disch := omega) only [f3, f2, f1, f0]
+  · simp (disch := omega) only [f3, f2, f0, v1]
+    rfl
+  · simp (disch := omega) only [f3, f1, f0, v2, v1]
+    rfl
+
+/-- The operations of `sha256msg1` set the values 200 and 201 to `msg1Lo` and `msg1Hi`, and
+the `k` values after them to zero. -/
+theorem wp_msg1Words {k : Nat} (hw : wpOps (msg1Words k) ρ σ Q) :
+    ∃ ρ', Agree 80 ρ ρ' ∧ ρ' 200 = msg1Lo (ρ 40) (ρ 41) ∧
+      ρ' 201 = msg1Hi (ρ 41) (ρ 0) ∧ (∀ j, j < k → ρ' (202 + j) = 0#64) ∧ Q ρ' σ := by
+  simp only [msg1Words, Braid.wpOps_append] at hw
+  obtain ⟨ρ0, f0, hc, hw⟩ := wp_sigConsts hw
+  obtain ⟨c0, c1, c2, c3, c4, c5, c6, c7, c8, c9⟩ := hc
+  obtain ⟨ρ1, f1, v1, hw⟩ := wp_joinOps (by omega) (by omega) hw
+  simp only [Nat.reduceAdd] at v1
+  obtain ⟨ρ2, f2, v2, hw⟩ := wp_sigOps 7 18 3 (by omega) (by omega) (by omega) (by omega)
+    (by unfold SigConsts
+        simp (disch := omega) only [f1, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, and_self]) hw
+  obtain ⟨ρ3, f3, v3, hw⟩ := wp_joinOps (by omega) (by omega) hw
+  simp only [Nat.reduceAdd] at v3
+  obtain ⟨ρ4, f4, v4, hw⟩ := wp_sigOps 7 18 3 (by omega) (by omega) (by omega) (by omega)
+    (by unfold SigConsts
+        simp (disch := omega) only [f3, f2, f1, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9,
+          and_self]) hw
+  obtain ⟨ρ5, f5, v5, hw⟩ := wp_constWords hw
+  refine ⟨ρ5, fun x hx => ?_, ?_, ?_, v5, hw⟩
+  · simp (disch := omega) only [f5, f4, f3, f2, f1, f0]
+  · simp (disch := omega) only [f5, f4, f3, f1, f0, v2, v1]
+    rfl
+  · simp (disch := omega) only [f5, f3, f2, f1, f0, v4, v3]
+    rfl
+
+/-- The operations of `sha256rnds2` set the values 200 and 201 to `rnds2Lo` and `rnds2Hi`,
+and the `k` values after them to zero. -/
+theorem wp_rnds2Words {k : Nat} (hw : wpOps (rnds2Words k) ρ σ Q) :
+    ∃ ρ', Agree 80 ρ ρ' ∧
+      ρ' 200 = rnds2Lo (ρ 0) (ρ 40) (ρ 41) (σ.regs (vecReg .mm0 0)) ∧
+      ρ' 201 = rnds2Hi (ρ 0) (ρ 1) (ρ 40) (ρ 41) (σ.regs (vecReg .mm0 0)) ∧
+      (∀ j, j < k → ρ' (202 + j) = 0#64) ∧ Q ρ' σ := by
+  simp only [rnds2Words, Braid.wpOps_append] at hw
+  obtain ⟨ρ0, f0, hk0, hc, hm, h90, h91, h92, h93, h94, hw⟩ := wp_rnds2Pre hw
+  obtain ⟨ρ1, f1, va1, ve1, hw⟩ := wp_rndOps (by omega)
+    ⟨by omega, by omega, by omega, by omega, by omega, by omega, by omega, by omega, by omega⟩
+    hc hw
+  simp only [Nat.reduceAdd] at va1 ve1
+  obtain ⟨ρ2, f2, va2, ve2, hw⟩ := wp_rnds2Mask hw
+  obtain ⟨c1, c2, c3, c4, c5, c6, c7⟩ := hc
+  obtain ⟨ρ3, f3, va3, ve3, hw⟩ := wp_rndOps (by omega)
+    ⟨by omega, by omega, by omega, by omega, by omega, by omega, by omega, by omega, by omega⟩
+    (by simp (disch := omega) only [f2, f1, c1, c2, c3, c4, c5, c6, c7, and_self]) hw
+  simp only [Nat.reduceAdd] at va3 ve3
+  obtain ⟨ρ4, f4, v0, v1, f4', hw⟩ := wp_rnds2Pack hw
+  obtain ⟨ρ5, f5, v5, hw⟩ := wp_constWords hw
+  have e0 : ρ0 0 = ρ 0 := f0 0 (by omega)
+  have e1 : ρ0 1 = ρ 1 := f0 1 (by omega)
+  have e40 : ρ0 40 = ρ 40 := f0 40 (by omega)
+  have e41 : ρ0 41 = ρ 41 := f0 41 (by omega)
+  refine ⟨ρ5, fun x hx => ?_, ?_, ?_, v5, hw⟩
+  · rw [f5 x (by omega), f4 x (by omega), f3 x (by omega), f2 x (by omega) (by omega),
+      f1 x (by omega)]
+    exact f0 x hx
+  · simp (disch := omega) only [f5, v0, f3, ve3, ve2, f2, f1, ve1, c1, hm, hk0, h90, h91, h93,
+      h94, e0, e40, e41]
+    rfl
+  · simp (disch := omega) only [f5, v1, f3, va3, va2, ve2, f2, f1, va1, ve1, c1, hm, hk0, h90,
+      h91, h92, h93, h94, e0, e1, e40, e41]
+    rfl
+
+/-- The values 200 up hold the words of a 128-bit result widened to the operation width:
+its two words, and zero above them. -/
+theorem vecWord_widen {w : AvxWidth} (r : BitVec 128) {ρ : Env} (h0 : ρ 200 = vecWord r 0)
+    (h1 : ρ 201 = vecWord r 1) (hz : ∀ j, j < vecWords w - 2 → ρ (202 + j) = 0#64) (j : Nat)
+    (hj : j < vecWords w) : ρ (200 + j) = vecWord (r.setWidth w.bits) j := by
+  have hbits : w.bits = 64 * vecWords w := by cases w <;> rfl
+  match j with
+  | 0 => rw [vecWord_setWidth _ (by omega)]; exact h0
+  | 1 => rw [vecWord_setWidth _ (by omega)]; exact h1
+  | j + 2 =>
+    rw [vecWord_setWidth_zero _ (by omega), show 200 + (j + 2) = 202 + j by omega]
+    exact hz j (by omega)
 
 theorem wp_loadWords {n a t k : Nat} (hn : n + k ≤ a) (ha : a < t)
     (hw : wpOps (loadWords n a t k) ρ σ Q) :
@@ -857,6 +1062,83 @@ theorem pshufb_sound {w : AvxWidth} (dst src : AvxRegOrMem w) :
   rw [hv j hj, hag2 (0 + j) (by omega), hm j hj, ha _ (by omega), ha _ (by omega),
     vecWord_shuffleBytes _ _ _ (by omega)]
 
+theorem sha256msg1_sound {w : AvxWidth} (dst src : AvxRegOrMem w) :
+    AvxSound p (.sha256msg1 dst src) := by
+  intro s σ ρ Q ops h hl hw
+  simp only [lowerAvx, Option.some.injEq] at hl
+  subst hl
+  have hw2 : 2 ≤ vecWords w := by cases w <;> decide
+  have hw8 : vecWords w ≤ 8 := by cases w <;> decide
+  simp only [Braid.wpOps_append] at hw
+  simp only [AvxOperation.interp]
+  refine readVec_sound h hw fun x ρ1 _ hx hw => ?_
+  refine readVec_sound h hw fun y ρ2 hag2 hy hw => ?_
+  obtain ⟨ρ3, _, h0, h1, hz, hw⟩ := wp_msg1Words hw
+  have e0 : ρ2 40 = vecWord y 0 := hy 0 (by omega)
+  have e1 : ρ2 41 = vecWord y 1 := hy 1 (by omega)
+  have e2 : ρ2 0 = vecWord x 0 := (hag2 0 (by omega)).trans (hx 0 (by omega))
+  refine writeVec_sound (legacy := true)
+    (val := (Sha256.msg1 (y.setWidth 128) (x.setWidth 128)).setWidth _) h
+    (vecWord_widen _ ?_ ?_ hz) (by decide) hw fun s' ρ4 σ' _ h' hq => done_sound h' hq
+  · rw [h0, vecWord_msg1_zero, vecWord_setWidth _ (by decide), vecWord_setWidth _ (by decide),
+      e0, e1]
+  · rw [h1, vecWord_msg1_one, vecWord_setWidth _ (by decide), vecWord_setWidth _ (by decide),
+      e1, e2]
+
+theorem sha256msg2_sound {w : AvxWidth} (dst src : AvxRegOrMem w) :
+    AvxSound p (.sha256msg2 dst src) := by
+  intro s σ ρ Q ops h hl hw
+  simp only [lowerAvx, Option.some.injEq] at hl
+  subst hl
+  have hw2 : 2 ≤ vecWords w := by cases w <;> decide
+  have hw8 : vecWords w ≤ 8 := by cases w <;> decide
+  simp only [Braid.wpOps_append] at hw
+  simp only [AvxOperation.interp]
+  refine readVec_sound h hw fun x ρ1 _ hx hw => ?_
+  refine readVec_sound h hw fun y ρ2 hag2 hy hw => ?_
+  obtain ⟨ρ3, _, h0, h1, hz, hw⟩ := wp_msg2Words hw
+  have e0 : ρ2 40 = vecWord y 0 := hy 0 (by omega)
+  have e1 : ρ2 41 = vecWord y 1 := hy 1 (by omega)
+  have e2 : ρ2 1 = vecWord x 1 := (hag2 1 (by omega)).trans (hx 1 (by omega))
+  refine writeVec_sound (legacy := true)
+    (val := (Sha256.msg2 (y.setWidth 128) (x.setWidth 128)).setWidth _) h
+    (vecWord_widen _ ?_ ?_ hz) (by decide) hw fun s' ρ4 σ' _ h' hq => done_sound h' hq
+  · rw [h0, vecWord_msg2_zero, vecWord_setWidth _ (by decide), vecWord_setWidth _ (by decide),
+      e0, e2]
+  · rw [h1, vecWord_msg2_one, vecWord_setWidth _ (by decide), vecWord_setWidth _ (by decide),
+      vecWord_setWidth _ (by decide), e0, e1, e2]
+
+theorem sha256rnds2_sound {w : AvxWidth} (dst src : AvxRegOrMem w) :
+    AvxSound p (.sha256rnds2 dst src) := by
+  intro s σ ρ Q ops h hl hw
+  simp only [lowerAvx, Option.some.injEq] at hl
+  subst hl
+  have hw2 : 2 ≤ vecWords w := by cases w <;> decide
+  have hw8 : vecWords w ≤ 8 := by cases w <;> decide
+  simp only [Braid.wpOps_append] at hw
+  simp only [AvxOperation.interp]
+  refine readVec_sound h hw fun x ρ1 _ hx hw => ?_
+  refine readVec_sound h hw fun y ρ2 hag2 hy hw => ?_
+  obtain ⟨ρ3, _, h0, h1, hz, hw⟩ := wp_rnds2Words hw
+  have e0 : ρ2 40 = vecWord y 0 := hy 0 (by omega)
+  have e1 : ρ2 41 = vecWord y 1 := hy 1 (by omega)
+  have e2 : ρ2 0 = vecWord x 0 := (hag2 0 (by omega)).trans (hx 0 (by omega))
+  have e3 : ρ2 1 = vecWord x 1 := (hag2 1 (by omega)).trans (hx 1 (by omega))
+  have ek : σ.regs (vecReg .mm0 0) = vecWord (s.zmms.get (AvxReg.xmm .mm0)) 0 := by
+    simp only [RegZmms.get]
+    rw [vecWord_take _ (by decide)]
+    exact h.vec .mm0 0 (by decide)
+  obtain ⟨r0, r1⟩ := vecWord_rounds2 (y.setWidth 128) (x.setWidth 128)
+    (s.zmms.get (AvxReg.xmm .mm0))
+  refine writeVec_sound (legacy := true)
+    (val := (Sha256.rounds2 (y.setWidth 128) (x.setWidth 128)
+      (s.zmms.get (AvxReg.xmm .mm0))).setWidth _) h
+    (vecWord_widen _ ?_ ?_ hz) (by decide) hw fun s' ρ4 σ' _ h' hq => done_sound h' hq
+  · rw [h0, r0, vecWord_setWidth _ (by decide), vecWord_setWidth _ (by decide),
+      vecWord_setWidth _ (by decide), e0, e1, e2, ek]
+  · rw [h1, r1, vecWord_setWidth _ (by decide), vecWord_setWidth _ (by decide),
+      vecWord_setWidth _ (by decide), vecWord_setWidth _ (by decide), e0, e1, e2, e3, ek]
+
 theorem vmovq_sound {w : AvxWidth} (dst src : AvxReg w) : AvxSound p (.vmovq dst src) := by
   intro s σ ρ Q ops h hl hw
   simp only [lowerAvx, Option.some.injEq] at hl
@@ -946,6 +1228,9 @@ theorem lowerAvx_sound {w : AvxWidth} (i : AvxOperation w) : AvxSound p i := by
   case pblendw dst src imm => exact pblendw_sound dst src imm
   case palignr dst src imm => exact palignr_sound dst src imm
   case pshufb dst src => exact pshufb_sound dst src
+  case sha256msg1 dst src => exact sha256msg1_sound dst src
+  case sha256msg2 dst src => exact sha256msg2_sound dst src
+  case sha256rnds2 dst src => exact sha256rnds2_sound dst src
   case vmovq dst src => exact vmovq_sound dst src
   case vmovIn n dst src => exact vmovIn_sound n dst src
   case vmovOut n dst src => exact vmovOut_sound n dst src

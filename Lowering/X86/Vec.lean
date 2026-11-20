@@ -24,6 +24,8 @@
   * `vecWord_ternaryLogic`, `ternaryLogic_eq_ternLanes`: a bitwise function by its truth table
   * `vecWord_shuffleDwords`, `vecWord_shuffleBytes`: shuffles of 32-bit lanes and of bytes
   * `vecWord_blendWords`, `vecWord_alignBytes`: a blend of 16-bit lanes, a shift of bytes
+  * `vecWord_msg1_zero`, `vecWord_msg1_one`, `vecWord_msg2_zero`, `vecWord_msg2_one`,
+    `vecWord_rounds2`: the two words of each SHA-256 instruction
 -/
 
 module
@@ -1007,5 +1009,151 @@ theorem vecWord_shuffleBytes {n : Nat} (a m : BitVec n) (j : Nat)
   generalize vecWord a (2 * (j / 2)) >>> bshufCount (vecWord m j) 7 |||
     vecWord a (2 * (j / 2) + 1) >>> (bshufCount (vecWord m j) 7 - 64#64) = x7
   bv_decide
+
+/-! ## SHA-256 -/
+
+theorem lane_even {n : Nat} (v : BitVec n) (j : Nat) :
+    v.lane 32 (2 * j) = (vecWord v j).setWidth 32 := by
+  rw [BitVec.lane, ← vecWord_low]
+  generalize vecWord v j = x
+  bv_decide
+
+theorem lane_odd {n : Nat} (v : BitVec n) (j : Nat) :
+    v.lane 32 (2 * j + 1) = (vecWord v j >>> 32#64).setWidth 32 := by
+  rw [BitVec.lane, ← vecWord_high]
+  generalize vecWord v j = x
+  bv_decide
+
+/-- A word of the vector of given 32-bit lanes is two of them. -/
+theorem vecWord_ofLanes32 (w : Nat) (f : Nat → BitVec 32) (j : Nat) (hj : 64 * (j + 1) ≤ w) :
+    vecWord (BitVec.ofLanes w 32 f) j = f (2 * j + 1) ++ f (2 * j) := by
+  rw [vecWord_lanes, lane_ofLanes _ _ (by decide) _ _ (by omega),
+    lane_ofLanes _ _ (by decide) _ _ (by omega)]
+
+/-- The low word of the model's `sha256msg1` is `msg1Lo` of the words of the destination. -/
+theorem vecWord_msg1_zero (d s : BitVec 128) :
+    vecWord (Sha256.msg1 d s) 0 = msg1Lo (vecWord d 0) (vecWord d 1) := by
+  have h0 : d.lane 32 0 = (vecWord d 0).setWidth 32 := lane_even d 0
+  have h1 : d.lane 32 1 = (vecWord d 0 >>> 32#64).setWidth 32 := lane_odd d 0
+  have h2 : d.lane 32 2 = (vecWord d 1).setWidth 32 := lane_even d 1
+  rw [Sha256.msg1, vecWord_ofLanes32 _ _ _ (by decide)]
+  simp only [Nat.reduceMul, Nat.reduceAdd, Nat.reduceLT, ↓reduceIte, h0, h1, h2, msg1Lo,
+    eval_lanes_add, sigLanes, rorLanes, rorCount, shrLanes, dup32, Sha256.σ₀]
+  generalize vecWord d 0 = x
+  generalize vecWord d 1 = y
+  bv_decide
+
+/-- The high word of the model's `sha256msg1` is `msg1Hi` of the high word of the destination
+and the low word of the source. -/
+theorem vecWord_msg1_one (d s : BitVec 128) :
+    vecWord (Sha256.msg1 d s) 1 = msg1Hi (vecWord d 1) (vecWord s 0) := by
+  have h2 : d.lane 32 2 = (vecWord d 1).setWidth 32 := lane_even d 1
+  have h3 : d.lane 32 3 = (vecWord d 1 >>> 32#64).setWidth 32 := lane_odd d 1
+  have h4 : s.lane 32 0 = (vecWord s 0).setWidth 32 := lane_even s 0
+  rw [Sha256.msg1, vecWord_ofLanes32 _ _ _ (by decide)]
+  simp only [Nat.reduceMul, Nat.reduceAdd, Nat.reduceLT, ↓reduceIte, Nat.lt_irrefl, h2, h3, h4,
+    msg1Hi, eval_lanes_add, sigLanes, rorLanes, rorCount, shrLanes, dup32, Sha256.σ₀]
+  generalize vecWord d 1 = x
+  generalize vecWord s 0 = y
+  bv_decide
+
+/-- The low word of the model's `sha256msg2` is `msg2Lo` of the low word of the destination
+and the high word of the source. -/
+theorem vecWord_msg2_zero (d s : BitVec 128) :
+    vecWord (Sha256.msg2 d s) 0 = msg2Lo (vecWord d 0) (vecWord s 1) := by
+  have h0 : d.lane 32 0 = (vecWord d 0).setWidth 32 := lane_even d 0
+  have h1 : d.lane 32 1 = (vecWord d 0 >>> 32#64).setWidth 32 := lane_odd d 0
+  have h2 : s.lane 32 2 = (vecWord s 1).setWidth 32 := lane_even s 1
+  have h3 : s.lane 32 3 = (vecWord s 1 >>> 32#64).setWidth 32 := lane_odd s 1
+  rw [Sha256.msg2, vecWord_ofLanes32 _ _ _ (by decide)]
+  simp only [Nat.reduceMul, Nat.reduceAdd, h0, h1, h2, h3, msg2Lo,
+    eval_lanes_add, sigLanes, rorLanes, rorCount, shrLanes, dup32, Sha256.σ₁]
+  generalize vecWord d 0 = x
+  generalize vecWord s 1 = y
+  bv_decide
+
+/-- The high word of the model's `sha256msg2` is `msg2Hi` of the high word of the destination
+and the low word of the result. -/
+theorem vecWord_msg2_one (d s : BitVec 128) :
+    vecWord (Sha256.msg2 d s) 1 =
+      msg2Hi (vecWord d 1) (msg2Lo (vecWord d 0) (vecWord s 1)) := by
+  have h0 : d.lane 32 0 = (vecWord d 0).setWidth 32 := lane_even d 0
+  have h1 : d.lane 32 1 = (vecWord d 0 >>> 32#64).setWidth 32 := lane_odd d 0
+  have h2 : s.lane 32 2 = (vecWord s 1).setWidth 32 := lane_even s 1
+  have h3 : s.lane 32 3 = (vecWord s 1 >>> 32#64).setWidth 32 := lane_odd s 1
+  have h4 : d.lane 32 2 = (vecWord d 1).setWidth 32 := lane_even d 1
+  have h5 : d.lane 32 3 = (vecWord d 1 >>> 32#64).setWidth 32 := lane_odd d 1
+  rw [Sha256.msg2, vecWord_ofLanes32 _ _ _ (by decide)]
+  simp only [Nat.reduceMul, Nat.reduceAdd, h0, h1, h2, h3, h4, h5, msg2Hi, msg2Lo,
+    eval_lanes_add, sigLanes, rorLanes, rorCount, shrLanes, dup32, Sha256.σ₁]
+  generalize vecWord d 0 = x
+  generalize vecWord d 1 = z
+  generalize vecWord s 1 = y
+  bv_decide
+
+/-- A round of the model, of working words that are the low halves of words, is `rndA` and
+`rndE` in the low half. The first and the fifth working word must be below `2 ^ 32`. -/
+theorem round_eq (a b c d e f g h k : Word) (ha : a >>> 32#64 = 0#64)
+    (he : e >>> 32#64 = 0#64) :
+    Sha256.State.round ⟨a.setWidth 32, b.setWidth 32, c.setWidth 32, d.setWidth 32,
+        e.setWidth 32, f.setWidth 32, g.setWidth 32, h.setWidth 32⟩ (k.setWidth 32) =
+      ⟨(rndA a b c e f g h k &&& 0xffffffff#64).setWidth 32, a.setWidth 32, b.setWidth 32,
+        c.setWidth 32, (rndE d e f g h k &&& 0xffffffff#64).setWidth 32, e.setWidth 32,
+        f.setWidth 32, g.setWidth 32⟩ := by
+  simp only [Sha256.State.round, Sha256.ch, Sha256.maj, Sha256.«Σ₀», Sha256.«Σ₁», rndA,
+    rndE, rndT, bigSig, dupLo, Sha256.State.mk.injEq, and_true, true_and]
+  constructor <;> bv_decide
+
+theorem rnds2A_lt (x0 x1 y0 y1 k : Word) : rnds2A x0 x1 y0 y1 k >>> 32#64 = 0#64 := by
+  rw [rnds2A]
+  generalize rndA _ _ _ _ _ _ _ _ = t
+  bv_decide
+
+theorem rnds2E_lt (x0 y0 y1 k : Word) : rnds2E x0 y0 y1 k >>> 32#64 = 0#64 := by
+  rw [rnds2E]
+  generalize rndE _ _ _ _ _ _ = t
+  bv_decide
+
+/-- The words of the model's `sha256rnds2` are `rnds2Lo` and `rnds2Hi` of the words of the
+source `x`, the destination `y` and the low word of `k`. -/
+theorem vecWord_rounds2 (y x k : BitVec 128) :
+    vecWord (Sha256.rounds2 y x k) 0 =
+        rnds2Lo (vecWord x 0) (vecWord y 0) (vecWord y 1) (vecWord k 0) ∧
+      vecWord (Sha256.rounds2 y x k) 1 =
+        rnds2Hi (vecWord x 0) (vecWord x 1) (vecWord y 0) (vecWord y 1) (vecWord k 0) := by
+  have hx0 : x.lane 32 0 = (vecWord x 0).setWidth 32 := lane_even x 0
+  have hx1 : x.lane 32 1 = (vecWord x 0 >>> 32#64).setWidth 32 := lane_odd x 0
+  have hx2 : x.lane 32 2 = (vecWord x 1).setWidth 32 := lane_even x 1
+  have hx3 : x.lane 32 3 = (vecWord x 1 >>> 32#64).setWidth 32 := lane_odd x 1
+  have hy0 : y.lane 32 0 = (vecWord y 0).setWidth 32 := lane_even y 0
+  have hy1 : y.lane 32 1 = (vecWord y 0 >>> 32#64).setWidth 32 := lane_odd y 0
+  have hy2 : y.lane 32 2 = (vecWord y 1).setWidth 32 := lane_even y 1
+  have hy3 : y.lane 32 3 = (vecWord y 1 >>> 32#64).setWidth 32 := lane_odd y 1
+  have hk0 : k.lane 32 0 = (vecWord k 0).setWidth 32 := lane_even k 0
+  have hk1 : k.lane 32 1 = (vecWord k 0 >>> 32#64).setWidth 32 := lane_odd k 0
+  generalize vecWord x 0 = x0 at *
+  generalize vecWord x 1 = x1 at *
+  generalize vecWord y 0 = y0 at *
+  generalize vecWord y 1 = y1 at *
+  generalize vecWord k 0 = k0 at *
+  have r1 := round_eq (x1 >>> 32#64) x1 (y1 >>> 32#64) y1 (x0 >>> 32#64) x0 (y0 >>> 32#64) y0
+    k0 (by bv_decide) (by bv_decide)
+  have r2 := round_eq (rnds2A x0 x1 y0 y1 k0) (x1 >>> 32#64) x1 (y1 >>> 32#64)
+    (rnds2E x0 y0 y1 k0) (x0 >>> 32#64) x0 (y0 >>> 32#64) (k0 >>> 32#64)
+    (rnds2A_lt _ _ _ _ _) (rnds2E_lt _ _ _ _)
+  have ea : (rnds2A x0 x1 y0 y1 k0).setWidth 32 =
+      (rndA (x1 >>> 32#64) x1 (y1 >>> 32#64) (x0 >>> 32#64) x0 (y0 >>> 32#64) y0 k0 &&&
+        0xffffffff#64).setWidth 32 := rfl
+  have ee : (rnds2E x0 y0 y1 k0).setWidth 32 =
+      (rndE y1 (x0 >>> 32#64) x0 (y0 >>> 32#64) y0 k0 &&& 0xffffffff#64).setWidth 32 := rfl
+  rw [ea, ee] at r2
+  simp only [Sha256.rounds2, hx0, hx1, hx2, hx3, hy0, hy1, hy2, hy3, hk0, hk1, r1, r2]
+  rw [vecWord_ofLanes32 _ _ _ (by decide), vecWord_ofLanes32 _ _ _ (by decide)]
+  simp only [Nat.reduceMul, Nat.reduceAdd, rnds2Lo, rnds2Hi, rnds2A, rnds2E]
+  generalize rndE y1 _ _ _ _ _ = e1
+  generalize rndA (x1 >>> 32#64) _ _ _ _ _ _ _ = a1
+  generalize rndE _ _ _ _ _ _ = e2
+  generalize rndA _ _ _ _ _ _ _ _ = a2
+  constructor <;> bv_decide
 
 end Lowering.X86

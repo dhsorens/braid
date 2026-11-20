@@ -6,7 +6,8 @@
   labels are one for each word, lowest first. A vector register is words of `braid` state
   that are not general registers, so writing one leaves every address as it was. The
   operations between the read and the write of a rotation, a shift, a bitwise function, a
-  shuffle or a blend are constants and operations on words, which emit nothing.
+  shuffle, a blend or a SHA-256 instruction are constants and operations on words, which
+  emit nothing; `sha256rnds2` also reads a word of `xmm0`.
 
   ## Main definitions
 
@@ -79,6 +80,15 @@ theorem alignWords_quiet (n k : Nat) : (alignWords n k).all isQuiet = true := by
 
 theorem bshufWords_quiet (k : Nat) : (bshufWords k).all isQuiet = true := by
   simp [bshufWords, bshufByte, zipWords, constWords, isQuiet, BinOp.leaks]
+
+theorem msg1Words_quiet (k : Nat) : (msg1Words k).all isQuiet = true := by
+  simp [msg1Words, sigConsts, sigOps, joinOps, constWords, isQuiet, BinOp.leaks]
+
+theorem msg2Words_quiet (k : Nat) : (msg2Words k).all isQuiet = true := by
+  simp [msg2Words, sigConsts, sigOps, constWords, isQuiet, BinOp.leaks]
+
+theorem rnds2Words_quiet (k : Nat) : (rnds2Words k).all isQuiet = true := by
+  simp [rnds2Words, rnds2Pre, rndOps, rnds2Mask, rnds2Pack, constWords, isQuiet, BinOp.leaks]
 
 theorem alignOps_quiet (n a : Var) (bytes : Nat) (al : Bool) :
     (alignOps n a bytes al).all isQuiet = true := by
@@ -203,6 +213,9 @@ macro "x86_emits_vec" : tactic => `(tactic|
     | with_reducible exact Emits.quiet (blendWords_quiet _ _)
     | with_reducible exact Emits.quiet (alignWords_quiet _ _)
     | with_reducible exact Emits.quiet (bshufWords_quiet _)
+    | with_reducible exact Emits.quiet (msg1Words_quiet _)
+    | with_reducible exact Emits.quiet (msg2Words_quiet _)
+    | with_reducible exact Emits.quiet (rnds2Words_quiet _)
     | apply Emits.append
     | apply Emits.appendT
     | exact Emits.quiet (by rfl)
