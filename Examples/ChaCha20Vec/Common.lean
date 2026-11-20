@@ -26,8 +26,11 @@
     operations on words, on the lanes
   * `pack_shl16`, ..., `pack_shr25`: a shift of a word under the mask that clears what
     crossed from one lane into the other, as the shift of each lane
-  * `pack_ext`: the high lane of a word and the low lane of the next, as a word
-  * `rotl16_or`, `rotl12_add`, `rotl12_or`, ...: two shifts of a lane, as a rotation
+  * `pack_ext`, `pack_ext_mask`: the high lane of a word and the low lane of the next, as a
+    word
+  * `lanes_self_mask`: a word built from its own two lanes
+  * `rotl16_or`, `rotl12_add`, `rotl12_or`, `rotl12_or'`, ...: two shifts of a lane, as a
+    rotation
   * `memIs_pack`, `cells_packs`, `cells_packs_truncate`, `packs16`: 32-bit cells in memory,
     two to a 64-bit cell
   * `diagonals_eq_shift`: a diagonal round is a column round between two rotations of rows
@@ -126,6 +129,20 @@ theorem pack_ext (a b c d : W32) : pack a b >>> 32#64 ||| pack c d <<< 32#64 = p
   simp only [pack]
   bv_decide
 
+/-- The same, as code that builds a word a lane at a time writes it: the high lane of a
+word, moved down and masked, and the low lane of another, moved up. -/
+theorem pack_ext_mask (a b c d : W32) :
+    pack a b >>> 32#64 &&& 0xffffffff#64 ||| pack c d >>> 0#64 <<< 32#64 = pack b c := by
+  simp only [pack]
+  bv_decide
+
+/-- A word built a lane at a time from its own two lanes, each where it was, is the word:
+how the lanes of a row move when the row is rotated by two places, the two words changing
+places. -/
+theorem lanes_self_mask (x : Word) :
+    x >>> 0#64 &&& 0xffffffff#64 ||| x >>> 32#64 <<< 32#64 = x := by
+  bv_decide
+
 /-! ## Rotations of a lane -/
 
 /-- A rotation by 16, as two shifts and an or. -/
@@ -153,6 +170,17 @@ theorem rotl8_or (a : W32) : a <<< 8 ||| a >>> 24 = a.rotateLeft 8 := by
   bv_decide
 
 theorem rotl7_or (a : W32) : a <<< 7 ||| a >>> 25 = a.rotateLeft 7 := by
+  bv_decide
+
+/-- A rotation, as two shifts and an or, the shift to the right first: a rotation to the
+right by 20, 24 or 25. -/
+theorem rotl12_or' (a : W32) : a >>> 20 ||| a <<< 12 = a.rotateLeft 12 := by
+  bv_decide
+
+theorem rotl8_or' (a : W32) : a >>> 24 ||| a <<< 8 = a.rotateLeft 8 := by
+  bv_decide
+
+theorem rotl7_or' (a : W32) : a >>> 25 ||| a <<< 7 = a.rotateLeft 7 := by
   bv_decide
 
 /-! ## A state in memory -/
