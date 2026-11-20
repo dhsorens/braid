@@ -145,8 +145,7 @@ theorem block_step (msg : List (BitVec 8)) (b : Nat) (H : List W32) (ms : List W
       first
         | (rw [h1] at hbr; exact absurd hbr (by decide))
         | (simp only [blockLeak]
-           braid_norm
-           exact TripleT.done_split (by braid_split) (by braid_trace))
+           braid_done)
 
 /-! ## The loop over the blocks -/
 

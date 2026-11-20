@@ -70,12 +70,14 @@ trace that was called for. A run of some seventy labels or more is too long to g
 once: `braid_done_long` is for those. -/
 macro "braid_trace_find" : tactic =>
   `(tactic| first
-      | (simp only [List.append_assoc, List.cons_append, List.nil_append]; rfl)
+      | (simp only [List.append_assoc, List.cons_append, List.nil_append]
+         first | done | rfl)
       | exact (List.append_nil _).symm
       | rfl)
 
 /-- Finish a traced triple whose trace was left open by `braid_traced`: the symbolic state
-is the postcondition, and the trace to be found is the one the run has left. -/
+is the postcondition, and the trace to be found is the one the run has left. A traced
+triple whose trace is stated closes as it did, by the last two forms. -/
 macro_rules
   | `(tactic| braid_done) =>
     `(tactic| (braid_norm
@@ -83,7 +85,9 @@ macro_rules
                  | (refine TripleT.done_eq rfl ?_; braid_trace_find)
                  | (refine TripleT.done_split ?_ ?_
                     · braid_split; done
-                    · braid_trace_find)))
+                    · braid_trace_find)
+                 | exact TripleT.done_eq rfl (by braid_trace)
+                 | (refine TripleT.done_split ?_ (by braid_trace); braid_split; done)))
 
 /-- `braid_done` for a traced triple whose trace is to be found, when the symbolic state is
 the `n` atoms of the postcondition in another order and they are best taken out one at a

@@ -31,6 +31,8 @@
 
   * `roundKW_eq_roundS`: a round needs only the sum of its constant and its word
   * `slide4_eq`: the four new words of the schedule, written out
+  * `sig0_pack`, `sig1_pack`: the mixing of the two lanes of a word, written with shifts
+    under masks as both lowerings write it, is `σ₀` and `σ₁` in each lane
   * `rounds_eq_steps`: the 64 rounds are twelve steps and four more on the last window
   * `compress_eq_steps`: the compression function in those terms
   * `cells_w32_packs`, `cells4`, `cells8x8`: arrays of 32-bit words as 64-bit cells, read-only
@@ -44,6 +46,7 @@ module
 public import Examples.Sha256.Common
 public import Examples.ChaCha20Vec.Common
 import Iris.BI.DerivedLaws
+import Std.Tactic.BVDecide
 
 @[expose] public section
 
@@ -355,5 +358,30 @@ theorem cells_quad_at (w : Bool) (p a0 a1 : Word) (s : List W32) (i : Nat)
   rw [e0] at g0
   rw [e1] at g1
   rw [cells_pair_at w p a0 a1 (packs s) i (by omega) h0 h1, g0, g1]
+
+/-! ## The mixing of the schedule on two lanes -/
+
+/-- The mixing of a schedule step that both lowerings write, rotations and a shift of the two
+lanes of a word as shifts under masks, is `σ₀` in each lane. -/
+theorem sig0_pack (a b : W32) :
+    (pack a b >>> 7#64 &&& 0x01ffffff01ffffff#64 |||
+          pack a b <<< 25#64 &&& 0xfe000000fe000000#64) ^^^
+        (pack a b >>> 18#64 &&& 0x00003fff00003fff#64 |||
+          pack a b <<< 14#64 &&& 0xffffc000ffffc000#64) ^^^
+      pack a b >>> 3#64 &&& 0x1fffffff1fffffff#64 =
+      pack (smallSigma0 a) (smallSigma0 b) := by
+  simp only [pack, smallSigma0, ROTR, SHR]
+  bv_decide
+
+/-- The second mixing of a schedule step, written the same way, is `σ₁` in each lane. -/
+theorem sig1_pack (a b : W32) :
+    (pack a b >>> 17#64 &&& 0x00007fff00007fff#64 |||
+          pack a b <<< 15#64 &&& 0xffff8000ffff8000#64) ^^^
+        (pack a b >>> 19#64 &&& 0x00001fff00001fff#64 |||
+          pack a b <<< 13#64 &&& 0xffffe000ffffe000#64) ^^^
+      pack a b >>> 10#64 &&& 0x003fffff003fffff#64 =
+      pack (smallSigma1 a) (smallSigma1 b) := by
+  simp only [pack, smallSigma1, ROTR, SHR]
+  bv_decide
 
 end Examples.Sha256Ni

@@ -154,19 +154,31 @@ theorem forget_cells {as as' : Atoms} {p : Word} {vs : List Word} {k : Nat} {w :
 
 end TripleT
 
-/-- Forget the value of the cell of memory at an address: `braid_forget_mem a`. -/
+/-- Forget the value of the cell of memory at an address: `braid_forget_mem a`. The second
+form is for a goal with a trace still to be found (`Braid.Logic.Traced`), where a side
+condition written inside the term would wait for the trace. -/
 macro "braid_forget_mem " a:term : tactic =>
-  `(tactic| (refine TripleT.forget_mem (a := $a) (by braid_upd) ?_))
+  `(tactic| first
+      | refine TripleT.forget_mem (a := $a) (by braid_upd) ?_
+      | (apply TripleT.forget_mem (a := $a)
+         case hupd => braid_upd))
 
 /-- Name the value of the cell of memory at an address, which holds some value:
 `braid_name_mem a`. -/
 macro "braid_name_mem " a:term : tactic =>
-  `(tactic| (refine TripleT.mem_any (a := $a) (by braid_extract) ?_
-             intro _))
+  `(tactic| first
+      | (refine TripleT.mem_any (a := $a) (by braid_extract) ?_
+         intro _)
+      | (apply TripleT.mem_any (a := $a)
+         case hext => braid_extract
+         intro _))
 
 /-- Forget the contents of the array at an address, of a given number of cells, with a proof
 that it has that many: `braid_forget_cells p, n, h`. -/
 macro "braid_forget_cells " p:term ", " n:term ", " h:term : tactic =>
-  `(tactic| (refine TripleT.forget_cells (p := $p) $n (by braid_upd) $h ?_))
+  `(tactic| first
+      | refine TripleT.forget_cells (p := $p) $n (by braid_upd) $h ?_
+      | (apply TripleT.forget_cells (p := $p) $n (hn := $h)
+         case hupd => braid_upd))
 
 end Braid

@@ -65,19 +65,6 @@ local macro "name_regs" : tactic =>
              braid_name_reg 4; braid_name_reg 13; braid_name_reg 8; braid_name_reg 1
              braid_name_reg 12))
 
-/-- `braid_forget_mem`, for the body of a definition that is exposed: the side condition is
-a goal of its own, since a `by` block inside a term waits there for as long as its goal has
-a metavariable. -/
-local macro "forget_mem " a:term : tactic =>
-  `(tactic| (apply TripleT.forget_mem (a := $a)
-             case hupd => braid_upd))
-
-/-- `braid_name_mem`, for the body of a definition that is exposed, in the same way. -/
-local macro "name_mem " a:term : tactic =>
-  `(tactic| (apply TripleT.mem_any (a := $a)
-             case hext => braid_extract
-             intro _))
-
 /-! ## A round of the loop -/
 
 /-- **The first half of a round of the loop and the trace of its run**, whatever the
@@ -119,10 +106,10 @@ def columns_run (q : Word) : { ls : Trace // ∀
   forget_regs
   braid_forget 3
   braid_forget 9
-  forget_mem (q +ʷ 18446744073709551520#64)
-  forget_mem (q +ʷ 18446744073709551524#64)
-  forget_mem (q +ʷ 18446744073709551516#64)
-  forget_mem (q +ʷ 18446744073709551592#64)
+  braid_forget_mem (q +ʷ 18446744073709551520#64)
+  braid_forget_mem (q +ʷ 18446744073709551524#64)
+  braid_forget_mem (q +ʷ 18446744073709551516#64)
+  braid_forget_mem (q +ʷ 18446744073709551592#64)
   braid_done
 
 /-- The trace found for the first half, written out. -/
@@ -174,10 +161,10 @@ def diagonals_run (q : Word) : { ls : Trace // ∀
   try braid_forget_flag 4
   try braid_forget_flag 5
   forget_regs
-  forget_mem (q +ʷ 18446744073709551520#64)
-  forget_mem (q +ʷ 18446744073709551524#64)
-  forget_mem (q +ʷ 18446744073709551516#64)
-  forget_mem (q +ʷ 18446744073709551596#64)
+  braid_forget_mem (q +ʷ 18446744073709551520#64)
+  braid_forget_mem (q +ʷ 18446744073709551524#64)
+  braid_forget_mem (q +ʷ 18446744073709551516#64)
+  braid_forget_mem (q +ʷ 18446744073709551596#64)
   braid_done
 
 /-- The trace found for the second half, written out. -/
@@ -188,9 +175,9 @@ example (q : Word) : (diagonals_run q).1 =
 
 /-- Name what the three slots of the state hold. -/
 local macro "name_slots " q:term : tactic =>
-  `(tactic| (name_mem ($q +ʷ 18446744073709551520#64)
-             name_mem ($q +ʷ 18446744073709551524#64)
-             name_mem ($q +ʷ 18446744073709551516#64)))
+  `(tactic| (braid_name_mem ($q +ʷ 18446744073709551520#64)
+             braid_name_mem ($q +ʷ 18446744073709551524#64)
+             braid_name_mem ($q +ʷ 18446744073709551516#64)))
 
 /-- **A round of the loop and the trace of its run**, up to the branch at its end, whatever
 the registers and slots of the state hold. The trace found is that of the first half and
@@ -291,8 +278,8 @@ def rounds_run (q : Word) : (n : Nat) → { ls : Trace // ∀
     · name_regs
       braid_name_reg 9
       name_slots q
-      name_mem (q +ʷ 18446744073709551592#64)
-      name_mem (q +ʷ 18446744073709551596#64)
+      braid_name_mem (q +ʷ 18446744073709551592#64)
+      braid_name_mem (q +ʷ 18446744073709551596#64)
       braid_forget_flag 3
       braid_call (rounds_run q n).2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) _ _ _ _
         (by rw [hk]; bv_omega) (by omega)

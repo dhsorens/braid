@@ -30,7 +30,7 @@
 
 module
 
-public import Examples.Sha256Ni.Arm.Quads
+public import Examples.Sha256Ni.Common
 public import Lowering.Arm.Sha
 import Std.Tactic.BVDecide
 

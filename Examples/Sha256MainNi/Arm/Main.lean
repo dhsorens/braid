@@ -10,9 +10,6 @@
   bytes (`out_loop`, proved about the own code of the scalar program and carried here with
   `own_le`), the call that writes them out and the call that exits.
 
-  `mem8_split` and `total_or` are those of `Examples.Sha256Main.Arm.Main`, which is imported
-  for them alone: they are not particular to a program.
-
   ## Main definitions
 
   * `mainLeak`: what a run reveals, as a function of the length of the message
@@ -26,14 +23,13 @@ module
 
 public import Examples.Sha256MainNi.Arm.Blocks
 public import Examples.Sha256Main.Arm.Output
-public import Examples.Sha256Main.Arm.Main
 
 @[expose] public section
 
 namespace Examples.Sha256MainNi.Arm
 
 open Braid Examples Examples.Sha256 Examples.Sha256Main Lowering.Arm Lowering.Arm.Regs
-open Examples.Sha256Main.Arm (outLeak out_loop mem8_split total_or)
+open Examples.Sha256Main.Arm (outLeak out_loop)
 
 /-- The section of read-only data of the binary is the table of round constants. -/
 theorem rodata_eq : sha256_main_ni_section_rodata = (w32s K).flatMap (leBytes 4) := by

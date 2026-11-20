@@ -33,7 +33,8 @@ Braid/
     Flat.lean        arrays written out as memory atoms, for theorems about a machine
     Cells.lean       arrays of cells of any size, read-only or writable; indexed access
     Trace.lean       traced triples: a triple with the trace before and after
-    Traced.lean      a traced triple whose trace the run finds: braid_traced
+    Traced.lean      a traced triple whose trace the run finds: braid_traced. Imported by
+                     name, not with Braid.Logic: it adds a way for braid_done to finish
     Event.lean       the environment's two calls in a traced triple: write and exit
     Link.lean        a callee's specification and its trace, joined for a caller
     Bytes.lean       arrays of bytes, and bytes read as cells of a larger size

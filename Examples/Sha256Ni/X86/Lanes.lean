@@ -13,13 +13,13 @@
   on the variables that the first leaves.
 
   `sha256msg1` and `sha256msg2` mix the lanes of a word of the schedule with shifts under
-  masks, which the stepper leaves written out; `sig0_pack` and `sig1_pack` read such a word
-  as the `σ₀` and `σ₁` of the specification in each lane.
+  masks, which the stepper leaves written out; `sig0_pack` and `sig1_pack` of
+  `Examples.Sha256Ni.Common` read such a word as the `σ₀` and `σ₁` of the specification in
+  each lane, on AArch64 as here.
 
   ## Main results
 
   * `rnds2_pack`: `sha256rnds2` is two rounds of the specification
-  * `sig0_pack`, `sig1_pack`: the mixing of the lanes of a word in the schedule instructions
 -/
 
 module
@@ -78,30 +78,6 @@ theorem rnds2_pack (a b c d e f g h s0 s1 : W32) :
   · rw [rnds2Hi, ha, he]
     simp only [rndA, rndT, bigSig, dupLo, pack, roundS, bigSigma0, bigSigma1, Ch, Maj, ROTR]
     bv_decide
-
-/-! ## The schedule -/
-
-/-- The mixing of `sha256msg1`, as its lowering writes it, is `σ₀` in each lane. -/
-theorem sig0_pack (a b : W32) :
-    (pack a b >>> 7#64 &&& 0x01ffffff01ffffff#64 |||
-          pack a b <<< 25#64 &&& 0xfe000000fe000000#64) ^^^
-        (pack a b >>> 18#64 &&& 0x00003fff00003fff#64 |||
-          pack a b <<< 14#64 &&& 0xffffc000ffffc000#64) ^^^
-      pack a b >>> 3#64 &&& 0x1fffffff1fffffff#64 =
-      pack (smallSigma0 a) (smallSigma0 b) := by
-  simp only [pack, smallSigma0, ROTR, SHR]
-  bv_decide
-
-/-- The mixing of `sha256msg2`, as its lowering writes it, is `σ₁` in each lane. -/
-theorem sig1_pack (a b : W32) :
-    (pack a b >>> 17#64 &&& 0x00007fff00007fff#64 |||
-          pack a b <<< 15#64 &&& 0xffff8000ffff8000#64) ^^^
-        (pack a b >>> 19#64 &&& 0x00001fff00001fff#64 |||
-          pack a b <<< 13#64 &&& 0xffffe000ffffe000#64) ^^^
-      pack a b >>> 10#64 &&& 0x003fffff003fffff#64 =
-      pack (smallSigma1 a) (smallSigma1 b) := by
-  simp only [pack, smallSigma1, ROTR, SHR]
-  bv_decide
 
 /-! ## Shuffles -/
 

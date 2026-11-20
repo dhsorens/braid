@@ -162,4 +162,29 @@ theorem _root_.Braid.TripleT.mem4_val {P : Program} {as as' : Atoms} {a v : Word
   rw [e, em]; rw [e'] at h
   exact h
 
+/-- A cell of eight bytes is two cells of four: the low half, and the high half. -/
+theorem mem8_split (a v : Word) :
+    (Atom.mem a 8 v true).interp =
+      Atoms.interp [.mem a 4 v true, .mem (a + 4#64) 4 (v >>> 32) true] := by
+  have e : leBytes 8 v = leBytes 4 v ++ leBytes 4 (v >>> 32) := by
+    simp only [leBytes, List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    refine ⟨trivial, trivial, trivial, trivial, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  show memIs a 8 v true = iprop(memIs a 4 v true ∗ memIs (a + 4#64) 4 (v >>> 32) true ∗ emp)
+  rw [memIs_eq_bytesAt a v 8 (by decide), memIs_eq_bytesAt a v 4 (by decide),
+    memIs_eq_bytesAt (a + 4#64) (v >>> 32) 4 (by decide), e, bytesAt_append_eq, leBytes_length]
+  exact SProp.ext ⟨Iris.BI.sep_mono_right Iris.BI.sep_emp.2,
+    Iris.BI.sep_mono_right Iris.BI.sep_emp.1⟩
+
+/-- The padded length less eight, as the code computes it from the padded length less a
+block. -/
+theorem total_or (n : Nat) (hn : n < 2 ^ 32) :
+    BitVec.ofNat 64 (total n - 64) ||| 56#64 = BitVec.ofNat 64 (total n - 8) := by
+  have key : ∀ x : Word, (x &&& 18446744073709551552#64) ||| 56#64 =
+      (x &&& 18446744073709551552#64) + 56#64 := by
+    intro x; bv_decide
+  have hT : 64 ≤ total n := by simp only [total]; omega
+  have hT' := total_lt n
+  rw [← total_mask n hn, key, total_mask n hn]
+  bv_omega
+
 end Examples.Sha256Main
