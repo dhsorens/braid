@@ -31,7 +31,6 @@
 
   * `forget_cellsT`, `name_cellsT`, `restateT`, `foldl_snoc_eq`: rules that belong with the
     logic
-  * `trace_start`, `trace_snoc`: the labels of a long run, gathered one at a time
 -/
 
 module
@@ -97,28 +96,6 @@ theorem foldl_snoc_eq (t ls : Trace) : ls.foldl (fun acc l => acc ++ [l]) t = t 
   | nil => simp
   | cons l ls ih => simp [ih]
 
-/-- The trace a run has left, `x`, is `t` and then some labels, if it is so with no labels
-after it: the first step of finding the labels of a long run. -/
-theorem trace_start {x t ls : Trace} (h : x ++ [] = t ++ ls) : x = t ++ ls := by
-  rwa [List.append_nil] at h
-
-/-- The last label the stepper added goes to the front of the labels already gathered. -/
-theorem trace_snoc {x t ls acc : Trace} {l : Braid.Label} (h : x ++ l :: acc = t ++ ls) :
-    x ++ [l] ++ acc = t ++ ls := by
-  rwa [List.append_assoc]
-
-/-- `braid_done` for a long run, whose state is the `n` atoms of the postcondition in
-another order. The labels are gathered from the last to the first, one rule for each, so
-that the trace the stepper has left is not reassociated as a whole. -/
-local macro "done_long " n:num : tactic =>
-  `(tactic| (braid_norm
-             refine TripleT.done_split ?_ ?_
-             · iterate $n (apply Atoms.Split.cons; · braid_extract)
-               exact Atoms.Split.nil
-             · apply trace_start
-               repeat apply trace_snoc
-               rfl))
-
 /-- Forget the values of the status flags that have one. -/
 local macro "forget_flags" : tactic =>
   `(tactic| (try braid_forget_flag 0
@@ -149,16 +126,6 @@ local macro "name_mem " a:term : tactic =>
   `(tactic| (apply TripleT.mem_any (a := $a)
              case hext => braid_extract
              intro _))
-
-/-- `braid_done`, when the symbolic state is the `n` atoms of the postcondition in another
-order and they are to be taken out one at a time: `braid_done_perm`, for a traced triple
-whose trace is to be found. -/
-local macro "done_perm " n:num : tactic =>
-  `(tactic| (braid_norm
-             refine TripleT.done_split ?_ ?_
-             · iterate $n (apply Atoms.Split.cons; · braid_extract)
-               exact Atoms.Split.nil
-             · braid_trace_find))
 
 /-! ## The code -/
 
@@ -228,7 +195,7 @@ def entry_run (inp sp₀ : Word) : { ls : Trace // ∀ (out : Word)
   case hupd => braid_upd
   case hn => rfl
   forget_regs
-  done_long 25
+  braid_done_traced 25
 
 /-- **The exit of `chacha20_block` and the trace of its run**, from the end of the loop of
 rounds, whatever the registers of the state, the frame and the input hold. The trace found
@@ -319,7 +286,7 @@ def exit_run (out inp sp₀ r : Word) : { ls : Trace // ∀
   braid_forget 10
   braid_forget 11
   forget_flags
-  done_long 27
+  braid_done_traced 27
 
 /-- **`chacha20_block` and the trace of its run**, whatever the sixteen words of the input
 are. The trace found is a function of its two arguments, the stack pointer and the return
@@ -471,7 +438,7 @@ def block_run (out inp sp₀ r : Word) : { ls : Trace // ∀ (s : List W32)
     o0 o1 o2 o3 o4 o5 o6 o7 o8 o9 o10 o11 o12 o13 o14 o15
     _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ v1 v7 v12 v13 v14 v15 _
   braid_forget 9
-  done_perm 28
+  braid_done_traced 28
 
 /-- **What `chacha20_block` reveals**: the addresses it works at, which are those of the
 output, of the input and of its frame below the stack pointer, where the branches of its

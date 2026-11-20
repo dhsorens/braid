@@ -23,7 +23,6 @@
   ## Main results
 
   * `TripleT.forget_cells`: forget the values of an array, a rule that belongs with the logic
-  * `trace_start`, `trace_snoc`: the labels of a long run, gathered one at a time
 -/
 
 module
@@ -68,28 +67,6 @@ theorem TripleT.forget_cells {P : Program} {as as' : Atoms} {k n : Nat} {p : Wor
   obtain ⟨F, e, e'⟩ := hupd.split
   rw [e]; rw [e'] at h
   exact h.conseq (Iris.BI.sep_mono_left (fun _ hv => ⟨_, ⟨⟨vs, hn⟩, rfl⟩, hv⟩)) .rfl
-
-/-- The trace a run has left, `x`, is `t` and then some labels, if it is so with no labels
-after it: the first step of finding the labels of a long run. -/
-theorem trace_start {x t ls : Trace} (h : x ++ [] = t ++ ls) : x = t ++ ls := by
-  rwa [List.append_nil] at h
-
-/-- The last label the stepper added goes to the front of the labels already gathered. -/
-theorem trace_snoc {x t ls acc : Trace} {l : Label} (h : x ++ l :: acc = t ++ ls) :
-    x ++ [l] ++ acc = t ++ ls := by
-  rwa [List.append_assoc]
-
-/-- `braid_done` for a long run, whose state is the `n` atoms of the postcondition in
-another order. The labels are gathered from the last to the first, one rule for each, so
-that the trace the stepper has left is not reassociated as a whole. -/
-local macro "done_long " n:num : tactic =>
-  `(tactic| (braid_norm
-             refine TripleT.done_split ?_ ?_
-             · iterate $n (apply Atoms.Split.cons; · braid_extract)
-               exact Atoms.Split.nil
-             · apply trace_start
-               repeat apply trace_snoc
-               rfl))
 
 /-! ## The code -/
 
@@ -175,7 +152,7 @@ def block_head_run (inp sp₀ : Word) : { ls : Trace // ∀ (s : List W32) (fr s
   braid_fold frame_cells sp₀ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   braid_fold saved_cells sp₀ _ _ _ _ _
   rv_forget_state
-  done_long 24
+  braid_done_traced 24
 
 /-- **The stores after the loop of rounds and the trace of their run.** The sixteen
 registers of the state are stored to the frame, and `a2` and `a3` are set for the loop that
@@ -325,7 +302,7 @@ def block_sum_run (out inp sp₀ r : Word) : { ls : Trace // ∀ (s : List W32)
   braid_forget 13
   braid_forget 14
   braid_forget 15
-  done_long 18
+  braid_done_traced 18
 
 /-- **`chacha20_block` and the trace of its run**, whatever the sixteen words of the input
 are. The trace found is a function of its two arguments, the stack pointer and the return

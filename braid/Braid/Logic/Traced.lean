@@ -36,6 +36,7 @@
 
   * `braid_traced`: open a definition of a trace with its traced triple
   * `braid_done`, again: finish, and find the trace that was left open
+  * `braid_done_traced n`: the same, taking the `n` atoms of a large state one at a time
 -/
 
 module
@@ -50,16 +51,29 @@ namespace Braid
 goal becomes the traced triple, with the trace `ls` left to be found by `braid_done`. -/
 macro "braid_traced" : tactic => `(tactic| apply Subtype.mk)
 
+/-- The trace a run has left, `x`, is `t` and then some labels, if it is so with no labels
+after it: the first step of gathering the labels of a long run. -/
+theorem Trace.gather_start {x t ls : Trace} (h : x ++ [] = t ++ ls) : x = t ++ ls := by
+  rwa [List.append_nil] at h
+
+/-- The last label the stepper added goes to the front of the labels already gathered. -/
+theorem Trace.gather_snoc {x t ls acc : Trace} {l : Label} (h : x ++ l :: acc = t ++ ls) :
+    x ++ [l] ++ acc = t ++ ls := by
+  rwa [List.append_assoc]
+
 /-- Find the trace a run has left: the goal is `t ++ [l₁] ++ … ++ [lₙ] = t ++ ?ls`, with the
 labels added one at a time and with the traces of the triples that were called, and `?ls`
 becomes the list of them, or the empty list for a run that left no label. The labels are
 gathered before the two sides are compared: comparing them as they stand can unfold a
-trace that was called for. -/
+trace that was called for. A run of some seventy labels or more is too long to gather at
+once, and its labels are then gathered from the last to the first, one rule for each. -/
 macro "braid_trace_find" : tactic =>
   `(tactic| first
       | (simp only [List.append_assoc, List.cons_append, List.nil_append]; rfl)
       | exact (List.append_nil _).symm
-      | rfl)
+      | rfl
+      | (apply Trace.gather_start; repeat apply Trace.gather_snoc
+         rfl))
 
 /-- Finish a traced triple whose trace was left open by `braid_traced`: the symbolic state
 is the postcondition, and the trace to be found is the one the run has left. -/
@@ -71,5 +85,15 @@ macro_rules
                  | (refine TripleT.done_split ?_ ?_
                     · braid_split; done
                     · braid_trace_find)))
+
+/-- `braid_done` for a traced triple whose trace is to be found, when the symbolic state is
+the `n` atoms of the postcondition in another order and they are best taken out one at a
+time, as for a state of thirty atoms or so. -/
+macro "braid_done_traced " n:num : tactic =>
+  `(tactic| (braid_norm
+             refine TripleT.done_split ?_ ?_
+             · iterate $n (apply Atoms.Split.cons; · braid_extract)
+               exact Atoms.Split.nil
+             · braid_trace_find))
 
 end Braid

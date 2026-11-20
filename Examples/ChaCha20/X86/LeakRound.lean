@@ -78,16 +78,6 @@ local macro "name_mem " a:term : tactic =>
              case hext => braid_extract
              intro _))
 
-/-- `braid_done`, when the symbolic state is the `n` atoms of the postcondition in another
-order and they are to be taken out one at a time: `braid_done_perm`, for a traced triple
-whose trace is to be found. -/
-local macro "done_perm " n:num : tactic =>
-  `(tactic| (braid_norm
-             refine TripleT.done_split ?_ ?_
-             · iterate $n (apply Atoms.Split.cons; · braid_extract)
-               exact Atoms.Split.nil
-             · braid_trace_find))
-
 /-! ## A round of the loop -/
 
 /-- **The first half of a round of the loop and the trace of its run**, whatever the
@@ -242,7 +232,7 @@ def double_round_run (q : Word) : { ls : Trace // ∀
   braid_name_reg 9
   name_slots q
   braid_call (diagonals_run q).2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ k _ _ _
-  done_perm 28
+  braid_done_traced 28
 
 /-- The trace found for a round is those of its two halves. -/
 example (q : Word) : (double_round_run q).1 = (columns_run q).1 ++ (diagonals_run q).1 := rfl
@@ -291,7 +281,7 @@ def rounds_run (q : Word) : (n : Nat) → { ls : Trace // ∀
       1#32 t9 u18 u14 t
     braid_sym_step
     braid_forget_flag 3
-    done_perm 28
+    braid_done_traced 28
   | n + 1 => by
     braid_traced
     intro v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 k t9 u18 u14 t hk hn
@@ -306,7 +296,7 @@ def rounds_run (q : Word) : (n : Nat) → { ls : Trace // ∀
       braid_forget_flag 3
       braid_call (rounds_run q n).2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (k - 1) _ _ _ _
         (by rw [hk]; bv_omega) (by omega)
-      done_perm 28
+      braid_done_traced 28
     · exfalso
       have : k - 1 ≠ 0#32 := by rw [hk]; bv_omega
       exact this (by bv_decide)
