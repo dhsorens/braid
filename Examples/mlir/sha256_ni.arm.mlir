@@ -1,7 +1,7 @@
 "braid_cf.module"() ({
   "braid_cf.func"() ({
       "braid_cf.br"()[^bb0] : () -> ()
-    ^bb0:  // 0x10000
+    ^bb0:  // 0x100bc
       %bb0_0 = "braid.get"() {reg = "x0"} : () -> i64
       %bb0_21 = "braid.const"() {value = 16 : i64} : () -> i64
       %bb0_22 = "braid.add"(%bb0_0, %bb0_21) : (i64, i64) -> i64
@@ -18,13 +18,13 @@
       "braid.set"(%bb0_27) {reg = "v0.lo"} : (i64) -> ()
       "braid.set"(%bb0_28) {reg = "v0.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb4] : () -> ()
-    ^bb4:  // 0x10004
+    ^bb4:  // 0x100c0
       %bb4_0 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb4_2 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb4_12 = "braid.or"(%bb4_0, %bb4_2) : (i64, i64) -> i64
       "braid.set"(%bb4_12) {reg = "x9"} : (i64) -> ()
       "braid_cf.br"()[^bb8] : () -> ()
-    ^bb8:  // 0x10008
+    ^bb8:  // 0x100c4
       %bb8_0 = "braid.get"() {reg = "x1"} : () -> i64
       %bb8_21 = "braid.const"() {value = 16 : i64} : () -> i64
       %bb8_22 = "braid.add"(%bb8_0, %bb8_21) : (i64, i64) -> i64
@@ -41,13 +41,13 @@
       "braid.set"(%bb8_27) {reg = "v18.lo"} : (i64) -> ()
       "braid.set"(%bb8_28) {reg = "v18.hi"} : (i64) -> ()
       "braid_cf.br"()[^bbc] : () -> ()
-    ^bbc:  // 0x1000c
+    ^bbc:  // 0x100c8
       "braid_cf.br"()[^bb10] : () -> ()
-    ^bb10:  // 0x10010
-      %bb10_0 = "braid.const"() {value = 131248 : i64} : () -> i64
+    ^bb10:  // 0x100cc
+      %bb10_0 = "braid.const"() {value = 131624 : i64} : () -> i64
       "braid.set"(%bb10_0) {reg = "x8"} : (i64) -> ()
       "braid_cf.br"()[^bb14] : () -> ()
-    ^bb14:  // 0x10014
+    ^bb14:  // 0x100d0
       %bb14_1 = "braid.get"() {reg = "x1"} : () -> i64
       %bb14_6 = "braid.const"() {value = 32 : i64} : () -> i64
       %bb14_0 = "braid.add"(%bb14_1, %bb14_6) : (i64, i64) -> i64
@@ -66,7 +66,7 @@
       "braid.set"(%bb14_27) {reg = "v2.lo"} : (i64) -> ()
       "braid.set"(%bb14_28) {reg = "v2.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb18] : () -> ()
-    ^bb18:  // 0x10018
+    ^bb18:  // 0x100d4
       %bb18_0 = "braid.get"() {reg = "v1.lo"} : () -> i64
       %bb18_1 = "braid.get"() {reg = "v1.hi"} : () -> i64
       %bb18_2 = "braid.get"() {reg = "v1.lo"} : () -> i64
@@ -76,7 +76,7 @@
       "braid.set"(%bb18_10) {reg = "v4.lo"} : (i64) -> ()
       "braid.set"(%bb18_20) {reg = "v4.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb1c] : () -> ()
-    ^bb1c:  // 0x1001c
+    ^bb1c:  // 0x100d8
       %bb1c_0 = "braid.get"() {reg = "v0.lo"} : () -> i64
       %bb1c_1 = "braid.get"() {reg = "v0.hi"} : () -> i64
       %bb1c_2 = "braid.get"() {reg = "v0.lo"} : () -> i64
@@ -86,7 +86,7 @@
       "braid.set"(%bb1c_10) {reg = "v3.lo"} : (i64) -> ()
       "braid.set"(%bb1c_20) {reg = "v3.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb20] : () -> ()
-    ^bb20:  // 0x10020
+    ^bb20:  // 0x100dc
       %bb20_0 = "braid.get"() {reg = "v18.lo"} : () -> i64
       %bb20_1 = "braid.get"() {reg = "v18.hi"} : () -> i64
       %bb20_2 = "braid.get"() {reg = "v18.lo"} : () -> i64
@@ -96,7 +96,7 @@
       "braid.set"(%bb20_10) {reg = "v5.lo"} : (i64) -> ()
       "braid.set"(%bb20_20) {reg = "v5.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb24] : () -> ()
-    ^bb24:  // 0x10024
+    ^bb24:  // 0x100e0
       %bb24_1 = "braid.get"() {reg = "x8"} : () -> i64
       %bb24_6 = "braid.get"() {reg = "x9"} : () -> i64
       %bb24_0 = "braid.add"(%bb24_1, %bb24_6) : (i64, i64) -> i64
@@ -107,7 +107,7 @@
       "braid.set"(%bb24_30) {reg = "v6.lo"} : (i64) -> ()
       "braid.set"(%bb24_31) {reg = "v6.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb28] : () -> ()
-    ^bb28:  // 0x10028
+    ^bb28:  // 0x100e4
       %bb28_0 = "braid.get"() {reg = "v4.lo"} : () -> i64
       %bb28_1 = "braid.get"() {reg = "v4.hi"} : () -> i64
       %bb28_2 = "braid.get"() {reg = "v4.lo"} : () -> i64
@@ -117,7 +117,7 @@
       "braid.set"(%bb28_10) {reg = "v19.lo"} : (i64) -> ()
       "braid.set"(%bb28_20) {reg = "v19.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb2c] : () -> ()
-    ^bb2c:  // 0x1002c
+    ^bb2c:  // 0x100e8
       %bb2c_0 = "braid.get"() {reg = "v17.lo"} : () -> i64
       %bb2c_1 = "braid.get"() {reg = "v17.hi"} : () -> i64
       %bb2c_2 = "braid.get"() {reg = "v17.lo"} : () -> i64
@@ -127,13 +127,13 @@
       "braid.set"(%bb2c_10) {reg = "v7.lo"} : (i64) -> ()
       "braid.set"(%bb2c_20) {reg = "v7.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb30] : () -> ()
-    ^bb30:  // 0x10030
+    ^bb30:  // 0x100ec
       %bb30_0 = "braid.get"() {reg = "x9"} : () -> i64
       %bb30_2 = "braid.const"() {value = 16 : i64} : () -> i64
       %bb30_3 = "braid.add"(%bb30_0, %bb30_2) : (i64, i64) -> i64
       "braid.set"(%bb30_3) {reg = "x9"} : (i64) -> ()
       "braid_cf.br"()[^bb34] : () -> ()
-    ^bb34:  // 0x10034
+    ^bb34:  // 0x100f0
       %bb34_0 = "braid.get"() {reg = "v6.lo"} : () -> i64
       %bb34_1 = "braid.get"() {reg = "v6.hi"} : () -> i64
       %bb34_2 = "braid.get"() {reg = "v16.lo"} : () -> i64
@@ -143,7 +143,7 @@
       "braid.set"(%bb34_10) {reg = "v18.lo"} : (i64) -> ()
       "braid.set"(%bb34_20) {reg = "v18.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb38] : () -> ()
-    ^bb38:  // 0x10038
+    ^bb38:  // 0x100f4
       %bb38_0 = "braid.get"() {reg = "v2.lo"} : () -> i64
       %bb38_1 = "braid.get"() {reg = "v2.hi"} : () -> i64
       %bb38_2 = "braid.get"() {reg = "v2.lo"} : () -> i64
@@ -153,7 +153,7 @@
       "braid.set"(%bb38_10) {reg = "v6.lo"} : (i64) -> ()
       "braid.set"(%bb38_20) {reg = "v6.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb3c] : () -> ()
-    ^bb3c:  // 0x1003c
+    ^bb3c:  // 0x100f8
       %bb3c_0 = "braid.get"() {reg = "x9"} : () -> i64
       %bb3c_2 = "braid.const"() {value = 192 : i64} : () -> i64
       %bb3c_3 = "braid.sub"(%bb3c_0, %bb3c_2) : (i64, i64) -> i64
@@ -170,7 +170,7 @@
       "braid.setf"(%bb3c_6) {flag = "c"} : (i64) -> ()
       "braid.setf"(%bb3c_7) {flag = "v"} : (i64) -> ()
       "braid_cf.br"()[^bb40] : () -> ()
-    ^bb40:  // 0x10040
+    ^bb40:  // 0x100fc
       %bb40_0 = "braid.get"() {reg = "v16.lo"} : () -> i64
       %bb40_1 = "braid.get"() {reg = "v16.hi"} : () -> i64
       %bb40_2 = "braid.get"() {reg = "v5.lo"} : () -> i64
@@ -225,7 +225,7 @@
       "braid.set"(%bb40_200) {reg = "v16.lo"} : (i64) -> ()
       "braid.set"(%bb40_201) {reg = "v16.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb44] : () -> ()
-    ^bb44:  // 0x10044
+    ^bb44:  // 0x10100
       %bb44_0 = "braid.get"() {reg = "v4.lo"} : () -> i64
       %bb44_1 = "braid.get"() {reg = "v4.hi"} : () -> i64
       %bb44_2 = "braid.get"() {reg = "v3.lo"} : () -> i64
@@ -369,7 +369,7 @@
       "braid.set"(%bb44_200) {reg = "v4.lo"} : (i64) -> ()
       "braid.set"(%bb44_201) {reg = "v4.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb48] : () -> ()
-    ^bb48:  // 0x10048
+    ^bb48:  // 0x10104
       %bb48_0 = "braid.get"() {reg = "v19.lo"} : () -> i64
       %bb48_1 = "braid.get"() {reg = "v19.hi"} : () -> i64
       %bb48_2 = "braid.get"() {reg = "v3.lo"} : () -> i64
@@ -501,7 +501,7 @@
       "braid.set"(%bb48_200) {reg = "v3.lo"} : (i64) -> ()
       "braid.set"(%bb48_201) {reg = "v3.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb4c] : () -> ()
-    ^bb4c:  // 0x1004c
+    ^bb4c:  // 0x10108
       %bb4c_0 = "braid.get"() {reg = "v17.lo"} : () -> i64
       %bb4c_1 = "braid.get"() {reg = "v17.hi"} : () -> i64
       %bb4c_2 = "braid.get"() {reg = "v17.lo"} : () -> i64
@@ -511,7 +511,7 @@
       "braid.set"(%bb4c_10) {reg = "v18.lo"} : (i64) -> ()
       "braid.set"(%bb4c_20) {reg = "v18.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb50] : () -> ()
-    ^bb50:  // 0x10050
+    ^bb50:  // 0x1010c
       %bb50_0 = "braid.get"() {reg = "v16.lo"} : () -> i64
       %bb50_1 = "braid.get"() {reg = "v16.hi"} : () -> i64
       %bb50_2 = "braid.get"() {reg = "v16.lo"} : () -> i64
@@ -521,7 +521,7 @@
       "braid.set"(%bb50_10) {reg = "v2.lo"} : (i64) -> ()
       "braid.set"(%bb50_20) {reg = "v2.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb54] : () -> ()
-    ^bb54:  // 0x10054
+    ^bb54:  // 0x10110
       %bb54_0 = "braid.get"() {reg = "v5.lo"} : () -> i64
       %bb54_1 = "braid.get"() {reg = "v5.hi"} : () -> i64
       %bb54_2 = "braid.get"() {reg = "v5.lo"} : () -> i64
@@ -531,7 +531,7 @@
       "braid.set"(%bb54_10) {reg = "v16.lo"} : (i64) -> ()
       "braid.set"(%bb54_20) {reg = "v16.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb58] : () -> ()
-    ^bb58:  // 0x10058
+    ^bb58:  // 0x10114
       %bb58_0 = "braid.get"() {reg = "v2.lo"} : () -> i64
       %bb58_1 = "braid.get"() {reg = "v2.hi"} : () -> i64
       %bb58_2 = "braid.get"() {reg = "v17.lo"} : () -> i64
@@ -591,7 +591,7 @@
       "braid.set"(%bb58_200) {reg = "v2.lo"} : (i64) -> ()
       "braid.set"(%bb58_201) {reg = "v2.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb5c] : () -> ()
-    ^bb5c:  // 0x1005c
+    ^bb5c:  // 0x10118
       %bb5c_0 = "braid.get"() {reg = "v6.lo"} : () -> i64
       %bb5c_1 = "braid.get"() {reg = "v6.hi"} : () -> i64
       %bb5c_2 = "braid.get"() {reg = "v6.lo"} : () -> i64
@@ -601,30 +601,30 @@
       "braid.set"(%bb5c_10) {reg = "v17.lo"} : (i64) -> ()
       "braid.set"(%bb5c_20) {reg = "v17.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb60] : () -> ()
-    ^bb60:  // 0x10060
+    ^bb60:  // 0x1011c
       %bb60_1 = "braid.getf"() {flag = "z"} : () -> i64
       %bb60_2 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb60_0 = "braid.eq"(%bb60_1, %bb60_2) : (i64, i64) -> i64
       "braid_cf.cond_br"(%bb60_0)[^bb20, ^bb64] : (i64) -> ()
-    ^bb64:  // 0x10064
+    ^bb64:  // 0x10120
       %bb64_0 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb64_2 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb64_12 = "braid.or"(%bb64_0, %bb64_2) : (i64, i64) -> i64
       "braid.set"(%bb64_12) {reg = "x9"} : (i64) -> ()
       "braid_cf.br"()[^bb68] : () -> ()
-    ^bb68:  // 0x10068
+    ^bb68:  // 0x10124
       %bb68_0 = "braid.get"() {reg = "x8"} : () -> i64
       %bb68_2 = "braid.get"() {reg = "x9"} : () -> i64
       %bb68_12 = "braid.add"(%bb68_0, %bb68_2) : (i64, i64) -> i64
       "braid.set"(%bb68_12) {reg = "x10"} : (i64) -> ()
       "braid_cf.br"()[^bb6c] : () -> ()
-    ^bb6c:  // 0x1006c
+    ^bb6c:  // 0x10128
       %bb6c_0 = "braid.get"() {reg = "x9"} : () -> i64
       %bb6c_2 = "braid.const"() {value = 16 : i64} : () -> i64
       %bb6c_3 = "braid.add"(%bb6c_0, %bb6c_2) : (i64, i64) -> i64
       "braid.set"(%bb6c_3) {reg = "x9"} : (i64) -> ()
       "braid_cf.br"()[^bb70] : () -> ()
-    ^bb70:  // 0x10070
+    ^bb70:  // 0x1012c
       %bb70_1 = "braid.get"() {reg = "x10"} : () -> i64
       %bb70_6 = "braid.const"() {value = 192 : i64} : () -> i64
       %bb70_0 = "braid.add"(%bb70_1, %bb70_6) : (i64, i64) -> i64
@@ -635,7 +635,7 @@
       "braid.set"(%bb70_30) {reg = "v16.lo"} : (i64) -> ()
       "braid.set"(%bb70_31) {reg = "v16.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb74] : () -> ()
-    ^bb74:  // 0x10074
+    ^bb74:  // 0x10130
       %bb74_0 = "braid.get"() {reg = "x9"} : () -> i64
       %bb74_2 = "braid.const"() {value = 64 : i64} : () -> i64
       %bb74_3 = "braid.sub"(%bb74_0, %bb74_2) : (i64, i64) -> i64
@@ -652,7 +652,7 @@
       "braid.setf"(%bb74_6) {flag = "c"} : (i64) -> ()
       "braid.setf"(%bb74_7) {flag = "v"} : (i64) -> ()
       "braid_cf.br"()[^bb78] : () -> ()
-    ^bb78:  // 0x10078
+    ^bb78:  // 0x10134
       %bb78_0 = "braid.get"() {reg = "v16.lo"} : () -> i64
       %bb78_1 = "braid.get"() {reg = "v16.hi"} : () -> i64
       %bb78_2 = "braid.get"() {reg = "v5.lo"} : () -> i64
@@ -662,7 +662,7 @@
       "braid.set"(%bb78_10) {reg = "v5.lo"} : (i64) -> ()
       "braid.set"(%bb78_20) {reg = "v5.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb7c] : () -> ()
-    ^bb7c:  // 0x1007c
+    ^bb7c:  // 0x10138
       %bb7c_0 = "braid.get"() {reg = "v4.lo"} : () -> i64
       %bb7c_1 = "braid.get"() {reg = "v4.hi"} : () -> i64
       %bb7c_2 = "braid.get"() {reg = "v4.lo"} : () -> i64
@@ -672,7 +672,7 @@
       "braid.set"(%bb7c_10) {reg = "v16.lo"} : (i64) -> ()
       "braid.set"(%bb7c_20) {reg = "v16.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb80] : () -> ()
-    ^bb80:  // 0x10080
+    ^bb80:  // 0x1013c
       %bb80_0 = "braid.get"() {reg = "v4.lo"} : () -> i64
       %bb80_1 = "braid.get"() {reg = "v4.hi"} : () -> i64
       %bb80_2 = "braid.get"() {reg = "v3.lo"} : () -> i64
@@ -816,7 +816,7 @@
       "braid.set"(%bb80_200) {reg = "v4.lo"} : (i64) -> ()
       "braid.set"(%bb80_201) {reg = "v4.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb84] : () -> ()
-    ^bb84:  // 0x10084
+    ^bb84:  // 0x10140
       %bb84_0 = "braid.get"() {reg = "v16.lo"} : () -> i64
       %bb84_1 = "braid.get"() {reg = "v16.hi"} : () -> i64
       %bb84_2 = "braid.get"() {reg = "v3.lo"} : () -> i64
@@ -948,7 +948,7 @@
       "braid.set"(%bb84_200) {reg = "v3.lo"} : (i64) -> ()
       "braid.set"(%bb84_201) {reg = "v3.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb88] : () -> ()
-    ^bb88:  // 0x10088
+    ^bb88:  // 0x10144
       %bb88_0 = "braid.get"() {reg = "v7.lo"} : () -> i64
       %bb88_1 = "braid.get"() {reg = "v7.hi"} : () -> i64
       %bb88_2 = "braid.get"() {reg = "v7.lo"} : () -> i64
@@ -958,7 +958,7 @@
       "braid.set"(%bb88_10) {reg = "v5.lo"} : (i64) -> ()
       "braid.set"(%bb88_20) {reg = "v5.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb8c] : () -> ()
-    ^bb8c:  // 0x1008c
+    ^bb8c:  // 0x10148
       %bb8c_0 = "braid.get"() {reg = "v6.lo"} : () -> i64
       %bb8c_1 = "braid.get"() {reg = "v6.hi"} : () -> i64
       %bb8c_2 = "braid.get"() {reg = "v6.lo"} : () -> i64
@@ -968,7 +968,7 @@
       "braid.set"(%bb8c_10) {reg = "v7.lo"} : (i64) -> ()
       "braid.set"(%bb8c_20) {reg = "v7.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb90] : () -> ()
-    ^bb90:  // 0x10090
+    ^bb90:  // 0x1014c
       %bb90_0 = "braid.get"() {reg = "v2.lo"} : () -> i64
       %bb90_1 = "braid.get"() {reg = "v2.hi"} : () -> i64
       %bb90_2 = "braid.get"() {reg = "v2.lo"} : () -> i64
@@ -978,12 +978,12 @@
       "braid.set"(%bb90_10) {reg = "v6.lo"} : (i64) -> ()
       "braid.set"(%bb90_20) {reg = "v6.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb94] : () -> ()
-    ^bb94:  // 0x10094
+    ^bb94:  // 0x10150
       %bb94_1 = "braid.getf"() {flag = "z"} : () -> i64
       %bb94_2 = "braid.const"() {value = 0 : i64} : () -> i64
       %bb94_0 = "braid.eq"(%bb94_1, %bb94_2) : (i64, i64) -> i64
       "braid_cf.cond_br"(%bb94_0)[^bb68, ^bb98] : (i64) -> ()
-    ^bb98:  // 0x10098
+    ^bb98:  // 0x10154
       %bb98_0 = "braid.get"() {reg = "v4.lo"} : () -> i64
       %bb98_1 = "braid.get"() {reg = "v4.hi"} : () -> i64
       %bb98_2 = "braid.get"() {reg = "v1.lo"} : () -> i64
@@ -993,7 +993,7 @@
       "braid.set"(%bb98_10) {reg = "v1.lo"} : (i64) -> ()
       "braid.set"(%bb98_20) {reg = "v1.hi"} : (i64) -> ()
       "braid_cf.br"()[^bb9c] : () -> ()
-    ^bb9c:  // 0x1009c
+    ^bb9c:  // 0x10158
       %bb9c_0 = "braid.get"() {reg = "v3.lo"} : () -> i64
       %bb9c_1 = "braid.get"() {reg = "v3.hi"} : () -> i64
       %bb9c_2 = "braid.get"() {reg = "v0.lo"} : () -> i64
@@ -1003,7 +1003,7 @@
       "braid.set"(%bb9c_10) {reg = "v0.lo"} : (i64) -> ()
       "braid.set"(%bb9c_20) {reg = "v0.hi"} : (i64) -> ()
       "braid_cf.br"()[^bba0] : () -> ()
-    ^bba0:  // 0x100a0
+    ^bba0:  // 0x1015c
       %bba0_0 = "braid.get"() {reg = "v1.lo"} : () -> i64
       %bba0_1 = "braid.get"() {reg = "v1.hi"} : () -> i64
       %bba0_2 = "braid.get"() {reg = "v0.lo"} : () -> i64
@@ -1020,8 +1020,8 @@
       %bba0_35 = "braid.add"(%bba0_31, %bba0_34) : (i64, i64) -> i64
       "braid.store"(%bba0_35, %bba0_3) {bytes = 8 : i64} : (i64, i64) -> ()
       "braid_cf.br"()[^bba4] : () -> ()
-    ^bba4:  // 0x100a4
+    ^bba4:  // 0x10160
       %bba4_0 = "braid.get"() {reg = "x30"} : () -> i64
       "braid_cf.br_ind"(%bba4_0) : (i64) -> ()
-  }) {sym_name = "sha256_compress_ni", entry = 65536 : i64} : () -> ()
+  }) {sym_name = "sha256_compress_ni", entry = 65724 : i64} : () -> ()
 }) {arch = "aarch64"} : () -> ()

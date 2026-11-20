@@ -94,18 +94,75 @@ lower_vec() {
 }
 
 # SHA-256 with the processors' SHA instructions (docs/ISA.md): sha256_ni.c, from intrinsics.
-# Not lowered for RISC-V, whose model has no such instruction.
+# Not lowered for RISC-V, whose model has no such instruction. On AArch64 the function and
+# its table are linked where sha256_compress and its table are in the whole program
+# (0x100bc and 0x20228), so that the whole program below can have this one in its place.
 lower_ni() {
   for isa in $ISAS; do
+    obj=Examples/bin/sha256_ni.$isa.o
     case $isa in
-      arm) t="--target=aarch64-unknown-linux-gnu -march=armv8-a+sha2" ;;
-      x86) t="--target=x86_64-unknown-linux-gnu -msha -msse4.1 -mssse3" ;;
-      *) continue ;;
+      arm)
+        "$CLANG" --target=aarch64-unknown-linux-gnu -march=armv8-a+sha2 $CFLAGS \
+          -c Examples/src/c/sha256_ni.c -o "$obj"
+        cat > Examples/bin/sha256_ni.arm.ld <<EOF
+SECTIONS {
+  . = 0x100bc;
+  .text : { *(.text*) }
+  . = 0x20228;
+  .rodata : { *(.rodata*) }
+  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
+}
+EOF
+        "$LLD" -flavor gnu --image-base=0 -T Examples/bin/sha256_ni.arm.ld \
+          -e sha256_compress_ni "$obj" -o Examples/bin/sha256_ni.arm.elf
+        mkdir -p Examples/Sha256Ni/Arm
+        "$LOWER" Examples/bin/sha256_ni.arm.elf --fn sha256_compress_ni \
+          --mlir Examples/mlir/sha256_ni.arm.mlir --lean Examples/Sha256Ni/Arm/Image.lean \
+          --module Examples.Sha256Ni.Arm ;;
+      x86)
+        "$CLANG" --target=x86_64-unknown-linux-gnu -msha -msse4.1 -mssse3 $CFLAGS \
+          -c Examples/src/c/sha256_ni.c -o "$obj"
+        link_and_lower x86 sha256_ni Sha256Ni sha256_compress_ni ;;
     esac
-    # shellcheck disable=SC2086
-    "$CLANG" $t $CFLAGS -c Examples/src/c/sha256_ni.c -o "Examples/bin/sha256_ni.$isa.o"
-    link_and_lower "$isa" sha256_ni Sha256Ni sha256_compress_ni
   done
+}
+
+# The whole program of lower_program on AArch64 with sha256_compress_ni for its compression
+# function (docs/Programs.md). The callee and its table are where the scalar ones were, so
+# the code of `_start` and `main` and every section are those of the first program.
+lower_program_ni() {
+  case " $ISAS " in *" arm "*) ;; *) return 0 ;; esac
+  b=Examples/bin/sha256_main_ni.arm
+  "$CLANG" --target=aarch64-unknown-linux-gnu -march=armv8-a+sha2 $CFLAGS \
+    -c Examples/src/c/sha256_ni.c -o "$b.sha256_ni.o"
+  # shellcheck disable=SC2046
+  "$CLANG" $(target arm) $CFLAGS -Dsha256_compress=sha256_compress_ni \
+    -c Examples/src/c/sha256_main.c -o "$b.sha256_main.o"
+  # shellcheck disable=SC2046
+  "$CLANG" $(target arm) $CFLAGS -c Examples/src/c/sha256_msg.c -o "$b.sha256_msg.o"
+  cat > "$b.ld" <<EOF
+SECTIONS {
+  . = 0x100bc;
+  .text : { *sha256_ni.o(.text) }
+  . = 0x20228;
+  .rodata : { *sha256_ni.o(.rodata*) }
+  .text.main : { *(.text*) }
+  .bss : { *(.bss*) *(.sbss*) *(COMMON) }
+  .msglen : { *(.msglen) }
+  .msg : { *(.msg) }
+  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
+}
+EOF
+  "$LLD" -flavor gnu --image-base=0 -T "$b.ld" -e _start "$b.sha256_ni.o" \
+    "$b.sha256_main.o" "$b.sha256_msg.o" -o "$b.elf"
+  for e in Examples/bin/sha256_ni.arm.elf "$b.elf"; do
+    "$OBJDUMP" -d --disassemble-symbols=sha256_compress_ni "$e" | tail -n +5 > "$e.compress"
+  done
+  cmp Examples/bin/sha256_ni.arm.elf.compress "$b.elf.compress"
+  mkdir -p Examples/Sha256MainNi/Arm
+  "$LOWER" "$b.elf" --fn sha256_compress_ni --fn _start --fn main --image sha256_main_ni \
+    --mlir Examples/mlir/sha256_main_ni.arm.mlir \
+    --lean Examples/Sha256MainNi/Arm/Image.lean --module Examples.Sha256MainNi.Arm
 }
 
 # A source of the ladder: name, source, module, functions. It is compiled and lowered twice:
@@ -313,3 +370,4 @@ if want crc32; then lower_ladder crc32 Examples/src/c/crc32.c Crc32 crc32; fi
 if want chacha20vec; then lower_vec; fi
 if want sha256ni; then lower_ni; fi
 if want sha256main; then lower_program; fi
+if want sha256mainni; then lower_program_ni; fi
