@@ -32,6 +32,7 @@
 module
 
 public import Lowering.Arm.LeakSound
+import Braid.BV
 
 @[expose] public section
 
@@ -271,7 +272,7 @@ theorem svc_sound {prog : Arm64.Program} {t : Trace} {R : State → Trace → Pr
     have h0 : s.readReg32 .x0 = 1#32 := by
       simp only [Arm64.State.readReg32]
       generalize s.readReg64 .x0 = x at c0
-      bv_decide
+      bv_auto
     have h2 : s.readReg64 .x2 ≠ 0#64 := by simpa using c2
     have hmax : (s.readReg64 .x2).toNat ≤ Arm64.MAX_RW_COUNT := by
       have := BitVec.ule_iff_toNat_le.1 cmax

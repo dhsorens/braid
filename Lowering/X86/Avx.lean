@@ -29,6 +29,7 @@ module
 
 public import Lowering.X86.Vec
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -678,9 +679,9 @@ theorem isAligned_of_mask (w : AvxWidth) {x : Word}
   have key : ∀ c : Word, x % c = 0#64 → x.toNat % c.toNat = 0 := fun c hc => by
     rw [← BitVec.toNat_umod, hc]; rfl
   cases w <;> simp only [isAligned, AvxWidth.bytes, beq_iff_eq, Nat.reduceSub] at h ⊢
-  · exact key 16#64 (by bv_decide)
-  · exact key 32#64 (by bv_decide)
-  · exact key 64#64 (by bv_decide)
+  · exact key 16#64 (by bv_auto)
+  · exact key 32#64 (by bv_auto)
+  · exact key 64#64 (by bv_auto)
 
 /-! ## Vectors in memory -/
 

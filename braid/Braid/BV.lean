@@ -199,8 +199,13 @@ partial def isPlain (goal : Expr) (e : Expr) : MetaM Bool := do
   match e with
   | .const n _ =>
     if known n then return true
+    let env ← getEnv
+    -- an instance, or a field of one (such as `toBEq`): it gives an operation, not a datum
+    if isInstanceCore env n then return true
+    if let some info := env.getProjectionFnInfo? n then
+      if info.fromClass then return true
     -- a type abbreviation such as `Word`
-    let some ci := (← getEnv).find? n | return false
+    let some ci := env.find? n | return false
     return ci.type.getForallBody.isSort
   | .app f a => return (← isPlain goal f) && (← isPlain goal a)
   | .forallE _ d b _ => return (← isPlain goal d) && (← isPlain goal b)
@@ -779,10 +784,11 @@ elab "bv_dispatch" : tactic => do
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
-    | bv_solve
-    | bv_guard ((repeat' split) <;>
+    | bv_budget 20000 bv_arith
+    | bv_budget 40000 ((repeat' split) <;>
         (try simp only [beq_iff_eq, beq_eq_false_iff_ne, ne_eq] at *) <;>
-        (try bv_norm at *) <;> bv_solve)))
+        (try bv_norm at *) <;> bv_arith)
+    | bv_budget 40000 bv_bits))
   let first : Array (TSyntax `tactic) :=
     if 0 < sh.ites && sh.ites ≤ 4 then #[split]
     else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]

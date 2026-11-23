@@ -3,7 +3,7 @@
 
   The machine model states the carry and overflow flags of an addition or subtraction in
   integers: the flag is set when the result, read as an integer, is not the integer sum.
-  These lemmas restate each as the overflow predicate of bitvectors, which `bv_decide`
+  These lemmas restate each as the overflow predicate of bitvectors, which `bv_auto`
   decides.
 
   ## Main results
@@ -16,6 +16,7 @@
 module
 
 public import Kraken.X64.Semantics
+import Braid.BV
 
 @[expose] public section
 

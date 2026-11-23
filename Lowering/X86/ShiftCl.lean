@@ -10,6 +10,7 @@ module
 
 public import Lowering.X86.Shift
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -32,20 +33,20 @@ theorem clK_and (s : MachineData) (w : Width) :
     s.regs.get64 .rcx &&& (match w with | .W64 => 0x3f#64 | _ => 0x1f#64) =
       (clK s w).setWidth 64 := by
   have k1 : ∀ x : BitVec 64, x &&& 0x1f#64 = (x.extractLsb' 0 8 &&& 0x1f#8).setWidth 64 := by
-    intro x; bv_decide
+    intro x; bv_auto
   have k2 : ∀ x : BitVec 64, x &&& 0x3f#64 = (x.extractLsb' 0 8 &&& 0x3f#8).setWidth 64 := by
-    intro x; bv_decide
+    intro x; bv_auto
   cases w <;> first | exact k1 _ | exact k2 _
 
 omit [Labels] in
 theorem clK_lt (s : MachineData) (w : Width) : clK s w < 64#8 := by
-  have k1 : ∀ x : BitVec 64, x.extractLsb' 0 8 &&& 0x1f#8 < 64#8 := by intro x; bv_decide
-  have k2 : ∀ x : BitVec 64, x.extractLsb' 0 8 &&& 0x3f#8 < 64#8 := by intro x; bv_decide
+  have k1 : ∀ x : BitVec 64, x.extractLsb' 0 8 &&& 0x1f#8 < 64#8 := by intro x; bv_auto
+  have k2 : ∀ x : BitVec 64, x.extractLsb' 0 8 &&& 0x3f#8 < 64#8 := by intro x; bv_auto
   cases w <;> first | exact k1 _ | exact k2 _
 
 omit [Labels] in
 theorem clK_lt32 (s : MachineData) {w : Width} (hw : w ≠ .W64) : clK s w < 32#8 := by
-  have k1 : ∀ x : BitVec 64, x.extractLsb' 0 8 &&& 0x1f#8 < 32#8 := by intro x; bv_decide
+  have k1 : ∀ x : BitVec 64, x.extractLsb' 0 8 &&& 0x1f#8 < 32#8 := by intro x; bv_auto
   cases w <;> first | exact absurd rfl hw | exact k1 _
 
 omit [Labels] in

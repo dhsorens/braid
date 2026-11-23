@@ -17,6 +17,7 @@ module
 public import Lowering.RiscV.Lower
 public import Lowering.RiscV.Mem
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -167,11 +168,11 @@ theorem trunc_zext_lshr (x : BitVec 32) (n : Nat) :
 
 theorem trunc_add (a b : Word) :
     BitVec.setWidth 32 (a + b) = BitVec.setWidth 32 a + BitVec.setWidth 32 b :=
-  by bv_decide
+  by bv_auto
 
 theorem trunc_sub (a b : Word) :
     BitVec.setWidth 32 (a - b) = BitVec.setWidth 32 a - BitVec.setWidth 32 b :=
-  by bv_decide
+  by bv_auto
 
 theorem step_plain {i : Instr} (hf : s.code s.pc = some i) (hne : i ≠ .ECALL)
     (hnb : i ≠ .EBREAK) (hnm : i.isMemAccess = false) : step s = some (execInstrBr s i) :=
