@@ -27,6 +27,7 @@ module
 public import Examples.Spec.Crc32
 public import Braid
 import Iris.BI.DerivedLaws
+import Braid.BV
 
 @[expose] public section
 
@@ -62,7 +63,7 @@ theorem table_getElem : ∀ i : Fin 16, table[i] = nibble (BitVec.ofNat 32 i) :=
 adding the entry of the table its low four bits select is four bits of the division. -/
 theorem nibble_step (x : BitVec 32) : (x >>> 4) ^^^ nibble (x &&& 15#32) = nibble x := by
   simp only [nibble, bit, poly]
-  bv_decide
+  bv_auto
 
 /-! ## The table in memory -/
 
@@ -97,7 +98,7 @@ theorem tableAt_open (w : Bool) (t a : Word) (y : BitVec 32)
     subst ha
     congr 1
     rw [BitVec.ofNat_mul, BitVec.ofNat_toNat]
-    bv_decide
+    bv_auto
   rw [tableAt, cellsAt_index t tableWords _ hi, hv, he]
   simp only [Atoms.interp_cons, Atoms.interp_nil, Atom.interp, tableRest]
   exact SProp.ext ⟨sep_left_comm.1.trans (sep_mono_right sep_assoc.2),

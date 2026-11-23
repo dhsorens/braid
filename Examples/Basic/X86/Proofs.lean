@@ -10,6 +10,7 @@ module
 
 public import Examples.Basic.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -30,7 +31,7 @@ theorem add3_spec (a b d t s r : Word) (c p x z n o : Bool) :
   braid_run
   x86_forget_flags
   refine Triple.done_eq ?_
-  have e : d + (a + b) = a + (b + d) := by bv_decide
+  have e : d + (a + b) = a + (b + d) := by bv_auto
   simp only [BitVec.mul_one, e]
 
 /-- `max_u64` returns the larger of its arguments. It sets the flags. -/
@@ -48,7 +49,7 @@ theorem max_u64_spec (a b t s r : Word) (c p x z n o : Bool) :
   refine Triple.done_eq ?_
   simp only [umax, ofBool]
   by_cases h1 : a.ult b <;> by_cases h2 : a = b <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-- **`add3` on the machine.** A machine of the model that runs the executable of this
 image, is at the entry of `add3`, and has the return address `r` in the eight bytes at the
@@ -103,14 +104,14 @@ theorem sum_to_spec (n t0 t1 t2 t3 s r : Word) (c p x z sg o : Bool) :
     braid_forget 3
     x86_forget_flags
     refine Triple.done_eq ?_
-    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_decide
-    have a2 : 18446744073709551614#64 + n = n - 2#64 := by bv_decide
+    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_auto
+    have a2 : 18446744073709551614#64 + n = n - 2#64 := by bv_auto
     have hw : BitVec.setWidth 128 (n - 1#64) * BitVec.setWidth 128 (n - 2#64) =
         wide (n - 1#64) (n - 2#64) := rfl
     rw [a1, a2, hw, ← tri_closed n hn, ← wide_lo (n - 1#64) (n - 2#64)]
     generalize wide (n - 1#64) (n - 2#64) = X
     simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
-    bv_decide
+    bv_auto
 
 /-- **`max_u64` on the machine.** A machine of the model that runs the executable of this
 image, is at the entry of `max_u64`, and has the return address `r` in the eight bytes at the

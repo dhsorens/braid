@@ -43,6 +43,7 @@ module
 public import Braid.Logic.Bytes
 public import Examples.ChaCha20.Common
 import Iris.BI.DerivedLaws
+import Braid.BV
 
 public section
 
@@ -60,128 +61,128 @@ theorem pack_add (a b c d : W32) :
     (BinOp.lanes 32 .add).eval (pack a b) (pack c d) = pack (a + c) (b + d) := by
   simp only [BinOp.eval_lanes, BinOp.eval_add, pack, Nat.reduceDiv, List.range,
     List.range.loop, List.foldl, Nat.reduceMul]
-  bv_decide
+  bv_auto
 
 /-- An addition of 32-bit lanes, the other way round. -/
 theorem lanes_add_comm (x y : Word) :
     (BinOp.lanes 32 .add).eval x y = (BinOp.lanes 32 .add).eval y x := by
   simp only [BinOp.eval_lanes, BinOp.eval_add, Nat.reduceDiv, List.range, List.range.loop,
     List.foldl, Nat.reduceMul]
-  bv_decide
+  bv_auto
 
 /-- An exclusive or of words is that of each lane. -/
 theorem pack_xor (a b c d : W32) : pack a b ^^^ pack c d = pack (a ^^^ c) (b ^^^ d) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 /-- An or of words is that of each lane. -/
 theorem pack_or (a b c d : W32) : pack a b ||| pack c d = pack (a ||| c) (b ||| d) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 /-- A shift of a word to the left, under the mask that clears what crossed into the high
 lane, is the shift of each lane. -/
 theorem pack_shl16 (a b : W32) :
     pack a b <<< 16#64 &&& 0xffff0000ffff0000#64 = pack (a <<< 16) (b <<< 16) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 theorem pack_shl12 (a b : W32) :
     pack a b <<< 12#64 &&& 0xfffff000fffff000#64 = pack (a <<< 12) (b <<< 12) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 theorem pack_shl8 (a b : W32) :
     pack a b <<< 8#64 &&& 0xffffff00ffffff00#64 = pack (a <<< 8) (b <<< 8) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 theorem pack_shl7 (a b : W32) :
     pack a b <<< 7#64 &&& 0xffffff80ffffff80#64 = pack (a <<< 7) (b <<< 7) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 /-- A shift of a word to the right, under the mask that clears what crossed into the low
 lane, is the shift of each lane. -/
 theorem pack_shr16 (a b : W32) :
     pack a b >>> 16#64 &&& 0x0000ffff0000ffff#64 = pack (a >>> 16) (b >>> 16) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 theorem pack_shr20 (a b : W32) :
     pack a b >>> 20#64 &&& 0x00000fff00000fff#64 = pack (a >>> 20) (b >>> 20) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 theorem pack_shr24 (a b : W32) :
     pack a b >>> 24#64 &&& 0x000000ff000000ff#64 = pack (a >>> 24) (b >>> 24) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 theorem pack_shr25 (a b : W32) :
     pack a b >>> 25#64 &&& 0x0000007f0000007f#64 = pack (a >>> 25) (b >>> 25) := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 /-- The high lane of a word and the low lane of another, as a word: how the lanes of a row
 move when the row is rotated by an odd number of places. -/
 theorem pack_ext (a b c d : W32) : pack a b >>> 32#64 ||| pack c d <<< 32#64 = pack b c := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 /-- The same, as code that builds a word a lane at a time writes it: the high lane of a
 word, moved down and masked, and the low lane of another, moved up. -/
 theorem pack_ext_mask (a b c d : W32) :
     pack a b >>> 32#64 &&& 0xffffffff#64 ||| pack c d >>> 0#64 <<< 32#64 = pack b c := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 /-- A word built a lane at a time from its own two lanes, each where it was, is the word:
 how the lanes of a row move when the row is rotated by two places, the two words changing
 places. -/
 theorem lanes_self_mask (x : Word) :
     x >>> 0#64 &&& 0xffffffff#64 ||| x >>> 32#64 <<< 32#64 = x := by
-  bv_decide
+  bv_auto
 
 /-! ## Rotations of a lane -/
 
 /-- A rotation by 16, as two shifts and an or. -/
 theorem rotl16_or (a : W32) : a >>> 16 ||| a <<< 16 = a.rotateLeft 16 := by
-  bv_decide
+  bv_auto
 
 theorem rotl16_or' (a : W32) : a <<< 16 ||| a >>> 16 = a.rotateLeft 16 := by
-  bv_decide
+  bv_auto
 
 /-- A rotation, as two shifts and an addition: the shifted words have no bit in common. -/
 theorem rotl12_add (a : W32) : a <<< 12 + a >>> 20 = a.rotateLeft 12 := by
-  bv_decide
+  bv_auto
 
 theorem rotl8_add (a : W32) : a <<< 8 + a >>> 24 = a.rotateLeft 8 := by
-  bv_decide
+  bv_auto
 
 theorem rotl7_add (a : W32) : a <<< 7 + a >>> 25 = a.rotateLeft 7 := by
-  bv_decide
+  bv_auto
 
 /-- A rotation, as two shifts and an or. -/
 theorem rotl12_or (a : W32) : a <<< 12 ||| a >>> 20 = a.rotateLeft 12 := by
-  bv_decide
+  bv_auto
 
 theorem rotl8_or (a : W32) : a <<< 8 ||| a >>> 24 = a.rotateLeft 8 := by
-  bv_decide
+  bv_auto
 
 theorem rotl7_or (a : W32) : a <<< 7 ||| a >>> 25 = a.rotateLeft 7 := by
-  bv_decide
+  bv_auto
 
 /-- A rotation, as two shifts and an or, the shift to the right first: a rotation to the
 right by 20, 24 or 25. -/
 theorem rotl12_or' (a : W32) : a >>> 20 ||| a <<< 12 = a.rotateLeft 12 := by
-  bv_decide
+  bv_auto
 
 theorem rotl8_or' (a : W32) : a >>> 24 ||| a <<< 8 = a.rotateLeft 8 := by
-  bv_decide
+  bv_auto
 
 theorem rotl7_or' (a : W32) : a >>> 25 ||| a <<< 7 = a.rotateLeft 7 := by
-  bv_decide
+  bv_auto
 
 /-! ## A state in memory -/
 
@@ -191,13 +192,13 @@ theorem leBytes_pack (a b : W32) :
     leBytes 8 (pack a b) = leBytes 4 (a.zeroExtend 64) ++ leBytes 4 (b.zeroExtend 64) := by
   simp only [leBytes, pack, List.cons_append, List.nil_append, List.cons.injEq,
     _root_.and_true]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The four low bytes of a word are those of its low 32 bits. -/
 theorem leBytes_truncate (x : Word) :
     leBytes 4 ((x.truncate 32).zeroExtend 64) = leBytes 4 x := by
   simp only [leBytes, List.cons.injEq, _root_.and_true]
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- Two 32-bit cells side by side are one 64-bit cell that holds the two lanes. -/
 theorem memIs_pack (p : Word) (a b : W32) :
@@ -248,7 +249,7 @@ theorem cells_packs (n : Nat) (p : Word) (s : List W32) (h : s.length = 2 * n) :
   conv => rhs; rw [← List.map_id s]
   refine List.map_congr_left fun a _ => ?_
   show (a.zeroExtend 64).truncate 32 = a
-  bv_decide
+  bv_auto
 
 /-! ## The rows of a state -/
 

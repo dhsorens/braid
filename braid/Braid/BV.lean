@@ -108,6 +108,35 @@ theorem getLsbD_ite {w : Nat} (c : Prop) [Decidable c] (a b : BitVec w) (i : Nat
 theorem ult_zero {w : Nat} (x : BitVec w) : x.ult 0#w = false := by
   simp [BitVec.ult_eq_decide]
 
+/-- Two bit vectors with no bit in common: their disjunction is their sum. -/
+theorem or_eq_add {w : Nat} (x y : BitVec w) (h : x &&& y = 0#w) : x ||| y = x + y :=
+  (BitVec.add_eq_or_of_and_eq_zero x y h).symm
+
+/-- Sign-extending and cutting back to the width one started from gives back the start. -/
+theorem setWidth_signExtend_self {w m : Nat} (y : BitVec m) (h : m ≤ w) :
+    (y.signExtend w).setWidth m = y := by
+  apply BitVec.eq_of_getLsbD_eq; intro i hi
+  simp [BitVec.getLsbD_signExtend, hi]; intro; omega
+
+/-- Widening, shifting right and cutting back is shifting right in the narrow width. -/
+theorem setWidth_ushr_setWidth {w m : Nat} (z : BitVec m) (k : Nat) (h : m ≤ w) :
+    (z.setWidth w >>> k).setWidth m = z >>> k := by
+  apply BitVec.eq_of_getLsbD_eq; intro i hi
+  simp [BitVec.getLsbD_ushiftRight, hi]
+  intro hz
+  have := BitVec.lt_of_getLsbD hz
+  omega
+
+/-- A rotation by less than the width is a disjunction of two shifts. -/
+theorem rotateLeft_eq_or {w : Nat} (x : BitVec w) (k : Nat) (h : k < w) :
+    x.rotateLeft k = x <<< k ||| x >>> (w - k) := by
+  rw [BitVec.rotateLeft_def, Nat.mod_eq_of_lt h]
+
+/-- Two shifts of one bit vector, by amounts that add up to its width, are a rotation. -/
+theorem or_shifts_eq_rotateLeft {w : Nat} (x : BitVec w) (k j : Nat) (h : k + j = w)
+    (hk : k < w) : x <<< k ||| x >>> j = x.rotateLeft k := by
+  rw [rotateLeft_eq_or x k hk]; congr; omega
+
 theorem uaddOverflow_eq_decide {w : Nat} (x y : BitVec w) :
     x.uaddOverflow y = decide (2 ^ w ≤ x.toNat + y.toNat) := rfl
 
@@ -238,6 +267,36 @@ elab "bv_clear" : tactic => do
     for fv in drop.reverse do
       g ← g.tryClear fv
     replaceMainGoal [g]
+
+/-- Clear every hypothesis that shares no variable with the goal, nor with a hypothesis kept,
+and so on: it cannot help. A goal with no variable, such as `False`, keeps them all. -/
+elab "bv_relevant" : tactic => do
+  let g ← getMainGoal
+  g.withContext do
+  let t ← instantiateMVars (← g.getType)
+  let mut vars : Array FVarId := (collectFVars {} t).fvarIds
+  if vars.isEmpty then return
+  let mut cands : Array (FVarId × Array FVarId) := #[]
+  for d in (← getLCtx) do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    unless (← isProp ty) do continue
+    cands := cands.push (d.fvarId, (collectFVars {} ty).fvarIds)
+  let mut keep : Array FVarId := #[]
+  let mut changed := true
+  while changed do
+    changed := false
+    for (fv, vs) in cands do
+      if keep.contains fv then continue
+      if vs.any (vars.contains ·) then
+        keep := keep.push fv
+        changed := true
+        for v in vs do
+          if !vars.contains v then vars := vars.push v
+  let mut g := g
+  for (fv, _) in cands.reverse do
+    unless keep.contains fv do g ← g.tryClear fv
+  replaceMainGoal [g]
 
 /-- The goal is a Boolean formula in bits of bit vectors: generalize each bit, together with
 the hypotheses about those bits (and about the bits those mention, and so on), and decide.
@@ -389,7 +448,8 @@ elab "bv_enum" : tactic => do
 one, so that `first` goes on to the next alternative. -/
 elab "bv_guard " tac:tactic : tactic => do
   let s ← saveState
-  tryCatchRuntimeEx (evalTactic tac) fun e => do
+  -- without recovery: a step that fails inside fails the whole, and is not admitted
+  tryCatchRuntimeEx (withoutRecover (evalTactic tac)) fun e => do
     s.restore
     throwError "bv_guard: {e.toMessageData}"
 
@@ -415,19 +475,19 @@ elab "bv_peel" : tactic => do
     let some (_, l, r) := t.eq? | break
     let fl := l.getAppFn
     unless fl.isConst && fl == r.getAppFn && l.getAppNumArgs == r.getAppNumArgs do break
-    let diff := (l.getAppArgs.zip r.getAppArgs).filter (fun (a, b) => a != b)
-    unless diff.size == 1 do break
-    let s ← saveState
-    try
-      evalTactic (← `(tactic| congr 1))
-      let gs ← getGoals
-      unless gs.length == 1 do throwError "bv_peel"
-      let some (α, _, _) := (← instantiateMVars (← gs[0]!.getType)).eq? | throwError "bv_peel"
-      unless (← whnfR α).isAppOfArity ``BitVec 1 do throwError "bv_peel"
-      peeled := true
-    catch _ =>
-      s.restore
-      break
+    let (la, ra) := (l.getAppArgs, r.getAppArgs)
+    let idx := (List.range la.size).filter fun i => la[i]! != ra[i]!
+    let [i] := idx | break
+    let (a, b) := (la[i]!, ra[i]!)
+    let α ← inferType a
+    unless (← whnfR α).isAppOfArity ``BitVec 1 do break
+    -- `l = r` from `a = b`, by `congrArg` on `l` with its `i`-th operand abstracted
+    let f ← withLocalDeclD `x α fun x =>
+      mkLambdaFVars #[x] (mkAppN fl (la.set! i x))
+    let h ← mkFreshExprSyntheticOpaqueMVar (← mkEq a b)
+    g.assign (← mkCongrArg f h)
+    replaceMainGoal [h.mvarId!]
+    peeled := true
   unless peeled do throwError "bv_peel: the two sides do not differ in one operand"
 
 /-- Run `tac` with at most `n` thousand heartbeats more than spent so far, and never more
@@ -440,7 +500,8 @@ elab "bv_budget " n:num tac:tactic : tactic => do
   if ctx.maxHeartbeats != 0 && ctx.maxHeartbeats < lim then lim := ctx.maxHeartbeats
   let s ← saveState
   tryCatchRuntimeEx
-    (withTheReader Core.Context (fun c => { c with maxHeartbeats := lim }) (evalTactic tac))
+    (withTheReader Core.Context (fun c => { c with maxHeartbeats := lim })
+      (withoutRecover (evalTactic tac)))
     fun e => do
       s.restore
       throwError "bv_budget: {e.toMessageData}"
@@ -469,11 +530,40 @@ elab "bv_cmp_split" : tactic => do
       Bool.true_eq_false, Bool.false_eq_true, BitVec.reduceULT, BitVec.reduceULE,
       BitVec.reduceBEq, BitVec.reduceEq, *] at ⊢)))
 
-/-- Succeeds when the goal makes a choice (`if`), which `split` takes apart. -/
-elab "bv_has_ite" : tactic => do
+/-- The number of choices (`if`) in `e`, counted up to a little past `cap`. -/
+partial def countIte (cap : Nat) (e : Expr) (acc : Nat) : Nat :=
+  if acc > cap then acc else
+  let acc := if e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5 then acc + 1 else acc
+  match e with
+  | .app f a => countIte cap a (countIte cap f acc)
+  | .mdata _ b => countIte cap b acc
+  | _ => acc
+
+/-- Succeeds when the goal makes a few choices (`if`), at most four, which `split` takes
+apart cheaply. Many choices, nested, are better read bit by bit. -/
+elab "bv_few_ite" : tactic => do
   let t ← instantiateMVars (← getMainTarget)
-  unless (t.find? fun e => e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5).isSome do
-    throwError "bv_has_ite: no choice in the goal"
+  let c := countIte 4 t 0
+  unless 0 < c && c ≤ 4 do throwError "bv_few_ite: {c} choices in the goal"
+
+/-- The casts `setWidth m x` of variables `x` in `e`. -/
+partial def castsOfVars (e : Expr) (acc : Array Expr) : Array Expr :=
+  let acc := if e.isAppOfArity ``BitVec.setWidth 3 && (e.getArg! 2).isFVar && !acc.contains e
+    then acc.push e else acc
+  match e with
+  | .app f a => castsOfVars a (castsOfVars f acc)
+  | .mdata _ b => castsOfVars b acc
+  | _ => acc
+
+/-- Each change of width of a variable in the goal, made a variable: smaller terms to put in
+order. -/
+elab "bv_gen_casts" : tactic => do
+  let g ← getMainGoal
+  g.withContext do
+  let cs := castsOfVars (← instantiateMVars (← g.getType)) #[]
+  if cs.isEmpty then throwError "bv_gen_casts: no change of width of a variable"
+  let (_, g) ← g.generalize (cs.map fun a => { expr := a })
+  replaceMainGoal [g]
 
 /-- A contradiction with a hypothesis `¬ P`, `P` proved by `tac`. -/
 elab "bv_contra " tac:tactic : tactic => do
@@ -484,14 +574,17 @@ elab "bv_contra " tac:tactic : tactic => do
     let ty ← instantiateMVars d.type
     let_expr Not p := ty | continue
     let s ← saveState
-    try
-      let gp ← mkFreshExprSyntheticOpaqueMVar p
-      g.assign (← mkAbsurd (← g.getType) gp (mkFVar d.fvarId))
-      setGoals [gp.mvarId!]
-      evalTactic tac
-      unless (← getGoals).isEmpty do throwError "bv_contra: not closed"
-      return
-    catch _ => s.restore
+    -- a failure, or a recursion or heartbeat limit reached on the way: the next hypothesis
+    let closed ← tryCatchRuntimeEx
+      (do
+        let gp ← mkFreshExprSyntheticOpaqueMVar p
+        g.assign (← mkAbsurd (← g.getType) gp (mkFVar d.fvarId))
+        setGoals [gp.mvarId!]
+        evalTactic tac
+        unless (← getGoals).isEmpty do throwError "bv_contra: not closed"
+        pure true)
+      fun _ => do s.restore; pure false
+    if closed then return
   throwError "bv_contra: no hypothesis to contradict"
 
 end Braid.BV
@@ -531,8 +624,7 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     Braid.BV.extractLsb'_zero_eq, BitVec.setWidth_eq,
     BitVec.shiftLeft_eq', BitVec.ushiftRight_eq', BitVec.sshiftRight_eq', BitVec.toNat_ofNat,
     Nat.reduceMod, Nat.reducePow,
-    BitVec.setWidth_setWidth_of_le, BitVec.setWidth_and, BitVec.setWidth_or,
-    BitVec.setWidth_xor, BitVec.setWidth_not, BitVec.setWidth_add, BitVec.setWidth_mul,
+    BitVec.setWidth_setWidth_of_le, BitVec.setWidth_add, BitVec.setWidth_mul,
     Braid.BV.setWidth_sub_of_le, BitVec.setWidth_neg_of_le,
     Nat.le_refl, Nat.reduceLeDiff, BitVec.ofNat_eq_ofNat,
     BitVec.reduceNeg, BitVec.reduceNot, BitVec.reduceAnd, BitVec.reduceOr, BitVec.reduceXOr,
@@ -542,7 +634,8 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     BitVec.reduceEq, BitVec.reduceBEq, BitVec.reduceULT, BitVec.reduceULE, BitVec.reduceLT,
     BitVec.reduceLE, BitVec.reduceAllOnes, BitVec.reduceSignExtend, BitVec.reduceGetLsb,
     BitVec.reduceRotateLeft, BitVec.reduceRotateRight, ← BitVec.getLsbD_eq_getElem,
-    Braid.BV.signExtend_eq_zero_iff] $[$loc]?)
+    Braid.BV.signExtend_eq_zero_iff, BitVec.zero_or, BitVec.or_zero, BitVec.shiftLeft_zero,
+    BitVec.ushiftRight_zero, BitVec.zero_add, BitVec.add_zero] $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
@@ -568,7 +661,7 @@ macro "bv_bits" : tactic => `(tactic| (
 each product with a power of two a shift, each such sum an `|||`, then bit by bit. -/
 macro "bv_add_or" : tactic => `(tactic| (
   (try simp only [Braid.BV.reduceMulPow2] at *)
-  simp (disch := ((try bv_norm); bv_bits)) only [BitVec.add_eq_or_of_and_eq_zero]
+  simp (disch := bv_guard ((try bv_norm); bv_bits)) only [BitVec.add_eq_or_of_and_eq_zero]
   all_goals bv_bits))
 
 /-- Two sides that differ by the order of the operands of `+`, `*`, `&&&`, `|||` and `^^^`:
@@ -591,6 +684,30 @@ macro "bv_bool_split" : tactic => `(tactic| (
   (repeat' bv_cmp_split)
   all_goals first | rfl | decide | bv_arith))
 
+/-- Parts with no bit in common, such as lanes or bytes put side by side, and arithmetic on
+them: each such disjunction a sum, then arithmetic on `toNat`. -/
+macro "bv_or_arith" : tactic => `(tactic| (
+  simp (disch := bv_guard ((try bv_norm); bv_bits)) only [Braid.BV.or_eq_add]
+  (try simp only [BitVec.toNat_eq, BitVec.toNat_add, BitVec.toNat_shiftLeft,
+    BitVec.toNat_ushiftRight, BitVec.toNat_setWidth, Nat.shiftLeft_eq, Nat.shiftRight_eq_div_pow,
+    BitVec.toNat_ofNat, Nat.reducePow] at *)
+  bv_arith))
+
+/-- Code that works in a wide register for an operation of a narrow width (32-bit words in
+64-bit registers, rotations as two shifts): every change of width pushed in as far as it
+goes, a shift of a widened value cut back, two shifts that make a rotation made one, the
+changes of width of variables made variables, and then both sides put in one order. -/
+macro "bv_narrow_ac" : tactic => `(tactic| (
+  (try simp only [BitVec.shiftLeft_eq', BitVec.ushiftRight_eq', BitVec.toNat_ofNat,
+    Nat.reduceMod, Nat.reducePow])
+  simp only [BitVec.setWidth_setWidth_of_le, BitVec.setWidth_shiftLeft_of_le,
+    ↓Braid.BV.setWidth_signExtend_self, ↓Braid.BV.setWidth_ushr_setWidth, Nat.reduceSub,
+    Nat.reduceLeDiff, Nat.reduceLT, Nat.le_refl, BitVec.setWidth_or, BitVec.setWidth_xor,
+    BitVec.setWidth_and, BitVec.setWidth_not, BitVec.setWidth_add, BitVec.setWidth_mul]
+  (try bv_gen_casts)
+  (try simp only [Braid.BV.or_shifts_eq_rotateLeft, Nat.reduceAdd, Nat.reduceLT])
+  bv_ac))
+
 /-- The decision procedures on their own, without splitting. -/
 macro "bv_solve" : tactic => `(tactic| first
   | bv_budget 30000 bv_arith
@@ -598,6 +715,85 @@ macro "bv_solve" : tactic => `(tactic| first
   | bv_budget 60000 bv_bits
   | bv_budget 50000 bv_add_or
   | bv_guard ((bv_bit_simp at *) <;> bv_bool_decide))
+
+public meta section
+
+open Lean Elab Tactic Meta
+
+namespace Braid.BV
+
+/-- What a goal is made of, to choose the order in which to try the procedures. -/
+structure Shape where
+  /-- An equation between bit vectors. -/
+  eqBV : Bool
+  /-- `+`, `-`, `*`, `/`, `%` or `-x` on bit vectors. -/
+  arith : Bool
+  /-- `&&&`, `|||`, `^^^`, `~~~`, shifts, rotations, changes of width, bits. -/
+  bitwise : Bool
+  /-- How many choices (`if`), up to five. -/
+  ites : Nat
+
+/-- The shape of `t`. -/
+def shapeOf (t : Expr) : MetaM Shape := do
+  let has (ns : List Name) := (t.find? fun e => match e.getAppFn.constName? with
+    | some n => ns.contains n && e.getAppNumArgs ≥ 2
+    | none => false).isSome
+  let eqBV ← match t.eq? with
+    | some (α, _, _) => pure ((← whnfR α).isAppOfArity ``BitVec 1)
+    | none => pure false
+  return {
+    eqBV
+    arith := has [``HAdd.hAdd, ``HSub.hSub, ``HMul.hMul, ``HDiv.hDiv, ``HMod.hMod, ``Neg.neg]
+    bitwise := has [``HAnd.hAnd, ``HOr.hOr, ``HXor.hXor, ``Complement.complement,
+      ``HShiftLeft.hShiftLeft, ``HShiftRight.hShiftRight, ``BitVec.rotateLeft,
+      ``BitVec.rotateRight, ``BitVec.setWidth, ``BitVec.signExtend, ``BitVec.extractLsb',
+      ``HAppend.hAppend, ``BitVec.getLsbD, ``BitVec.msb]
+    ites := countIte 4 t 0 }
+
+/-- Try the procedures in an order chosen from the shape of the goal: first those that its
+shape suits, then the others. Each runs on a budget of its own, so that one that fails
+leaves the rest of the budget to those after it. -/
+elab "bv_dispatch" : tactic => do
+  let sh ← shapeOf (← instantiateMVars (← getMainTarget))
+  let split ← `(tactic| bv_guard ((repeat' split) <;> (try bv_norm at *) <;> bv_solve))
+  let arith ← `(tactic| bv_budget 30000 bv_arith)
+  let ac ← `(tactic| bv_budget 20000 bv_ac)
+  let narrow ← `(tactic| bv_budget 30000 bv_narrow_ac)
+  let bits ← `(tactic| bv_budget 60000 bv_bits)
+  let addOr ← `(tactic| bv_budget 50000 bv_add_or)
+  let bitDecide ← `(tactic| bv_guard ((bv_bit_simp at *) <;> bv_bool_decide))
+  let enum ← `(tactic| bv_guard (bv_enum <;> (try bv_norm at *) <;> bv_solve))
+  let boolCases ← `(tactic| bv_guard (bv_bool_cases <;> (try bv_norm at *) <;> bv_solve))
+  let peel ← `(tactic| bv_guard (bv_peel <;> (try bv_relevant) <;> bv_solve))
+  let boolSplit ← `(tactic| bv_budget 50000 bv_bool_split)
+  let orArith ← `(tactic| bv_budget 120000 bv_or_arith)
+  let contra ← `(tactic| bv_guard contradiction)
+  let contraBy ← `(tactic| bv_contra bv_solve)
+  let first : Array (TSyntax `tactic) :=
+    if 0 < sh.ites && sh.ites ≤ 4 then #[split]
+    else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]
+    else if sh.eqBV && !sh.bitwise then #[arith, ac, peel]
+    else if sh.eqBV then #[narrow, ac, peel, addOr, enum, arith, bits, orArith]
+    else #[arith, boolSplit, bitDecide, boolCases]
+  let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
+    boolSplit, orArith, contra, contraBy]
+  let mut tried : Array (TSyntax `tactic) := #[]
+  for tac in first ++ rest do
+    if tried.contains tac then continue
+    tried := tried.push tac
+    let s ← saveState
+    let closed ← tryCatchRuntimeEx
+      (do
+        withoutRecover (evalTactic tac)
+        pure (← getGoals).isEmpty)
+      fun _ => pure false
+    if closed then return
+    s.restore
+  throwError "bv_auto: no procedure closes the goal"
+
+end Braid.BV
+
+end
 
 /-- Close a goal about bit vectors, with a proof the kernel checks. -/
 macro "bv_auto" : tactic => `(tactic| (
@@ -607,12 +803,4 @@ macro "bv_auto" : tactic => `(tactic| (
   (try bv_norm at *)
   first
   | done
-  | (bv_has_ite; bv_guard ((repeat' split) <;> (try bv_norm at *) <;> bv_solve))
-  | bv_solve
-  | bv_guard ((repeat' split) <;> (try bv_norm at *) <;> bv_solve)
-  | bv_guard (bv_enum <;> (try bv_norm at *) <;> bv_solve)
-  | bv_guard (bv_bool_cases <;> (try bv_norm at *) <;> bv_solve)
-  | bv_guard (bv_peel <;> bv_solve)
-  | bv_budget 50000 bv_bool_split
-  | contradiction
-  | bv_contra bv_solve))
+  | bv_dispatch))

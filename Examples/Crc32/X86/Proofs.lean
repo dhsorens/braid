@@ -18,6 +18,8 @@ module
 public import Examples.Crc32.X86.Image
 public import Examples.Crc32.Common
 import Braid.BV
+import Braid.BV
+import Braid.BV
 
 public section
 

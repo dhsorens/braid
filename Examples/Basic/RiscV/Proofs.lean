@@ -10,6 +10,7 @@ module
 public import Examples.Basic.RiscV.Image
 public import Lowering.RiscV.Logic
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -84,14 +85,14 @@ theorem sum_to_spec (n t1 t2 t3 r : Word) :
     braid_forget 12
     braid_forget 13
     refine Triple.done_eq ?_
-    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_decide
-    have a2 : n + 18446744073709551614#64 = n - 2#64 := by bv_decide
+    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_auto
+    have a2 : n + 18446744073709551614#64 = n - 2#64 := by bv_auto
     have hw : BitVec.setWidth 128 (n - 1#64) * BitVec.setWidth 128 (n - 2#64) =
         wide (n - 1#64) (n - 2#64) := rfl
     rw [a1, a2, hw, ← tri_closed n hbr, ← wide_lo (n - 1#64) (n - 2#64)]
     generalize wide (n - 1#64) (n - 2#64) = X
     simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
-    bv_decide
+    bv_auto
 
 /-- **`sum_to` on the machine.** A machine that holds the code of `sum_to` and is at its
 entry runs to the return address with `1 + 2 + ... + n` in `a0`, where `n` is what `a0`

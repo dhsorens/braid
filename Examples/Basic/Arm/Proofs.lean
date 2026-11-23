@@ -9,6 +9,7 @@ module
 
 public import Examples.Basic.Arm.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -41,7 +42,7 @@ theorem max_u64_spec (a b r : Word) (fn fz fc fv : Bool) :
   refine Triple.done_eq ?_
   simp only [umax, ofBool]
   by_cases h1 : a = b <;> by_cases h2 : b.ule a <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-- **`add3` on the machine.** A running machine whose program holds the words of `add3`,
 with its code loaded and its program counter at the entry, runs to the address in the link
@@ -75,14 +76,14 @@ theorem sum_to_spec (n t8 t9 t10 r : Word) :
     braid_forget 9
     braid_forget 10
     refine Triple.done_eq ?_
-    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_decide
-    have a2 : n + 18446744073709551614#64 = n - 2#64 := by bv_decide
+    have a1 : n + 18446744073709551615#64 = n - 1#64 := by bv_auto
+    have a2 : n + 18446744073709551614#64 = n - 2#64 := by bv_auto
     have hw : BitVec.setWidth 128 (n - 1#64) * BitVec.setWidth 128 (n - 2#64) =
         wide (n - 1#64) (n - 2#64) := rfl
     rw [a1, a2, hw, ← tri_closed n hbr, ← wide_lo (n - 1#64) (n - 2#64)]
     generalize wide (n - 1#64) (n - 2#64) = X
     simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
-    bv_decide
+    bv_auto
   · subst hbr
     braid_run
     braid_forget 8
