@@ -137,6 +137,23 @@ theorem or_shifts_eq_rotateLeft {w : Nat} (x : BitVec w) (k j : Nat) (h : k + j 
     (hk : k < w) : x <<< k ||| x >>> j = x.rotateLeft k := by
   rw [rotateLeft_eq_or x k hk]; congr; omega
 
+/-- Clearing the bits of a mask is subtracting the bits it keeps. -/
+theorem and_not_eq_sub {w : Nat} (x m : BitVec w) : x &&& ~~~m = x - (x &&& m) := by
+  have h : (x &&& ~~~m) + (x &&& m) = x := by
+    rw [BitVec.add_eq_or_of_and_eq_zero]
+    · apply BitVec.eq_of_getLsbD_eq; intro i hi; simp
+      cases x.getLsbD i <;> cases m.getLsbD i <;> simp [hi]
+    · apply BitVec.eq_of_getLsbD_eq; intro i hi; simp
+      cases x.getLsbD i <;> cases m.getLsbD i <;> simp [hi]
+  calc x &&& ~~~m = (x &&& ~~~m) + (x &&& m) - (x &&& m) := by rw [BitVec.add_sub_cancel]
+    _ = x - (x &&& m) := by rw [h]
+
+/-- `and_not_eq_sub`, for a literal mask written as the complement of another. -/
+theorem and_highMask {w : Nat} (x : BitVec w) (c m : Nat)
+    (h : BitVec.ofNat w c = ~~~BitVec.ofNat w m) :
+    x &&& BitVec.ofNat w c = x - (x &&& BitVec.ofNat w m) := by
+  rw [h, and_not_eq_sub]
+
 theorem uaddOverflow_eq_decide {w : Nat} (x y : BitVec w) :
     x.uaddOverflow y = decide (2 ^ w ≤ x.toNat + y.toNat) := rfl
 
@@ -412,6 +429,20 @@ simproc reduceMulPow2 ((_ : BitVec _) * _) := fun e => do
   let pf := mkApp5 (mkConst ``Braid.BV.mul_pow2) (toExpr w) x (mkNatLit k) (mkNatLit n)
     (← mkEqRefl (mkNatLit n))
   return .done { expr := ← mkAppM ``HShiftLeft.hShiftLeft #[x, mkNatLit k], proof? := some pf }
+
+/-- `x &&& c` for a literal `c` whose low `k` bits are clear and the rest set, as in aligning
+an address down: `x` less its low `k` bits. -/
+simproc reduceHighMask ((_ : BitVec _) &&& _) := fun e => do
+  let_expr HAnd.hAnd _ _ _ _ x c := e | return .continue
+  let some ⟨w, cv⟩ ← getBitVecValue? c | return .continue
+  let n := cv.toNat
+  let lo := 2 ^ w - 1 - n
+  if n == 0 || lo == 0 || (lo + 1) &&& lo != 0 then return .continue
+  let pf ← mkDecideProof (← mkEq (← mkAppM ``BitVec.ofNat #[toExpr w, mkNatLit n])
+    (← mkAppM ``Complement.complement #[← mkAppM ``BitVec.ofNat #[toExpr w, mkNatLit lo]]))
+  let pf := mkApp5 (mkConst ``Braid.BV.and_highMask) (toExpr w) x (mkNatLit n) (mkNatLit lo) pf
+  let low ← mkAppM ``HAnd.hAnd #[x, ← mkAppM ``BitVec.ofNat #[toExpr w, mkNatLit lo]]
+  return .done { expr := ← mkAppM ``HSub.hSub #[x, low], proof? := some pf }
 
 /-- `Nat.testBit` of two literals. -/
 dsimproc reduceTestBit (Nat.testBit _ _) := fun e => do
@@ -752,6 +783,13 @@ macro "bv_bool_eq" : tactic => `(tactic| (
   (try simp only [bne_iff_ne, beq_iff_eq, ne_eq, Bool.not_eq_true, Bool.not_eq_false] at *)
   bv_arith))
 
+/-- Addresses aligned down (`x &&& ~~~7`): each mask that clears low bits as a subtraction of
+those bits, then arithmetic. -/
+macro "bv_align" : tactic => `(tactic| (
+  simp only [Braid.BV.reduceHighMask] at *
+  (try simp only [BitVec.toNat_eq, BitVec.toNat_sub, BitVec.toNat_add] at *)
+  bv_arith))
+
 /-- The decision procedures on their own, without splitting. -/
 macro "bv_solve" : tactic => `(tactic| first
   | bv_budget 30000 bv_arith
@@ -821,6 +859,7 @@ elab "bv_dispatch" : tactic => do
   let boolSplit ← `(tactic| bv_budget 50000 bv_bool_split)
   let orArith ← `(tactic| bv_budget 120000 bv_or_arith)
   let boolEq ← `(tactic| bv_budget 30000 bv_bool_eq)
+  let align ← `(tactic| bv_budget 30000 bv_align)
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
@@ -833,11 +872,11 @@ elab "bv_dispatch" : tactic => do
     if 0 < sh.ites && sh.ites ≤ 4 then #[split]
     else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]
     else if sh.eqBV && !sh.bitwise then #[arith, ac, peel]
-    else if sh.eqBV then #[narrow, ac, peel, addOr, enum, arith, bits, orArith]
+    else if sh.eqBV then #[narrow, ac, peel, addOr, enum, arith, align, bits, orArith]
     else if sh.eqBool then #[boolEq, arith, boolSplit, bitDecide]
     else #[arith, boolSplit, bitDecide, boolCases]
   let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
-    boolSplit, orArith, boolEq, contra, contraBy]
+    boolSplit, orArith, boolEq, align, contra, contraBy]
   let mut tried : Array (TSyntax `tactic) := #[]
   for tac in first ++ rest do
     if tried.contains tac then continue

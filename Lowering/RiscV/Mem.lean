@@ -70,10 +70,10 @@ theorem getMem_bytes (s : MachineState) {a : Word} (ha : a &&& 7#64 = 0#64) :
     s.getMem a = s.getByte (a + 7) ++ s.getByte (a + 6) ++ s.getByte (a + 5) ++
       s.getByte (a + 4) ++ s.getByte (a + 3) ++ s.getByte (a + 2) ++ s.getByte (a + 1) ++
       s.getByte a := by
-  have e0 : a &&& ~~~7#64 = a := by bv_decide
-  have e1 : (a + 1) &&& ~~~7#64 = a := by bv_decide
-  have e2 : (a + 2) &&& ~~~7#64 = a := by bv_decide
-  have e3 : (a + 3) &&& ~~~7#64 = a := by bv_decide
+  have e0 : a &&& ~~~7#64 = a := by bv_auto
+  have e1 : (a + 1) &&& ~~~7#64 = a := by bv_auto
+  have e2 : (a + 2) &&& ~~~7#64 = a := by bv_auto
+  have e3 : (a + 3) &&& ~~~7#64 = a := by bv_auto
   have e4 : (a + 4) &&& ~~~7#64 = a := by bv_decide
   have e5 : (a + 5) &&& ~~~7#64 = a := by bv_decide
   have e6 : (a + 6) &&& ~~~7#64 = a := by bv_decide
@@ -111,10 +111,10 @@ theorem getByte_setMem (s : MachineState) {a : Word} (v x : Word) (ha : a &&& 7#
   have hlt : (x - a).toNat < 8 ↔ x - a < 8#64 := Iff.rfl
   simp only [getByte_eq, mem_setMem, hlt, byteAt]
   by_cases hx : x &&& ~~~7#64 = a
-  · have : x - a < 8#64 := by bv_decide
+  · have : x - a < 8#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
     bv_decide
-  · have : ¬ x - a < 8#64 := by bv_decide
+  · have : ¬ x - a < 8#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 
 theorem setWord32_eq (s : MachineState) (a : Word) (v : BitVec 32) :
@@ -147,7 +147,7 @@ theorem getByte_setWord32 (s : MachineState) {a : Word} (v x : Word) (ha : a &&&
   · simp only [hx, ↓reduceIte]
     generalize s.mem (a &&& ~~~7#64) = w
     bv_decide
-  · have : ¬ x - a < 4#64 := by bv_decide
+  · have : ¬ x - a < 4#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 
 theorem getByte_setHalfword (s : MachineState) {a : Word} (v x : Word)
@@ -160,7 +160,7 @@ theorem getByte_setHalfword (s : MachineState) {a : Word} (v x : Word)
   · simp only [hx, ↓reduceIte]
     generalize s.mem (a &&& ~~~7#64) = w
     bv_decide
-  · have : ¬ x - a < 2#64 := by bv_decide
+  · have : ¬ x - a < 2#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 
 theorem getByte_setByte (s : MachineState) (a v x : Word) :
@@ -172,7 +172,7 @@ theorem getByte_setByte (s : MachineState) (a v x : Word) :
   · simp only [hx, ↓reduceIte]
     generalize s.mem (a &&& ~~~7#64) = w
     bv_decide
-  · have : ¬ x - a < 1#64 := by bv_decide
+  · have : ¬ x - a < 1#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 
 end Lowering.RiscV
