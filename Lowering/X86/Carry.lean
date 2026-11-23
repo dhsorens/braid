@@ -9,7 +9,7 @@
 module
 
 public import Lowering.X86.Rel
-import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -26,7 +26,7 @@ theorem ofBool_ofNat (b : Bool) : ofBool b = (BitVec.ofBool b).setWidth 64 := by
 
 /-- Decide the value of a sum or difference with a carry. -/
 macro "x86_carry_bv" : tactic => `(tactic|
-  (simp [Env.set_apply, ofBool_ofNat, ofNat_toNat_bool] <;> bv_decide))
+  (simp [Env.set_apply, ofBool_ofNat, ofNat_toNat_bool] <;> bv_auto))
 
 theorem adc_sound {w : Width} (dst : Dst w) (src : Operand w) :
     OpSound p (.adc dst src : Operation w) := by
@@ -57,7 +57,7 @@ theorem adc_sound {w : Width} (dst : Dst w) (src : Operand w) :
     all_goals subst hst
     all_goals try simp only [StatusFlags.from_result, adc_ne8, adc_ne16, adc_ne32, adc_ne64]
     all_goals simp [State.setFlag, h.df, ofBool_ofNat, ofNat_toNat_bool]
-    all_goals bv_decide
+    all_goals bv_auto
 
 theorem sbb_sound {w : Width} (dst : Dst w) (src : Operand w) :
     OpSound p (.sbb dst src : Operation w) := by
@@ -88,7 +88,7 @@ theorem sbb_sound {w : Width} (dst : Dst w) (src : Operand w) :
     all_goals subst hst
     all_goals try simp only [StatusFlags.from_result, sbb_ne8, sbb_ne16, sbb_ne32, sbb_ne64]
     all_goals simp [State.setFlag, h.df, ofBool_ofNat, ofNat_toNat_bool]
-    all_goals bv_decide
+    all_goals bv_auto
 
 omit [Labels] in
 /-- A register is written, and the instruction is done. -/
@@ -117,6 +117,6 @@ theorem bswap_sound {w : Width} (dst : Reg w) : OpSound p (.bswap dst : Operatio
     generalize s.regs.get dst = a at hw ⊢
     dsimp only [Width.type, Width.bits] at a
     refine setReg_done (n := 16) h ?_ (by decide) hw
-    simp [Braid.bswap, BitVec.take, BitVec.drop] <;> bv_decide
+    simp [Braid.bswap, BitVec.take, BitVec.drop] <;> bv_auto
 
 end Lowering.X86

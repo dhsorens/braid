@@ -177,6 +177,17 @@ theorem slt_zero_eq_msb {w : Nat} (x : BitVec w) : x.slt 0#w = x.msb := by
 /-- `slt_zero_eq_msb`, with the zero written as a numeral. -/
 theorem slt_zero_eq_msb' {w : Nat} (x : BitVec w) : x.slt 0 = x.msb := slt_zero_eq_msb x
 
+/-- A truth value as a word is not zero when it is true. -/
+theorem setWidth_ofBool_bne_zero {n : Nat} (b : Bool) (h : 0 < n) :
+    (BitVec.setWidth n (BitVec.ofBool b) != 0#n) = b := by
+  cases b <;> simp [bne, BitVec.ofBool, ← BitVec.toNat_inj] <;> omega
+
+/-- Two truth values as words, combined with `|||`, are their disjunction as a word. -/
+theorem setWidth_ofBool_or {n : Nat} (p q : Bool) :
+    BitVec.setWidth n (BitVec.ofBool p) ||| BitVec.setWidth n (BitVec.ofBool q) =
+      BitVec.setWidth n (BitVec.ofBool (p || q)) := by
+  cases p <;> cases q <;> simp
+
 /-- A value that a narrower width holds is zero when its narrowing is. -/
 theorem setWidth_beq_zero {n m : Nat} (x : BitVec n) (h : (x.setWidth m).setWidth n = x) :
     (x.setWidth m == 0#m) = (x == 0#n) := by
@@ -279,8 +290,19 @@ partial def isPlain (goal : Expr) (e : Expr) : MetaM Bool := do
   | .proj _ _ b => isPlain goal b
   | _ => return false
 
-/-- The largest subterms of `e` that are bit vectors built by something other than the
-operations on bit vectors, such as a register of a machine state. -/
+/-- Whether `e` mentions a bit vector: an operation on bit vectors or a variable that is one. -/
+def mentionsBV (e : Expr) : MetaM Bool := do
+  if (e.find? fun x => match x.constName? with
+      | some n => (`BitVec).isPrefixOf n
+      | none => false).isSome then
+    return true
+  for fv in (collectFVars {} e).fvarIds do
+    if (← whnfR (← fv.getType)).isAppOfArity ``BitVec 1 then return true
+  return false
+
+/-- The largest subterms of `e` that are bit vectors or Booleans built by something other than
+the operations on them, such as a register or a flag of a machine state. A Boolean is taken
+only when it says nothing about bit vectors, which a variable in its place would hide. -/
 partial def foreignAtoms (e : Expr) (acc : Array Expr) : MetaM (Array Expr) := do
   if e.hasLooseBVars || e.isFVar || e.isMVar then
     match e with
@@ -291,7 +313,7 @@ partial def foreignAtoms (e : Expr) (acc : Array Expr) : MetaM (Array Expr) := d
   if let some n := e.getAppFn.constName? then
     if !known n && e.isApp then
       let ty ← whnfR (← inferType e)
-      if ty.isAppOfArity ``BitVec 1 then
+      if ty.isAppOfArity ``BitVec 1 || (ty.isConstOf ``Bool && !(← mentionsBV e)) then
         return if acc.contains e then acc else acc.push e
   match e with
   | .app f a => foreignAtoms a (← foreignAtoms f acc)
@@ -530,6 +552,15 @@ dsimproc reduceTestBit (Nat.testBit _ _) := fun e => do
   let some m := m.nat? | return .continue
   let some i := i.nat? | return .continue
   return .done (toExpr (m.testBit i))
+
+/-- An append whose width a simplification has already computed (`x ++ y : BitVec 64` with
+`x : BitVec 56`, `y : BitVec 8`) stated again at its own width `56 + 8`, so that the lemmas
+about appends, which are stated at that width, apply. -/
+dsimproc restoreAppendWidth (@HAppend.hAppend _ _ _ _ _ _) := fun e => do
+  let_expr HAppend.hAppend _ _ γ _ x y := e | return .continue
+  let_expr BitVec k := γ | return .continue
+  if k.isAppOf ``HAdd.hAdd then return .continue
+  return .done (← mkAppM ``HAppend.hAppend #[x, y])
 
 /-- `i < c` for a variable `i` and a small literal `c`: one goal for each value of `i`. -/
 elab "bv_enum" : tactic => do
@@ -781,7 +812,9 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     BitVec.reduceRotateLeft, BitVec.reduceRotateRight, ← BitVec.getLsbD_eq_getElem,
     Braid.BV.signExtend_eq_zero_iff, BitVec.zero_or, BitVec.or_zero, BitVec.shiftLeft_zero,
     BitVec.ushiftRight_zero, BitVec.zero_add, BitVec.add_zero, Bool.false_eq_true,
-    ↓reduceIte, ite_true, ite_false, bne_self_eq_false, beq_self_eq_true] $[$loc]?)
+    ↓reduceIte, ite_true, ite_false, bne_self_eq_false, beq_self_eq_true,
+    Braid.BV.restoreAppendWidth,
+    Braid.BV.setWidth_ofBool_or, Braid.BV.setWidth_ofBool_bne_zero, Nat.reduceLT] $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
@@ -967,6 +1000,12 @@ def shapeOf (t : Expr) : MetaM Shape := do
     flags := has [``BitVec.msb, ``BitVec.slt, ``BitVec.sle] ||
       (t.find? isOneBitWider).isSome }
 
+/-- Fail at once on a goal with holes still to fill, such as `x = ?m`, which `bv_auto` is
+not for: an alternative of `first` that offers one moves on without delay. -/
+elab "bv_no_holes" : tactic => do
+  if (← instantiateMVars (← getMainTarget)).hasExprMVar then
+    throwError "bv_auto: the goal has holes"
+
 /-- Try the procedures in an order chosen from the shape of the goal: first those that its
 shape suits, then the others. Each runs on a budget of its own, so that one that fails
 leaves the rest of the budget to those after it. -/
@@ -1030,6 +1069,7 @@ end
 
 /-- Close a goal about bit vectors, with a proof the kernel checks. -/
 macro "bv_auto" : tactic => `(tactic| (
+  bv_no_holes
   (try bv_atoms)
   bv_clear
   (try subst_vars)
