@@ -22,6 +22,7 @@ module
 
 public import Lowering.Arm.Rel
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -36,13 +37,13 @@ variable {s : Arm64.State} {σ : State}
 
 /-- A 128-bit value is its two halves. -/
 theorem halves_append (x : BitVec 128) : x.extractLsb' 64 64 ++ x.truncate 64 = x := by
-  bv_decide
+  bv_auto
 
 theorem truncate_append (lo hi : Word) : (hi ++ lo : BitVec 128).truncate 64 = lo := by
-  bv_decide
+  bv_auto
 
 theorem extract_append (lo hi : Word) : (hi ++ lo : BitVec 128).extractLsb' 64 64 = hi := by
-  bv_decide
+  bv_auto
 
 /-- Writing the two halves of a vector register gives a state related to the machine's. -/
 theorem Rel.writeVReg (h : Rel s σ) (k : BitVec 5) (lo hi : Word) :
@@ -113,10 +114,10 @@ theorem readSimdSized_narrow (m : Arm64.Memory) {sz : SimdMemSize} (hsz : sz ≠
     m.readSimdSized sz a = (0#64 ++ m.readSized (simdMemW sz) false a : BitVec 128) := by
   cases sz <;> simp only [Arm64.Memory.readSimdSized, Arm64.Memory.readSized, simdMemW,
     Bool.false_eq_true, ↓reduceIte, ne_eq, not_true_eq_false] at hsz ⊢
-  · generalize m.read8 a = b; bv_decide
-  · generalize m.read16 a = b; bv_decide
-  · generalize m.read32 a = b; bv_decide
-  · generalize m.read64 a = b; bv_decide
+  · generalize m.read8 a = b; bv_auto
+  · generalize m.read16 a = b; bv_auto
+  · generalize m.read32 a = b; bv_auto
+  · generalize m.read64 a = b; bv_auto
 
 /-- A load of sixteen bytes is two loads of eight. -/
 theorem readSimdSized_q (m : Arm64.Memory) (a : Word) :
@@ -129,10 +130,10 @@ theorem writeSimdSized_narrow (m : Arm64.Memory) {sz : SimdMemSize} (hsz : sz �
     m.writeSimdSized sz a (hi ++ lo) = m.writeSized (simdMemW sz) a lo := by
   cases sz <;> simp only [Arm64.Memory.writeSimdSized, Arm64.Memory.writeSized, simdMemW,
     ne_eq, not_true_eq_false] at hsz ⊢
-  · congr 1; bv_decide
-  · congr 1; bv_decide
-  · congr 1; bv_decide
-  · congr 1; bv_decide
+  · congr 1; bv_auto
+  · congr 1; bv_auto
+  · congr 1; bv_auto
+  · congr 1; bv_auto
 
 /-- A store of sixteen bytes is two stores of eight. -/
 theorem writeSimdSized_q (m : Arm64.Memory) (a lo hi : Word) :
@@ -141,7 +142,7 @@ theorem writeSimdSized_q (m : Arm64.Memory) (a lo hi : Word) :
   simp only [Arm64.Memory.writeSimdSized, Arm64.Memory.write128, Arm64.Memory.writeSized,
     extract_append]
   congr 2
-  bv_decide
+  bv_auto
 
 theorem simdMemW_bytes {sz : SimdMemSize} (hsz : sz ≠ .Q128) : (simdMemW sz).bytes = sz.bytes := by
   cases sz <;> first | rfl | exact absurd rfl hsz
@@ -458,7 +459,7 @@ theorem sound_fmovGprVec {sf : Bool} {ftype rmode : BitVec 2} {opcode : BitVec 3
         env_simp
         simp only [UnOp.eval_zext]
         generalize s.vregs.read rn = x
-        bv_decide
+        bv_auto
       · split at hops
         · rename_i hc
           obtain ⟨rfl, rfl, rfl⟩ := hc
@@ -493,7 +494,7 @@ theorem sound_fmovGprVec {sf : Bool} {ftype rmode : BitVec 2} {opcode : BitVec 3
           env_simp
           simp only [UnOp.eval_zext]
           generalize s.readReg64 _ = x
-          bv_decide
+          bv_auto
         · split at hops
           · rename_i hc
             obtain ⟨rfl, rfl, rfl⟩ := hc
@@ -505,7 +506,7 @@ theorem sound_fmovGprVec {sf : Bool} {ftype rmode : BitVec 2} {opcode : BitVec 3
               ((evalInst_fmov_d prog rn rd s).trans (wv_eq _ ?_))
             env_simp
             generalize s.readReg64 _ = x
-            bv_decide
+            bv_auto
           · split at hops
             · rename_i hc
               obtain ⟨rfl, rfl, rfl⟩ := hc
@@ -550,7 +551,7 @@ theorem sound_fpDataProc1 {ftype : BitVec 2} {opcode : BitVec 6}
         env_simp
         simp only [UnOp.eval_zext]
         generalize s.vregs.read rn = x
-        bv_decide
+        bv_auto
       · split at hops
         · rename_i hc
           subst hc
@@ -561,7 +562,7 @@ theorem sound_fpDataProc1 {ftype : BitVec 2} {opcode : BitVec 6}
           refine step_done (h'.setPC _) hw ((evalInst_fpmov_d prog rn rd s).trans (wv_eq _ ?_))
           env_simp
           generalize s.vregs.read rn = x
-          bv_decide
+          bv_auto
         · cases hops
     · cases hops
 
@@ -570,7 +571,7 @@ theorem sound_fpDataProc1 {ftype : BitVec 2} {opcode : BitVec 6}
 theorem movi_halves (q : Bool) (d : Word) :
     (if q = true then d ++ d else BitVec.setWidth 128 d) = (if q = true then d else 0#64) ++ d := by
   cases q
-  · simp only [Bool.false_eq_true, ↓reduceIte]; bv_decide
+  · simp only [Bool.false_eq_true, ↓reduceIte]; bv_auto
   · rfl
 
 theorem evalInst_movi {q op : Bool} {immb : BitVec 3} {opc : BitVec 5} {d64 : Word}
@@ -603,7 +604,7 @@ theorem evalInst_movi {q op : Bool} {immb : BitVec 3} {opc : BitVec 5} {d64 : Wo
 
 /-! ## Operations on lanes -/
 
-theorem bv2_cases (x : BitVec 2) : x = 0#2 ∨ x = 1#2 ∨ x = 2#2 ∨ x = 3#2 := by bv_decide
+theorem bv2_cases (x : BitVec 2) : x = 0#2 ∨ x = 1#2 ∨ x = 2#2 ∨ x = 3#2 := by bv_auto
 
 /-- The model's operation on lanes, as a fold over the lanes. -/
 theorem zipSimdLanes_eq (q : Bool) (esize : Nat) (vn vm : BitVec 128)
@@ -743,7 +744,7 @@ theorem sound_fpImm {ftype : BitVec 2} {imm8 : BitVec 8}
       refine step_done (h'.setPC _) hw ((evalInst_fpImm_s prog rd imm8 s).trans (wv_eq _ ?_))
       env_simp
       generalize Arm64.vfpExpandImm32 imm8 = x
-      bv_decide
+      bv_auto
     · split at hops
       · rename_i hc
         subst hc
@@ -754,7 +755,7 @@ theorem sound_fpImm {ftype : BitVec 2} {imm8 : BitVec 8}
         refine step_done (h'.setPC _) hw ((evalInst_fpImm_d prog rd imm8 s).trans (wv_eq _ ?_))
         env_simp
         generalize Arm64.vfpExpandImm64 imm8 = x
-        bv_decide
+        bv_auto
       · cases hops
 
 theorem evalInst_fcsel_s (cond : BitVec 4) (s : Arm64.State) :
@@ -840,7 +841,7 @@ theorem sound_simdAddpScalar (h : Rel s σ) (hw : (lower s.pc (.simdAddpScalar r
   env_simp
   simp only [BinOp.eval_add]
   generalize s.vregs.read rn = x
-  bv_decide
+  bv_auto
 
 /-! ## Lanes -/
 
@@ -849,7 +850,7 @@ theorem bv5_cases (x : BitVec 5) :
       x = 8#5 ∨ x = 9#5 ∨ x = 10#5 ∨ x = 11#5 ∨ x = 12#5 ∨ x = 13#5 ∨ x = 14#5 ∨ x = 15#5 ∨
       x = 16#5 ∨ x = 17#5 ∨ x = 18#5 ∨ x = 19#5 ∨ x = 20#5 ∨ x = 21#5 ∨ x = 22#5 ∨ x = 23#5 ∨
       x = 24#5 ∨ x = 25#5 ∨ x = 26#5 ∨ x = 27#5 ∨ x = 28#5 ∨ x = 29#5 ∨ x = 30#5 ∨ x = 31#5 := by
-  bv_decide
+  bv_auto
 
 /-- Split a 5-bit field into its 32 values. -/
 macro "bv5_split" x:ident : tactic => `(tactic|
@@ -1496,7 +1497,7 @@ theorem sound_simdTwoRegMisc {q u : Bool} {size : BitVec 2} {opcode : BitVec 5}
         env_simp <;>
         simp only [UnOp.eval_not, Bool.false_eq_true, ↓reduceIte] <;>
         generalize s.vregs.read rn = x <;>
-        bv_decide
+        bv_auto
     · cases hops
 
 /-! ## `EXT` -/
@@ -1505,7 +1506,7 @@ theorem bv4_cases (x : BitVec 4) :
     x = 0#4 ∨ x = 1#4 ∨ x = 2#4 ∨ x = 3#4 ∨ x = 4#4 ∨ x = 5#4 ∨ x = 6#4 ∨ x = 7#4 ∨
       x = 8#4 ∨ x = 9#4 ∨ x = 10#4 ∨ x = 11#4 ∨ x = 12#4 ∨ x = 13#4 ∨ x = 14#4 ∨
       x = 15#4 := by
-  bv_decide
+  bv_auto
 
 /-- The 64 bits from bit `k` of `b:a`, for `k` below 64. -/
 def extVal (k : Nat) (a b : Word) : Word :=

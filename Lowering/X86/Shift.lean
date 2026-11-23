@@ -9,6 +9,7 @@ module
 
 public import Lowering.X86.Rel
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -33,7 +34,7 @@ theorem imul_sound {w : Width} (dst : Option (Dst w)) (src1 : RegOrMem w) (src2 
     have ha' := (hag 0 (by decide)).trans ha
     x86_ops at hw
     simp only [ha', hb] at hw
-    refine writeRM_sound (n := 24) (val := a * b) h (by simp <;> bv_decide) (by decide) hw
+    refine writeRM_sound (n := 24) (val := a * b) h (by simp <;> bv_auto) (by decide) hw
       fun s' ρ3 σ' _ h' hq => ?_
     simp only [Effects.All]
     intro sf zf af pf
@@ -55,7 +56,7 @@ theorem immCount_lt (c : ConstExpr) (w : Width) : immCount p w c < 64#8 := by
 theorem immCount_lt32 (c : ConstExpr) {w : Width} (hw : w ≠ .W64) : immCount p w c < 32#8 := by
   simp only [immCount]
   generalize (c.interp p).toBitVec.take 8 = x
-  cases w <;> first | exact absurd rfl hw | bv_decide
+  cases w <;> first | exact absurd rfl hw | bv_auto
 
 omit [Labels] in
 theorem toNat_sub_one {k : BitVec 8} (hk : k ≠ 0) : k.toNat - 1 = (k - 1).toNat := by

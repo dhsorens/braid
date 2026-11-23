@@ -20,6 +20,7 @@ module
 
 public import Lowering.Arm.Simd
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -78,30 +79,30 @@ theorem mround_step (s : Work) (k : Word) (ha : s.a >>> 32#64 = 0#64)
 
 theorem init_a_lt (x0 x1 y0 y1 : Word) : (Work.init x0 x1 y0 y1).a >>> 32#64 = 0#64 := by
   simp only [Work.init]
-  bv_decide
+  bv_auto
 
 theorem init_e_lt (x0 x1 y0 y1 : Word) : (Work.init x0 x1 y0 y1).e >>> 32#64 = 0#64 := by
   simp only [Work.init]
-  bv_decide
+  bv_auto
 
 theorem step_a_lt (s : Work) (k : Word) : (s.step k).a >>> 32#64 = 0#64 := by
   simp only [Work.step]
   generalize rndA _ _ _ _ _ _ _ _ = t
-  bv_decide
+  bv_auto
 
 theorem step_e_lt (s : Work) (k : Word) : (s.step k).e >>> 32#64 = 0#64 := by
   simp only [Work.step]
   generalize rndE _ _ _ _ _ _ = t
-  bv_decide
+  bv_auto
 
 /-- Two vector registers are the working words of `Work.init` of their words. -/
 theorem init_x (x0 x1 y0 y1 : Word) : (x1 ++ x0 : BitVec 128) = (Work.init x0 x1 y0 y1).x := by
   simp only [Work.init, Work.x]
-  bv_decide
+  bv_auto
 
 theorem init_y (x0 x1 y0 y1 : Word) : (y1 ++ y0 : BitVec 128) = (Work.init x0 x1 y0 y1).y := by
   simp only [Work.init, Work.y]
-  bv_decide
+  bv_auto
 
 /-- The words of the register that holds `a` to `d`, where `a` and `c` are below
 `2 ^ 32`. -/
@@ -120,18 +121,18 @@ theorem work_y (s : Work) (he : s.e >>> 32#64 = 0#64) (hg : s.g >>> 32#64 = 0#64
   bv_decide
 
 theorem lane0 (w0 w1 : Word) : (w1 ++ w0 : BitVec 128).extractLsb' 0 32 = w0.setWidth 32 := by
-  bv_decide
+  bv_auto
 
 theorem lane1 (w0 w1 : Word) :
     (w1 ++ w0 : BitVec 128).extractLsb' 32 32 = (w0 >>> 32#64).setWidth 32 := by
-  bv_decide
+  bv_auto
 
 theorem lane2 (w0 w1 : Word) : (w1 ++ w0 : BitVec 128).extractLsb' 64 32 = w1.setWidth 32 := by
-  bv_decide
+  bv_auto
 
 theorem lane3 (w0 w1 : Word) :
     (w1 ++ w0 : BitVec 128).extractLsb' 96 32 = (w1 >>> 32#64).setWidth 32 := by
-  bv_decide
+  bv_auto
 
 /-- **The model's four rounds are `hashWork`.** The registers that hold `a` to `d` and `e`
 to `h` after `sha256Hash` are those of the working words after four steps. -/

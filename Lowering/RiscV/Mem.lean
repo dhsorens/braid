@@ -16,6 +16,7 @@ module
 
 public import RiscvZkvm.Rv64.Execution
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -29,23 +30,23 @@ def byteAt (w a : Word) : BitVec 8 := (w >>> ((a &&& 7#64) <<< 3)).truncate 8
 theorem shift3_toNat (a : Word) : ((a &&& 7#64) <<< 3).toNat = (a &&& 7#64).toNat * 8 := by
   have h : ∀ k : BitVec 3, ((k.setWidth 64 : Word) <<< 3).toNat = (k.setWidth 64 : Word).toNat * 8 := by
     decide
-  have e : a &&& 7#64 = (a.setWidth 3).setWidth 64 := by bv_decide
+  have e : a &&& 7#64 = (a.setWidth 3).setWidth 64 := by bv_auto
   rw [e]; exact h _
 
 theorem shift3_toNat_half (a : Word) :
     ((a &&& 6#64) <<< 3).toNat = (a &&& 7#64).toNat / 2 * 16 := by
   have h : ∀ k : BitVec 3, (((k &&& 6#3).setWidth 64 : Word) <<< 3).toNat =
       (k.setWidth 64 : Word).toNat / 2 * 16 := by decide
-  have e : a &&& 7#64 = (a.setWidth 3).setWidth 64 := by bv_decide
-  have e' : a &&& 6#64 = ((a.setWidth 3) &&& 6#3).setWidth 64 := by bv_decide
+  have e : a &&& 7#64 = (a.setWidth 3).setWidth 64 := by bv_auto
+  have e' : a &&& 6#64 = ((a.setWidth 3) &&& 6#3).setWidth 64 := by bv_auto
   rw [e, e']; exact h _
 
 theorem shift3_toNat_word (a : Word) :
     ((a &&& 4#64) <<< 3).toNat = (a &&& 7#64).toNat / 4 * 32 := by
   have h : ∀ k : BitVec 3, (((k &&& 4#3).setWidth 64 : Word) <<< 3).toNat =
       (k.setWidth 64 : Word).toNat / 4 * 32 := by decide
-  have e : a &&& 7#64 = (a.setWidth 3).setWidth 64 := by bv_decide
-  have e' : a &&& 4#64 = ((a.setWidth 3) &&& 4#3).setWidth 64 := by bv_decide
+  have e : a &&& 7#64 = (a.setWidth 3).setWidth 64 := by bv_auto
+  have e' : a &&& 4#64 = ((a.setWidth 3) &&& 4#3).setWidth 64 := by bv_auto
   rw [e, e']; exact h _
 
 theorem getByte_eq (s : MachineState) (a : Word) :
@@ -93,7 +94,7 @@ theorem getWord32_bytes (s : MachineState) {a : Word} (ha : a &&& 3#64 = 0#64) :
 
 theorem getHalfword_bytes (s : MachineState) {a : Word} (ha : a &&& 1#64 = 0#64) :
     s.getHalfword a = s.getByte (a + 1) ++ s.getByte a := by
-  have e1 : (a + 1) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_decide
+  have e1 : (a + 1) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_auto
   simp only [getByte_eq, getHalfword_eq, e1, byteAt]
   generalize s.mem (a &&& ~~~7#64) = w
   bv_decide

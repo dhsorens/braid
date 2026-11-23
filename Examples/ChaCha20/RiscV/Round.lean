@@ -12,7 +12,7 @@
   function on sixteen 64-bit words, `innerW`, which is the code's arithmetic as it is,
   instruction by instruction; each half of a round is run symbolically once and ends in
   exactly that. That the low halves of `innerW` are `ChaCha20.inner` of the low halves is a
-  separate lemma about bit-vectors, proved by `bv_decide` one quarter round deep. After a
+  separate lemma about bit-vectors, proved by `bv_auto` one quarter round deep. After a
   round the registers hold `innerW` of what they held, so nothing grows from round to round,
   and the loop is an induction on the number of rounds left.
 
@@ -33,6 +33,7 @@
 module
 
 public import Examples.ChaCha20.RiscV.QuarterRound
+import Braid.BV
 
 @[expose] public section
 
@@ -296,7 +297,7 @@ theorem low_colsL (vs : List Word) :
   simp only [colsL, colsW, columns, quarter, getD_map_low, List.map_cons, List.map_nil,
     List.cons.injEq, and_true]
   name_state vs
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The low halves of the second half of a round are the quarter rounds on the diagonals of
 the low halves. -/
@@ -305,7 +306,7 @@ theorem low_diagsL (vs : List Word) :
   simp only [diagsL, diagsW, diagonals, quarter, getD_map_low, List.map_cons, List.map_nil,
     List.cons.injEq, and_true]
   name_state vs
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The low halves of a round of the loop are a double round of the low halves. -/
 theorem low_innerW (vs : List Word) (h : vs.length = 16) :
@@ -457,6 +458,6 @@ theorem rounds_spec : ∀ (n : Nat) (vs : List Word) (k : W32) (t20 : Word),
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 end Examples.ChaCha20.RiscV

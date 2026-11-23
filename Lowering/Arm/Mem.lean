@@ -22,6 +22,7 @@ module
 public import Braid
 public import Arm64.Trusted.ISA.Semantics
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -128,7 +129,7 @@ theorem isLazyFree_writeSized (m : Memory) (sz : MemWidth) (a v x : Word) :
   cases sz <;>
     simp only [Memory.writeSized, Memory.write16, Memory.write32, Memory.write64,
       isLazyFree_write8, MemWidth.bytes, h1, h2, h4, h8] <;>
-    generalize m.isLazyFree x = b <;> bv_decide
+    generalize m.isLazyFree x = b <;> bv_auto
 
 theorem allPerm_congr {m m' : Memory} (h : ∀ x, m'.perm x = m.perm x) (p : Option Arm64.Perm → Bool)
     (a : Word) (n : Nat) : m'.allPerm p a n = m.allPerm p a n := by
@@ -166,9 +167,9 @@ theorem readSized_signed (m : Memory) (sz : MemWidth) (a : Word) :
     m.readSized sz true a =
       ((m.readSized sz false a).truncate (8 * sz.bytes)).signExtend 64 := by
   cases sz <;> simp only [Memory.readSized, MemWidth.bytes, ↓reduceIte, Bool.false_eq_true]
-  · generalize m.read8 a = b; bv_decide
-  · generalize m.read16 a = b; bv_decide
-  · generalize m.read32 a = b; bv_decide
-  · generalize m.read64 a = b; bv_decide
+  · generalize m.read8 a = b; bv_auto
+  · generalize m.read16 a = b; bv_auto
+  · generalize m.read32 a = b; bv_auto
+  · generalize m.read64 a = b; bv_auto
 
 end Lowering.Arm

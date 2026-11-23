@@ -9,6 +9,7 @@ module
 
 public import Examples.GoBasic.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -96,7 +97,7 @@ theorem main_SumSlice_loop (p len s r : Word) : ∀ (rest : List Word) (i acc : 
     braid_step
     · braid_unfold wordsAt_cons (p + i * 8#64) x xs
       iterate 2 braid_step
-      have e : p + (i * 8#64 + 8#64) = p + (i + 1#64) * 8#64 := by bv_decide
+      have e : p + (i * 8#64 + 8#64) = p + (i + 1#64) * 8#64 := by bv_auto
       rw [e]
       braid_call ih (i + 1#64) (x + acc) _ _ _ _ _ _ (by rw [← he]; bv_omega) hlen
         (by bv_omega)
@@ -109,7 +110,7 @@ theorem main_SumSlice_loop (p len s r : Word) : ∀ (rest : List Word) (i acc : 
       have : i.slt len = true := by
         have h1 : i < len := by rw [← he]; bv_omega
         have h2 : len < 2305843009213693952#64 := by bv_omega
-        bv_decide
+        bv_auto
       exact hbr this
 
 /-- `main.SumSlice` returns the sum of the words of a slice, given as a pointer and a length.

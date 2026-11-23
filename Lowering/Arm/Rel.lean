@@ -24,6 +24,7 @@ module
 public import Lowering.Arm.Lower
 public import Lowering.Arm.Mem
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -260,7 +261,7 @@ theorem run_shiftStages (w : RegWidth) (sh : ShiftType) (amount : Nat) (v : Word
       have hk0 : kb ≠ 0#64 := by rintro rfl; exact h0 (by simpa using hk)
       cases sh <;> simp only [Stage.run, Stage.eval, Arm64.shiftVal, Arm64.shift32, norm, hk, List.foldl, BitVec.rotateRight_def, BitVec.ofNat_toNat, BitVec.setWidth_eq, BinOp.eval_shl, BinOp.eval_lshr, BinOp.eval_ashr, BinOp.eval_mul, UnOp.eval_zext, UnOp.eval_sext, BitVec.truncate_eq_setWidth]
       · bv_decide
-      · bv_decide
+      · bv_auto
       · bv_decide
       · have e1 : kb.toNat % 32 = kb.toNat := Nat.mod_eq_of_lt (by bv_omega)
         have e2 : 32 - kb.toNat = (32#64 - kb).toNat := by bv_omega
@@ -272,7 +273,7 @@ theorem run_shiftStages (w : RegWidth) (sh : ShiftType) (amount : Nat) (v : Word
     · rename_i h0
       cases sh <;> simp [Stage.run, Arm64.shiftVal, Arm64.shift64, norm, h0, BitVec.rotateRight_def]
     · cases sh <;> simp only [Stage.run, Stage.eval, Arm64.shiftVal, Arm64.shift64, norm, hk, List.foldl, shiftOp, BitVec.ofNat_toNat, BitVec.setWidth_eq, BinOp.eval_shl, BinOp.eval_lshr, BinOp.eval_ashr, BinOp.eval_rotr]
-      all_goals bv_decide
+      all_goals bv_auto
 
 theorem run_extStages (w : RegWidth) (ext : ExtendType) (amount : Nat) (v : Word) :
     Stage.run (extStages w ext amount) v = Arm64.extendVal w v ext amount := by
@@ -285,7 +286,7 @@ theorem run_extStages (w : RegWidth) (ext : ExtendType) (amount : Nat) (v : Word
       · rename_i h
         obtain ⟨kb, hkb, hk⟩ := exists_bv_of_lt h
         simp only [Stage.run, Stage.eval, List.foldl, hk, BitVec.ofNat_toNat, BitVec.setWidth_eq, BinOp.eval_shl]
-        bv_decide
+        bv_auto
       · rename_i h
         simp only [Stage.run, Stage.eval, List.foldl, BinOp.eval_and]
         rw [BitVec.shiftLeft_eq_zero (by omega)]; simp
@@ -296,9 +297,9 @@ theorem run_extStages (w : RegWidth) (ext : ExtendType) (amount : Nat) (v : Word
   all_goals first
     | rfl
     | (have e1 : BitVec.setWidth 32 (BitVec.setWidth 64 (BitVec.setWidth 32 v)) = BitVec.setWidth 32 v := by
-         bv_decide
+         bv_auto
        have e2 : BitVec.setWidth 32 (BitVec.signExtend 64 (BitVec.setWidth 32 v)) = BitVec.setWidth 32 v := by
-         bv_decide
+         bv_auto
        simp only [BitVec.setWidth_shiftLeft_of_le (show 32 ≤ 64 by decide), e1, e2])
 
 theorem run_loadStages (w : RegWidth) (sz : MemWidth) (signed : Bool) (m : Arm64.Memory) (a : Word) :
@@ -307,7 +308,7 @@ theorem run_loadStages (w : RegWidth) (sz : MemWidth) (signed : Bool) (m : Arm64
   · cases w <;> cases sz <;> simp [loadStages, Stage.run, norm, Stage.eval, Arm64.Memory.readSized]
   · cases w <;> cases sz <;> simp [loadStages, Stage.run, norm, Stage.eval, Arm64.Memory.readSized]
     generalize m.read32 a = b
-    bv_decide
+    bv_auto
 
 /-! ## Flags -/
 
@@ -501,7 +502,7 @@ theorem wp_logicOps (h : Rel s σ) {d x y : Nat} {w : RegWidth} {op : LogicalOp}
       generalize ρ x = a at * <;>
       generalize ρ y = b at * <;>
       first
-        | bv_decide
+        | bv_auto
         | (refine congrArg (Arm64.State.setPState s) (Arm64.PState.ext ?_ ?_ ?_ ?_) <;> bv_decide)
   all_goals
     cases w <;>
@@ -510,7 +511,7 @@ theorem wp_logicOps (h : Rel s σ) {d x y : Nat} {w : RegWidth} {op : LogicalOp}
       refine (wpOps_ext (ρ := ρ) hw ?_ (fun y hy => by env_below hy)).elim fun ρ₁ hw => ⟨ρ₁, σ, h, hw⟩ <;>
       simp only [Arm64.evalLogical, norm, BinOp.eval_and, BinOp.eval_or, BinOp.eval_xor,
         UnOp.eval_not, UnOp.eval_zext, Env.set_same] at hnx hny ⊢ <;>
-      generalize ρ x = a at * <;> generalize ρ y = b at * <;> bv_decide
+      generalize ρ x = a at * <;> generalize ρ y = b at * <;> bv_auto
 
 /-! ## Addresses -/
 
@@ -693,7 +694,7 @@ theorem Rel.store (h : Rel s σ) {a v : Word} {sz : MemWidth} {m : Mem}
 
 theorem norm_norm (w : RegWidth) (v : Word) : norm w (norm w v) = norm w v := by
   cases w <;> simp only [norm]
-  bv_decide
+  bv_auto
 
 theorem norm_readReg (w : RegWidth) (r : Arm64.Reg) : norm w (s.readReg w r) = s.readReg w r := by
   rw [readReg_eq, norm_norm]
@@ -702,24 +703,24 @@ theorem norm_shiftVal (w : RegWidth) (v : Word) (sh : ShiftType) (amount : Nat) 
     norm w (Arm64.shiftVal w v sh amount) = Arm64.shiftVal w v sh amount := by
   cases w <;> simp only [norm, Arm64.shiftVal]
   generalize Arm64.shift32 _ _ _ = z
-  bv_decide
+  bv_auto
 
 theorem norm_extendVal (w : RegWidth) (v : Word) (ext : ExtendType) (amount : Nat) :
     norm w (Arm64.extendVal w v ext amount) = Arm64.extendVal w v ext amount := by
   cases w <;> simp only [norm, Arm64.extendVal]
   generalize (_ : Word) <<< amount = z
-  bv_decide
+  bv_auto
 
 theorem norm_evalAddSub (w : RegWidth) (op : AddSubOp) (x y : Word) (c : Option Bool) :
     norm w (Arm64.evalAddSub w op x y c).1 = (Arm64.evalAddSub w op x y c).1 := by
   cases w <;> simp only [norm, Arm64.evalAddSub]
   generalize (Arm64.AddWithCarry32 _ _ _).1 = z
-  bv_decide
+  bv_auto
 
 theorem norm_evalLogical (w : RegWidth) (op : LogicalOp) (x y : Word) (ps : Arm64.PState) :
     norm w (Arm64.evalLogical w op x y ps).1 = (Arm64.evalLogical w op x y ps).1 := by
   cases w <;> simp only [norm, Arm64.evalLogical]
-  bv_decide
+  bv_auto
 
 /-- The state after an instruction that computes a result and maybe flags, writes the
 result to `rd`, and goes to the next instruction. -/
@@ -747,17 +748,17 @@ theorem evalLogical_norm (w : RegWidth) (op : LogicalOp) (x y : Word) (ps : Arm6
     Arm64.evalLogical w op x (norm w y) ps = Arm64.evalLogical w op x y ps := by
   cases w
   · have e1 : BitVec.truncate 32 (x &&& BitVec.zeroExtend 64 (BitVec.truncate 32 y)) =
-        BitVec.truncate 32 (x &&& y) := by bv_decide
+        BitVec.truncate 32 (x &&& y) := by bv_auto
     have e2 : BitVec.truncate 32 (x &&& ~~~BitVec.zeroExtend 64 (BitVec.truncate 32 y)) =
-        BitVec.truncate 32 (x &&& ~~~y) := by bv_decide
+        BitVec.truncate 32 (x &&& ~~~y) := by bv_auto
     have e3 : BitVec.truncate 32 (x ||| BitVec.zeroExtend 64 (BitVec.truncate 32 y)) =
-        BitVec.truncate 32 (x ||| y) := by bv_decide
+        BitVec.truncate 32 (x ||| y) := by bv_auto
     have e4 : BitVec.truncate 32 (x ||| ~~~BitVec.zeroExtend 64 (BitVec.truncate 32 y)) =
-        BitVec.truncate 32 (x ||| ~~~y) := by bv_decide
+        BitVec.truncate 32 (x ||| ~~~y) := by bv_auto
     have e5 : BitVec.truncate 32 (x ^^^ BitVec.zeroExtend 64 (BitVec.truncate 32 y)) =
-        BitVec.truncate 32 (x ^^^ y) := by bv_decide
+        BitVec.truncate 32 (x ^^^ y) := by bv_auto
     have e6 : BitVec.truncate 32 (x ^^^ ~~~BitVec.zeroExtend 64 (BitVec.truncate 32 y)) =
-        BitVec.truncate 32 (x ^^^ ~~~y) := by bv_decide
+        BitVec.truncate 32 (x ^^^ ~~~y) := by bv_auto
     cases op <;> simp only [Arm64.evalLogical, norm, e1, e2, e3, e4, e5, e6]
   · rfl
 

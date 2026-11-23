@@ -23,6 +23,7 @@ public import Lowering.X86.Mem
 public import Lowering.X86.Flags
 public import Kraken.X64.OmniSemantics
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -122,7 +123,7 @@ theorem get_low (regs : Reg64s) (r : Reg64) (w : Width) :
     (regs.get (.low r w)).setWidth 64 = ((regs.get64 r).setWidth w.bits).setWidth 64 := by
   simp only [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
   generalize regs.get64 r = x
-  cases w <;> simp only [Width.bits] <;> bv_decide
+  cases w <;> simp only [Width.bits] <;> bv_auto
 
 theorem get_low64 (regs : Reg64s) (r : Reg64) : regs.get (.low r .W64) = regs.get64 r := by
   simpa using get_low regs r .W64
@@ -134,7 +135,7 @@ theorem get_high (regs : Reg64s) (r : Reg .W8) (hr : r.offset ≠ 0) :
     simp only [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
     generalize regs.get64 _ = x
     simp only [Width.bits, Width.type]
-    bv_decide
+    bv_auto
 
 theorem readReg_sound (h : RelD s σ) {n : Nat} {w : Width} {r : Reg w}
     (hw : wpOps (readReg n r) ρ σ Q) :
@@ -166,14 +167,14 @@ theorem set_low16 (regs : Reg64s) (r : Reg64) (v : BitVec 16) :
     regs.set (.low r .W16) v =
       regs.set64 r ((regs.get64 r &&& ~~~0xffff#64) ||| v.setWidth 64) := by
   have key : ∀ x : BitVec 64, (x.extractLsb' 16 48 ++ v).setWidth 64 =
-      (x &&& ~~~0xffff#64) ||| v.setWidth 64 := by intro x; bv_decide
+      (x &&& ~~~0xffff#64) ||| v.setWidth 64 := by intro x; bv_auto
   exact congrArg (regs.set64 r) (key _)
 
 theorem set_low8 (regs : Reg64s) (r : Reg64) (v : BitVec 8) :
     regs.set (.low r .W8) v =
       regs.set64 r ((regs.get64 r &&& ~~~0xff#64) ||| v.setWidth 64) := by
   have key : ∀ x : BitVec 64, (x.extractLsb' 8 56 ++ v).setWidth 64 =
-      (x &&& ~~~0xff#64) ||| v.setWidth 64 := by intro x; bv_decide
+      (x &&& ~~~0xff#64) ||| v.setWidth 64 := by intro x; bv_auto
   exact congrArg (regs.set64 r) (key _)
 
 theorem set_high (regs : Reg64s) (r : Reg .W8) (hr : r.offset ≠ 0) (v : BitVec 8) :
@@ -181,7 +182,7 @@ theorem set_high (regs : Reg64s) (r : Reg .W8) (hr : r.offset ≠ 0) (v : BitVec
       regs.set64 r.base ((regs.get64 r.base &&& ~~~0xff00#64) ||| (v.setWidth 64 <<< 8#64)) := by
   have key : ∀ x : BitVec 64,
       (x.extractLsb' 16 48 ++ (v ++ (x.extractLsb' 0 64).extractLsb' 0 8)).setWidth 64 =
-        (x &&& ~~~0xff00#64) ||| (v.setWidth 64 <<< 8#64) := by intro x; bv_decide
+        (x &&& ~~~0xff00#64) ||| (v.setWidth 64 <<< 8#64) := by intro x; bv_auto
   cases r <;> first | exact absurd rfl hr | skip
   all_goals
     simp only [Reg64s.set, Reg64s.get, BitVec.replaceLow, BitVec.drop, BitVec.take, Reg.base,
@@ -410,7 +411,7 @@ theorem wp_pzs {n r : Nat} {w : Width} {val : w.type} (hr : ρ r = val.setWidth 
     cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
   have e2 : (BinOp.eq.eval (BitVec.setWidth 64 val) 0 != 0#64) = (val == BitVec.zero _) := by
     clear hw hr e1
-    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   have e3 : (BinOp.and.eval (BitVec.setWidth 64 val) (signBit w) != 0#64) = val.msb := by
     clear hw hr e1 e2
     cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
@@ -443,7 +444,7 @@ theorem wp_pzsVals {n r : Nat} {w : Width} {val : w.type} (hr : ρ r = val.setWi
     cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
   have e2 : (BinOp.eq.eval (BitVec.setWidth 64 val) 0 != 0#64) = (val == BitVec.zero _) := by
     clear hw hr e1
-    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   have e3 : (BinOp.and.eval (BitVec.setWidth 64 val) (signBit w) != 0#64) = val.msb := by
     clear hw hr e1 e2
     cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
@@ -534,7 +535,7 @@ theorem setWidth_zext {w w' : Width} (hle : w'.bits ≤ w.bits) (v : w'.type) :
   cases w <;> cases w' <;> first | exact absurd hle (by decide) | skip
   all_goals
     dsimp only [Width.type, Width.bits] at v ⊢
-    bv_decide
+    bv_auto
 
 /-- Finish an instruction that sets the status flags: each flag of the block is the model's. -/
 macro "x86_flags" h:ident hst:ident : tactic => `(tactic|

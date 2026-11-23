@@ -8,6 +8,7 @@ module
 
 public import Lowering.X86.Rel
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -57,7 +58,7 @@ theorem movsx_sound {w w' : Width} (dst : Dst w) (src : RegOrMem w') :
     dsimp only [Width.type, Width.bits] at v
     x86_ops at hw
     simp only [hv] at hw
-    refine writeRM_sound (n := 16) (val := v.signExtend _) h (by simp <;> bv_decide)
+    refine writeRM_sound (n := 16) (val := v.signExtend _) h (by simp <;> bv_auto)
       (by decide) hw fun s' ρ2 σ' _ h' hq => ?_
     exact done_sound h' hq
 
@@ -206,7 +207,7 @@ theorem cmp_sound {w : Width} (x : RegOrMem w) (y : Operand w) :
     x86_ops at hw
     simp only [ha', hb] at hw
     generalize hst : StatusFlags.from_result _ _ = st
-    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a - b) (by simp <;> bv_decide)
+    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a - b) (by simp <;> bv_auto)
       (by decide) (hw (ofBool st.af))
     refine done_sound (RelD.status h st (by rfl) (by rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_) hw
     x86_flags h hst
