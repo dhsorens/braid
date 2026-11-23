@@ -521,15 +521,22 @@ def isCmp (e : Expr) : Bool :=
   !e.hasLooseBVars && !e.hasMVar &&
   (e.isAppOfArity ``BitVec.ult 3 || e.isAppOfArity ``BitVec.ule 3 ||
     e.isAppOfArity ``BitVec.msb 2 || e.isAppOfArity ``BEq.beq 4 ||
+    e.isAppOfArity ``Decidable.decide 2 ||
     (e.isAppOfArity ``BitVec.getLsbD 3 && !(e.getArg! 1).isFVar))
 
-/-- One goal for each value of an innermost comparison in the goal, simplified with it. -/
+/-- One goal for each value of an innermost comparison in the goal, or else of a Boolean
+variable in it, simplified with it. -/
 elab "bv_cmp_split" : tactic => do
   let g ← getMainGoal
   g.withContext do
   let t ← instantiateMVars (← g.getType)
-  let some e := t.find? (fun e => isCmp e && e.getAppArgs.all fun a => (a.find? isCmp).isNone)
-    | throwError "bv_cmp_split: no comparison"
+  let e ← match t.find? (fun e => isCmp e && e.getAppArgs.all fun a => (a.find? isCmp).isNone) with
+    | some e => pure e
+    | none =>
+      let vs ← (collectFVars {} t).fvarIds.filterM fun v => do
+        return (← whnfR (← v.getType)).isConstOf ``Bool
+      let some v := vs[0]? | throwError "bv_cmp_split: no comparison"
+      pure (mkFVar v)
   let stx ← Term.exprToSyntax e
   evalTactic (← `(tactic| (cases _h : $stx <;>
     try simp only [Bool.true_and, Bool.and_true, Bool.false_and, Bool.and_false, Bool.true_or,
@@ -538,7 +545,9 @@ elab "bv_cmp_split" : tactic => do
       Bool.bne_true, Bool.bne_false, Bool.true_bne, Bool.false_bne, beq_self_eq_true,
       Bool.true_beq, Bool.false_beq, beq_true, beq_false, ↓reduceIte,
       Bool.true_eq_false, Bool.false_eq_true, BitVec.reduceULT, BitVec.reduceULE,
-      BitVec.reduceBEq, BitVec.reduceEq, *] at ⊢)))
+      BitVec.reduceBEq, BitVec.reduceEq, BitVec.ofBool_true, BitVec.ofBool_false,
+      BitVec.reduceSetWidth, BitVec.reduceOr, BitVec.reduceAnd, BitVec.reduceBNe, decide_true,
+      decide_false, *] at ⊢)))
 
 /-- The number of choices (`if`) in `e`, counted up to a little past `cap`. -/
 partial def countIte (cap : Nat) (e : Expr) (acc : Nat) : Nat :=
@@ -574,6 +583,21 @@ elab "bv_gen_casts" : tactic => do
   if cs.isEmpty then throwError "bv_gen_casts: no change of width of a variable"
   let (_, g) ← g.generalize (cs.map fun a => { expr := a })
   replaceMainGoal [g]
+
+/-- One goal for each value of each Boolean variable of the context that the goal or a
+hypothesis mentions, at most four of them. -/
+elab "bv_bool_vars" : tactic => do
+  let g ← getMainGoal
+  g.withContext do
+  let mut vs : Array FVarId := #[]
+  for d in (← getLCtx) do
+    if d.isImplementationDetail then continue
+    if (← whnfR d.type).isConstOf ``Bool then vs := vs.push d.fvarId
+  if vs.isEmpty then throwError "bv_bool_vars: no Boolean variable"
+  if vs.size > 4 then throwError "bv_bool_vars: too many Boolean variables"
+  for v in vs do
+    let stx ← Term.exprToSyntax (mkFVar v)
+    evalTactic (← `(tactic| all_goals (cases $stx:term)))
 
 /-- A contradiction with a hypothesis `¬ P`, `P` proved by `tac`. -/
 elab "bv_contra " tac:tactic : tactic => do
@@ -688,11 +712,14 @@ macro "bv_ac" : tactic => `(tactic| (
 signed comparisons and top bits as unsigned ones, one goal for each value of each
 comparison, and each goal by arithmetic. -/
 macro "bv_bool_split" : tactic => `(tactic| (
-  (try simp only [BitVec.slt_eq_ult, BitVec.sle_eq_not_slt, BitVec.msb_and, BitVec.msb_or,
+  (try simp only [Braid.BV.uaddOverflow_eq_decide, BitVec.usubOverflow_eq, bne,
+    BitVec.slt_eq_ult, BitVec.sle_eq_not_slt, BitVec.msb_and, BitVec.msb_or,
     BitVec.msb_xor, BitVec.msb_not, BitVec.msb_zero, Braid.BV.ult_zero, Bool.xor_false,
     Bool.bne_false, Bool.false_bne] at *)
   (repeat' bv_cmp_split)
-  all_goals first | rfl | decide | bv_arith))
+  all_goals first | rfl | decide | bv_arith |
+    ((bv_bool_vars <;> (try simp only [BitVec.ofBool_true, BitVec.ofBool_false,
+      BitVec.reduceSetWidth] at *)) <;> first | rfl | decide | bv_arith)))
 
 /-- Parts with no bit in common, such as lanes or bytes put side by side, and arithmetic on
 them: each such disjunction a sum, then arithmetic on `toNat`. -/
@@ -718,6 +745,13 @@ macro "bv_narrow_ac" : tactic => `(tactic| (
   (try simp only [Braid.BV.or_shifts_eq_rotateLeft, Nat.reduceAdd, Nat.reduceLT])
   bv_ac))
 
+/-- An equation between two Booleans as an equivalence of the statements that they are
+true, each test of bit vectors (`==`, `!=`) as an equation, then by arithmetic. -/
+macro "bv_bool_eq" : tactic => `(tactic| (
+  rw [Bool.eq_iff_iff]
+  (try simp only [bne_iff_ne, beq_iff_eq, ne_eq, Bool.not_eq_true, Bool.not_eq_false] at *)
+  bv_arith))
+
 /-- The decision procedures on their own, without splitting. -/
 macro "bv_solve" : tactic => `(tactic| first
   | bv_budget 30000 bv_arith
@@ -742,6 +776,8 @@ structure Shape where
   bitwise : Bool
   /-- How many choices (`if`), up to five. -/
   ites : Nat
+  /-- An equation between Booleans. -/
+  eqBool : Bool
 
 /-- The shape of `t`. -/
 def shapeOf (t : Expr) : MetaM Shape := do
@@ -758,7 +794,10 @@ def shapeOf (t : Expr) : MetaM Shape := do
       ``HShiftLeft.hShiftLeft, ``HShiftRight.hShiftRight, ``BitVec.rotateLeft,
       ``BitVec.rotateRight, ``BitVec.setWidth, ``BitVec.signExtend, ``BitVec.extractLsb',
       ``HAppend.hAppend, ``BitVec.getLsbD, ``BitVec.msb]
-    ites := countIte 4 t 0 }
+    ites := countIte 4 t 0
+    eqBool := match t.cleanupAnnotations.eq? with
+      | some (α, _, _) => α.isConstOf ``Bool
+      | none => false }
 
 /-- Try the procedures in an order chosen from the shape of the goal: first those that its
 shape suits, then the others. Each runs on a budget of its own, so that one that fails
@@ -781,6 +820,7 @@ elab "bv_dispatch" : tactic => do
   let peel ← `(tactic| bv_guard (bv_peel <;> (try bv_relevant) <;> bv_solve))
   let boolSplit ← `(tactic| bv_budget 50000 bv_bool_split)
   let orArith ← `(tactic| bv_budget 120000 bv_or_arith)
+  let boolEq ← `(tactic| bv_budget 30000 bv_bool_eq)
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
@@ -794,9 +834,10 @@ elab "bv_dispatch" : tactic => do
     else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]
     else if sh.eqBV && !sh.bitwise then #[arith, ac, peel]
     else if sh.eqBV then #[narrow, ac, peel, addOr, enum, arith, bits, orArith]
+    else if sh.eqBool then #[boolEq, arith, boolSplit, bitDecide]
     else #[arith, boolSplit, bitDecide, boolCases]
   let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
-    boolSplit, orArith, contra, contraBy]
+    boolSplit, orArith, boolEq, contra, contraBy]
   let mut tried : Array (TSyntax `tactic) := #[]
   for tac in first ++ rest do
     if tried.contains tac then continue
