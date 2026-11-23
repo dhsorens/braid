@@ -11,7 +11,7 @@
   keeps the low half of one: `low` of it. `low_add`, `low_xor`, `low_rot16`, ... push `low`
   down to the words that were loaded, which leaves the code's arithmetic read as arithmetic
   on 32-bit words, `qr`; that `qr` is `ChaCha20.quarter` is a separate lemma, proved by
-  `bv_decide`.
+  `bv_auto`.
 
   ## Main results
 
@@ -26,6 +26,7 @@ module
 public import Examples.ChaCha20.RiscV.Image
 public import Examples.ChaCha20.Common
 public import Lowering.RiscV.Logic
+import Braid.BV
 
 @[expose] public section
 
@@ -38,16 +39,16 @@ open Braid Examples Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.Rv64
 /-- The low half of the sum of two registers. -/
 theorem low_add (x y : Word) :
     BitVec.setWidth 32 (x + y) = BitVec.setWidth 32 x + BitVec.setWidth 32 y := by
-  bv_decide
+  bv_auto
 
 /-- The low half of the exclusive or of two registers. -/
 theorem low_xor (x y : Word) :
     BitVec.setWidth 32 (x ^^^ y) = BitVec.setWidth 32 x ^^^ BitVec.setWidth 32 y := by
-  bv_decide
+  bv_auto
 
 /-- The low half of a register that was loaded with a 32-bit word. -/
 theorem low_sext (a : W32) : BitVec.setWidth 32 (BitVec.signExtend 64 a) = a := by
-  bv_decide
+  bv_auto
 
 /-- The low half of a 32-bit rotation as `srliw`, `slli` and `or` compute it: the shift to
 the left is of all 64 bits, and leaves bits of the word in the high half. -/
@@ -55,25 +56,25 @@ theorem low_rot16 (x : Word) :
     BitVec.setWidth 32 (x <<< 16#64 ||| BitVec.signExtend 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 (BitVec.setWidth 32 x) >>> 16#64))) =
       (BitVec.setWidth 32 x).rotateLeft 16 := by
-  bv_decide
+  bv_auto
 
 theorem low_rot12 (x : Word) :
     BitVec.setWidth 32 (x <<< 12#64 ||| BitVec.signExtend 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 (BitVec.setWidth 32 x) >>> 20#64))) =
       (BitVec.setWidth 32 x).rotateLeft 12 := by
-  bv_decide
+  bv_auto
 
 theorem low_rot8 (x : Word) :
     BitVec.setWidth 32 (x <<< 8#64 ||| BitVec.signExtend 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 (BitVec.setWidth 32 x) >>> 24#64))) =
       (BitVec.setWidth 32 x).rotateLeft 8 := by
-  bv_decide
+  bv_auto
 
 theorem low_rot7 (x : Word) :
     BitVec.setWidth 32 (x <<< 7#64 ||| BitVec.signExtend 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 (BitVec.setWidth 32 x) >>> 25#64))) =
       (BitVec.setWidth 32 x).rotateLeft 7 := by
-  bv_decide
+  bv_auto
 
 /-! ## Cells stored from registers -/
 
@@ -89,7 +90,7 @@ theorem Heap.bytes_low (a v : Word) (w : Bool) :
       have hx' : x - a < 4#64 := by simpa [BitVec.lt_def] using hx
       generalize x - a = i at hx'
       congr 3
-      bv_decide
+      bv_auto
     · rfl
   | _ => rfl
 
@@ -147,7 +148,7 @@ def qr (a b c d : W32) : W32 × W32 × W32 × W32 :=
 /-- The expression is the quarter round. -/
 theorem qr_eq (a b c d : W32) : qr a b c d = quarter a b c d := by
   simp only [qr, quarter, Prod.mk.injEq]
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-! ## The code -/
 

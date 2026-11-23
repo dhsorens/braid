@@ -40,6 +40,7 @@ module
 
 public import Examples.Sha256.O2.RiscV.Compress
 public import Examples.Sha256.RiscV.LeakBase
+import Braid.BV
 
 @[expose] public section
 
@@ -169,7 +170,7 @@ theorem compress_schedule_trace (e : Word) : ∀ (n : Nat)
     braid_sym_run_to 0x10284
     · schedule_forget_mem q'
       sha256_fold cellsAny16 true (q' + 5#64)
-      braid_call ih (q' + 5#64) _ _ _ _ _ _ _ _ _ (by bv_decide) (by rw [← he]; bv_omega)
+      braid_call ih (q' + 5#64) _ _ _ _ _ _ _ _ _ (by bv_auto) (by rw [← he]; bv_omega)
         (by omega)
       braid_unfold cellsAny16 true (q' + 5#64)
       sha256_fold cellsAny16 true (q' + 1#64)
@@ -242,8 +243,8 @@ theorem compress_rounds_trace (ke : Word) (wk : Bool) : ∀ (n : Nat)
     braid_sym_run_to 0x10394
     · sha256_forget_mem (kq + 1#64)
       sha256_forget_mem (wq + 1#64)
-      braid_call ih (kq + 5#64) (wq + 5#64) _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by bv_decide)
-        (by bv_decide) (by rw [← he]; bv_omega) (by omega)
+      braid_call ih (kq + 5#64) (wq + 5#64) _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by bv_auto)
+        (by bv_auto) (by rw [← he]; bv_omega) (by omega)
       sha256_fold cellsAny4_cons wk (kq + 1#64) (n + 1) (n + 1 + 1) rfl
       sha256_fold cellsAny4_cons true (wq + 1#64) (n + 1) (n + 1 + 1) rfl
       sha256_done
@@ -344,7 +345,7 @@ theorem compress_head_trace (mp s v8 v9 v18 v19 v20 v21 v22 v23 v24 v25 : Word) 
   sha256_fold cellsAny16 true (sq + 1#64)
   -- The message schedule.
   braid_call compress_schedule_trace (sq + 257#64) 47 (sq + 1#64) _ _ _ _ _ _ _ _ _
-    (by bv_decide) (by bv_omega) (by omega)
+    (by bv_auto) (by bv_omega) (by omega)
   braid_unfold cellsAny16 true (sq + 1#64)
   sha256_fold cellsAny_pre16 true (sq + 1#64) 48 64 rfl
   sha256_fold cellsAt_cons (k := 8) (w := true) (sq + 329#64) v8 []
@@ -397,7 +398,7 @@ theorem compress_mid_trace (hp s : Word) (wk : Bool)
   sha256_fold cellsAny8 true (hq + 1#64)
   -- The rounds.
   braid_call compress_rounds_trace 0x10504#64 wk 63 0x10404#64 (sq + 1#64)
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by decide) (by bv_decide) (by decide) (by omega)
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by decide) (by bv_auto) (by decide) (by omega)
   braid_forget 11
   braid_forget 12
   braid_forget 13

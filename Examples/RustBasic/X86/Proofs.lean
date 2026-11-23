@@ -9,6 +9,7 @@ module
 
 public import Examples.RustBasic.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -30,7 +31,7 @@ theorem add3_spec (a b d t s r : Word) (c pf af z sg o : Bool) :
   braid_run
   x86_forget_flags
   refine Triple.done_eq ?_
-  have e : d + (a + b) = a + (b + d) := by bv_decide
+  have e : d + (a + b) = a + (b + d) := by bv_auto
   simp only [BitVec.mul_one, e]
 
 /-- `max_u64` returns the larger of its arguments. It sets the flags. -/
@@ -49,7 +50,7 @@ theorem max_u64_spec (a b t s r : Word) (c pf af z sg o : Bool) :
   refine Triple.done_eq ?_
   simp only [umax, ofBool]
   by_cases h1 : a.ult b <;> by_cases h2 : a = b <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-- The loop of `sum_slice`, at byte offset `i`, with the words `x :: xs` still to add. -/
 theorem sum_slice_loop (p e s r : Word) : ∀ (xs : List Word) (x i acc : Word)
@@ -72,9 +73,9 @@ theorem sum_slice_loop (p e s r : Word) : ∀ (xs : List Word) (x i acc : Word)
     subst hn
     braid_unfold wordsAt_cons (p + i * 1#64) x []
     iterate 3 braid_step
-    have e8 : 8#64 + i = i + 8#64 := by bv_decide
+    have e8 : 8#64 + i = i + 8#64 := by bv_auto
     braid_step
-    · exact absurd (by bv_decide) hbr
+    · exact absurd (by bv_auto) hbr
     · braid_run
       braid_fold wordsAt_cons (p + i * 1#64) x []
       x86_forget_flags
@@ -86,7 +87,7 @@ theorem sum_slice_loop (p e s r : Word) : ∀ (xs : List Word) (x i acc : Word)
     braid_unfold wordsAt_cons (p + i * 1#64) x (y :: ys)
     iterate 3 braid_step
     braid_step
-    · have e1 : p + (i * 1#64 + 8#64) = p + (8#64 + i) * 1#64 := by bv_decide
+    · have e1 : p + (i * 1#64 + 8#64) = p + (8#64 + i) * 1#64 := by bv_auto
       rw [e1]
       braid_call ih y (8#64 + i) (x + acc) _ _ _ _ _ _ (by rw [← he]; bv_omega) (by bv_omega)
       rw [← e1]

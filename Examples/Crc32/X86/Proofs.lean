@@ -17,6 +17,7 @@ module
 
 public import Examples.Crc32.X86.Image
 public import Examples.Crc32.Common
+import Braid.BV
 
 public section
 
@@ -48,20 +49,20 @@ macro "crc32_name_flags" : tactic =>
 theorem not_reg (c : BitVec 32) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (~~~BitVec.setWidth 64 c)) =
       BitVec.setWidth 64 (~~~c) := by
-  bv_decide
+  bv_auto
 
 /-- `not eax` after `mov eax, edi`: the register starts as the complement of the low half of
 the argument. -/
 theorem not_arg (c : Word) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (~~~BitVec.setWidth 64 (BitVec.setWidth 32 c))) =
       BitVec.setWidth 64 (~~~BitVec.setWidth 32 c) := by
-  bv_decide
+  bv_auto
 
 /-- `xor r8d, eax` after `movzx`: the byte is added to the register. -/
 theorem xor_byte_reg (c : BitVec 32) (b : BitVec 8) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 b)) ^^^ BitVec.setWidth 64 c =
       BitVec.setWidth 64 (c ^^^ b.zeroExtend 32) := by
-  bv_decide
+  bv_auto
 
 /-- `xor r9d, [rdi + r8 * 4]` after the lookup: four bits of the division. -/
 theorem nibble_reg (y : BitVec 32) :
@@ -70,7 +71,7 @@ theorem nibble_reg (y : BitVec 32) :
       BitVec.setWidth 64 (nibble y) := by
   rw [← nibble_step y]
   generalize nibble (y &&& 15#32) = v
-  bv_decide
+  bv_auto
 
 /-- Run the table lookup, an `xor` with the entry of the table the low four bits of `y`
 select: open the table at that entry, run the instruction, and close the table. The
@@ -124,7 +125,7 @@ theorem crc32_loop (w : Bool) (p n s r : Word) : ∀ (bs : List (BitVec 8)) (b :
     crc32_nibble w, (nibble (c ^^^ b.zeroExtend 32))
     rw [← byte_eq]
     iterate 3 braid_sym_step
-    · exact absurd (show n - (j + 1#64) = 0#64 by rw [he']; bv_decide) hbr
+    · exact absurd (show n - (j + 1#64) = 0#64 by rw [he']; bv_auto) hbr
     · braid_sym_run
       rw [not_reg]
       braid_fold bytesAt_cons (p + j * 1#64) b []
@@ -150,7 +151,7 @@ theorem crc32_loop (w : Bool) (p n s r : Word) : ∀ (bs : List (BitVec 8)) (b :
     crc32_nibble w, (nibble (c ^^^ b.zeroExtend 32))
     rw [← byte_eq]
     iterate 3 braid_sym_step
-    · have e : p + (j * 1#64 + 1#64) = p + (j + 1#64) * 1#64 := by bv_decide
+    · have e : p + (j * 1#64 + 1#64) = p + (j + 1#64) * 1#64 := by bv_auto
       rw [e]
       crc32_name_flags
       braid_call ih d (byte c b) (j + 1#64) _ _ _ _ _ _ _ _ (by rw [he]; bv_omega) (by omega)
@@ -204,7 +205,7 @@ theorem crc32_spec (w : Bool) (c p s r a t2 t8 t9 : Word) (bs : List (BitVec 8))
       crc32_name_flags
       have h := crc32_loop w p (BitVec.ofNat 64 (bs.length + 1)) s r bs b (~~~c.truncate 32)
         0#64 t8 t9
-      have e : p + 0#64 * 1#64 = p := by bv_decide
+      have e : p + 0#64 * 1#64 = p := by bv_auto
       rw [e] at h
       braid_call h _ _ _ _ _ _ (by simp) hl
       braid_forget 5

@@ -22,6 +22,8 @@ module
 public import Examples.Crc32.Arm.Image
 public import Examples.Crc32.Arm.Machine
 public import Examples.Crc32.Common
+import Braid.BV
+import Braid.BV
 
 public section
 
@@ -35,19 +37,19 @@ open Braid Examples Lowering.Arm Lowering.Arm.Regs
 theorem mvn_reg (c : BitVec 32) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (~~~BitVec.setWidth 64 c)) =
       BitVec.setWidth 64 (~~~c) := by
-  bv_decide
+  bv_auto
 
 /-- `mvn w9, w0`: the register starts as the complement of the low half of the argument. -/
 theorem mvn_arg (c : Word) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (~~~BitVec.setWidth 64 (BitVec.setWidth 32 c))) =
       BitVec.setWidth 64 (~~~BitVec.setWidth 32 c) := by
-  bv_decide
+  bv_auto
 
 /-- `eor w9, w9, w10` after `ldrb`: the byte is added to the register. -/
 theorem xor_byte_reg (c : BitVec 32) (b : BitVec 8) :
     BitVec.setWidth 64 c ^^^ BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 b)) =
       BitVec.setWidth 64 (c ^^^ b.zeroExtend 32) := by
-  bv_decide
+  bv_auto
 
 /-- `eor w9, w10, w9, lsr #4` after the lookup: four bits of the division. -/
 theorem nibble_reg (y : BitVec 32) :
@@ -55,7 +57,7 @@ theorem nibble_reg (y : BitVec 32) :
       BitVec.setWidth 64 (nibble y) := by
   rw [← nibble_step y]
   generalize nibble (y &&& 15#32) = v
-  bv_decide
+  bv_auto
 
 /-- Run the three instructions of a table lookup, `and`, `ldr` and `eor`, with `y` in `w9`:
 open the table at the entry the low four bits of `y` select, load it, and close the table.

@@ -11,7 +11,7 @@
   change of width, shifts by numbers, `setWidth` pushed through the operations it
   commutes with. Then it tries, in order:
 
-  * `ac_rfl`, for two sides that differ by the order of an associative operation;
+  * `bv_ac`, for two sides that differ by the order of an associative operation;
   * `bv_arith`: comparisons, overflow and masks as arithmetic on `toNat`, then `omega`;
   * `bv_bits`: the goal bit by bit, each index a literal, each bit a Boolean formula in the
     bits of the variables, decided;
@@ -80,6 +80,33 @@ theorem mul_pow2 {w : Nat} (x : BitVec w) (k c : Nat) (h : c = 2 ^ k) :
     x * BitVec.ofNat w c = x <<< k := by
   rw [BitVec.shiftLeft_eq_mul_twoPow]; congr 1
   apply BitVec.eq_of_toNat_eq; simp [BitVec.toNat_twoPow, h]
+
+/-! The left commutativity of the associative and commutative operations, with which `simp`
+puts a term of them in order. -/
+
+theorem add_left_comm {w : Nat} (a b c : BitVec w) : a + (b + c) = b + (a + c) := by
+  rw [← BitVec.add_assoc, BitVec.add_comm a b, BitVec.add_assoc]
+
+theorem mul_left_comm {w : Nat} (a b c : BitVec w) : a * (b * c) = b * (a * c) := by
+  rw [← BitVec.mul_assoc, BitVec.mul_comm a b, BitVec.mul_assoc]
+
+theorem and_left_comm {w : Nat} (a b c : BitVec w) : a &&& (b &&& c) = b &&& (a &&& c) := by
+  rw [← BitVec.and_assoc, BitVec.and_comm a b, BitVec.and_assoc]
+
+theorem or_left_comm {w : Nat} (a b c : BitVec w) : a ||| (b ||| c) = b ||| (a ||| c) := by
+  rw [← BitVec.or_assoc, BitVec.or_comm a b, BitVec.or_assoc]
+
+theorem xor_left_comm {w : Nat} (a b c : BitVec w) : a ^^^ (b ^^^ c) = b ^^^ (a ^^^ c) := by
+  rw [← BitVec.xor_assoc, BitVec.xor_comm a b, BitVec.xor_assoc]
+
+/-- A bit of a choice is the bit of the side chosen. -/
+theorem getLsbD_ite {w : Nat} (c : Prop) [Decidable c] (a b : BitVec w) (i : Nat) :
+    (if c then a else b).getLsbD i = if c then a.getLsbD i else b.getLsbD i := by
+  split <;> rfl
+
+/-- No bit vector is below zero. -/
+theorem ult_zero {w : Nat} (x : BitVec w) : x.ult 0#w = false := by
+  simp [BitVec.ult_eq_decide]
 
 theorem uaddOverflow_eq_decide {w : Nat} (x y : BitVec w) :
     x.uaddOverflow y = decide (2 ^ w ≤ x.toNat + y.toNat) := rfl
@@ -213,30 +240,41 @@ elab "bv_clear" : tactic => do
     replaceMainGoal [g]
 
 /-- The goal is a Boolean formula in bits of bit vectors: generalize each bit, together with
-every hypothesis about those bits, and decide. -/
+the hypotheses about those bits (and about the bits those mention, and so on), and decide.
+A hypothesis whose bits meet none of the goal's cannot help, and is left out. -/
 elab "bv_bool_decide" : tactic => do
   let g ← getMainGoal
   g.withContext do
   let t ← instantiateMVars (← g.getType)
   let mut atoms := (← collectBits t #[]).filter (fun a => !a.hasLooseBVars)
-  let mut hyps : Array FVarId := #[]
+  let mut cands : Array (FVarId × Array Expr) := #[]
   for d in (← getLCtx) do
     if d.isImplementationDetail then continue
     let ty ← instantiateMVars d.type
-    if (← isProp ty) then
-      let as ← collectBits ty #[]
-      if !as.isEmpty && !ty.isForall then
-        hyps := hyps.push d.fvarId
-        for x in as do
-          if !x.hasLooseBVars && !atoms.contains x then atoms := atoms.push x
-  let (_, g) ← g.revert hyps
+    if (← isProp ty) && !ty.isForall then
+      let as := (← collectBits ty #[]).filter (fun a => !a.hasLooseBVars)
+      if !as.isEmpty then cands := cands.push (d.fvarId, as)
+  let mut hyps : Array FVarId := #[]
+  let mut changed := true
+  while changed do
+    changed := false
+    for (fv, as) in cands do
+      if hyps.contains fv then continue
+      if as.any (atoms.contains ·) then
+        hyps := hyps.push fv
+        changed := true
+        for a in as do
+          if !atoms.contains a then atoms := atoms.push a
+  let ordered := (← getLCtx).foldl (init := #[]) fun acc d =>
+    if hyps.contains d.fvarId then acc.push d.fvarId else acc
+  let (_, g) ← g.revert ordered
   let (fvs, g) ← g.generalize (atoms.map fun a => { expr := a })
   let (_, g) ← g.revert fvs
   replaceMainGoal [g]
   evalTactic (← `(tactic| decide))
 
 /-- Hypotheses `∀ i < n, …` (an equation between bit vectors, bit by bit) taken at the
-literal indices of the bits in the goal. -/
+literal indices of the bits in the goal, or at every index if `n` is at most 16. -/
 elab "bv_inst_bits" : tactic => do
   let g ← getMainGoal
   g.withContext do
@@ -249,7 +287,11 @@ elab "bv_inst_bits" : tactic => do
     let .forallE _ (.const ``Nat []) b _ := ty | continue
     let .forallE _ lt _ _ := b | continue
     unless lt.isAppOfArity ``LT.lt 4 do continue
+    let some n ← (evalNat (lt.getArg! 3)).run | continue
+    -- a narrow hypothesis at every index: a bit of the goal may follow from another of its
+    let ks := if n ≤ 16 then (List.range n).toArray else ks
     for k in ks do
+      unless k < n do continue
       let pf ← mkDecideProof (← mkLt (mkNatLit k) (lt.getArg! 3))
       let v := mkApp2 (mkFVar d.fvarId) (mkNatLit k) pf
       let (_, g') ← (← g.assert `hbit (← inferType v) v).intro1P
@@ -363,6 +405,31 @@ elab "bv_bool_cases" : tactic => do
   evalTactic (← `(tactic| (cases _h : $stx <;>
     simp only [BitVec.ofBool_true, BitVec.ofBool_false] at *)))
 
+/-- An equation between two applications of the same operation that differ in one operand
+only, peeled down to that operand, as far as it goes. -/
+elab "bv_peel" : tactic => do
+  let mut peeled := false
+  for _ in [0:64] do
+    let g ← getMainGoal
+    let t ← instantiateMVars (← g.getType)
+    let some (_, l, r) := t.eq? | break
+    let fl := l.getAppFn
+    unless fl.isConst && fl == r.getAppFn && l.getAppNumArgs == r.getAppNumArgs do break
+    let diff := (l.getAppArgs.zip r.getAppArgs).filter (fun (a, b) => a != b)
+    unless diff.size == 1 do break
+    let s ← saveState
+    try
+      evalTactic (← `(tactic| congr 1))
+      let gs ← getGoals
+      unless gs.length == 1 do throwError "bv_peel"
+      let some (α, _, _) := (← instantiateMVars (← gs[0]!.getType)).eq? | throwError "bv_peel"
+      unless (← whnfR α).isAppOfArity ``BitVec 1 do throwError "bv_peel"
+      peeled := true
+    catch _ =>
+      s.restore
+      break
+  unless peeled do throwError "bv_peel: the two sides do not differ in one operand"
+
 /-- Run `tac` with at most `n` thousand heartbeats more than spent so far, and never more
 than the limit already in force: an attempt that fails leaves the rest of the budget to the
 attempts after it. -/
@@ -377,6 +444,36 @@ elab "bv_budget " n:num tac:tactic : tactic => do
     fun e => do
       s.restore
       throwError "bv_budget: {e.toMessageData}"
+
+/-- A comparison between bit vectors, as a Boolean. -/
+def isCmp (e : Expr) : Bool :=
+  !e.hasLooseBVars && !e.hasMVar &&
+  (e.isAppOfArity ``BitVec.ult 3 || e.isAppOfArity ``BitVec.ule 3 ||
+    e.isAppOfArity ``BitVec.msb 2 || e.isAppOfArity ``BEq.beq 4 ||
+    (e.isAppOfArity ``BitVec.getLsbD 3 && !(e.getArg! 1).isFVar))
+
+/-- One goal for each value of an innermost comparison in the goal, simplified with it. -/
+elab "bv_cmp_split" : tactic => do
+  let g ← getMainGoal
+  g.withContext do
+  let t ← instantiateMVars (← g.getType)
+  let some e := t.find? (fun e => isCmp e && e.getAppArgs.all fun a => (a.find? isCmp).isNone)
+    | throwError "bv_cmp_split: no comparison"
+  let stx ← Term.exprToSyntax e
+  evalTactic (← `(tactic| (cases _h : $stx <;>
+    try simp only [Bool.true_and, Bool.and_true, Bool.false_and, Bool.and_false, Bool.true_or,
+      Bool.or_true, Bool.false_or, Bool.or_false, Bool.not_true, Bool.not_false,
+      Bool.xor_true, Bool.xor_false, Bool.true_xor, Bool.false_xor, bne_self_eq_false,
+      Bool.bne_true, Bool.bne_false, Bool.true_bne, Bool.false_bne, beq_self_eq_true,
+      Bool.true_beq, Bool.false_beq, beq_true, beq_false, ↓reduceIte,
+      Bool.true_eq_false, Bool.false_eq_true, BitVec.reduceULT, BitVec.reduceULE,
+      BitVec.reduceBEq, BitVec.reduceEq, *] at ⊢)))
+
+/-- Succeeds when the goal makes a choice (`if`), which `split` takes apart. -/
+elab "bv_has_ite" : tactic => do
+  let t ← instantiateMVars (← getMainTarget)
+  unless (t.find? fun e => e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5).isSome do
+    throwError "bv_has_ite: no choice in the goal"
 
 /-- A contradiction with a hypothesis `¬ P`, `P` proved by `tac`. -/
 elab "bv_contra " tac:tactic : tactic => do
@@ -422,7 +519,7 @@ macro_rules | `(tactic| bv_bit_simp $[$loc]?) => `(tactic| first
       BitVec.getLsbD_rotateLeft, BitVec.getLsbD_rotateRight, BitVec.getLsbD_signExtend,
       BitVec.getLsbD_sshiftRight, BitVec.getLsbD_ofBool,
       BitVec.getLsbD_ofNat, BitVec.getLsbD_zero, BitVec.getLsbD_allOnes, BitVec.getLsbD_cast,
-      BitVec.msb_eq_getLsbD_last] $[$loc]?
+      BitVec.msb_eq_getLsbD_last, Braid.BV.getLsbD_ite, ite_self] $[$loc]?
      try bv_bit_arith $[$loc]?)
   | bv_bit_arith $[$loc]?)
 
@@ -456,7 +553,7 @@ macro "bv_arith" : tactic => `(tactic| (
       decide_eq_decide, decide_eq_true_eq, decide_eq_false_iff_not,
       Bool.not_true, Bool.not_false, BitVec.toNat_and, BitVec.toNat_or, BitVec.toNat_ofBool,
       BitVec.toNat_ofNat, BitVec.lt_def, BitVec.le_def, BitVec.toNat_eq, BitVec.toNat_setWidth,
-      BitVec.ofNat_eq_ofNat, BitVec.toNat_zero,
+      BitVec.ofNat_eq_ofNat, BitVec.toNat_zero, beq_eq_false_iff_ne, ne_eq, Nat.reduceSub,
       Nat.reducePow, Nat.reduceMod, Braid.BV.reduceAndMask] at *)
   bv_omega))
 
@@ -470,15 +567,35 @@ macro "bv_bits" : tactic => `(tactic| (
 /-- Sums of parts with no bit in common, such as bytes shifted into place, as disjunctions:
 each product with a power of two a shift, each such sum an `|||`, then bit by bit. -/
 macro "bv_add_or" : tactic => `(tactic| (
-  simp only [Braid.BV.reduceMulPow2] at *
+  (try simp only [Braid.BV.reduceMulPow2] at *)
   simp (disch := ((try bv_norm); bv_bits)) only [BitVec.add_eq_or_of_and_eq_zero]
-  bv_bits))
+  all_goals bv_bits))
+
+/-- Two sides that differ by the order of the operands of `+`, `*`, `&&&`, `|||` and `^^^`:
+both put in one order. Cheaper than `ac_rfl`, which searches for instances on every
+operation it meets. -/
+macro "bv_ac" : tactic => `(tactic| (
+  simp only [BitVec.add_comm, BitVec.add_assoc, Braid.BV.add_left_comm,
+    BitVec.mul_comm, BitVec.mul_assoc, Braid.BV.mul_left_comm,
+    BitVec.and_comm, BitVec.and_assoc, Braid.BV.and_left_comm,
+    BitVec.or_comm, BitVec.or_assoc, Braid.BV.or_left_comm,
+    BitVec.xor_comm, BitVec.xor_assoc, Braid.BV.xor_left_comm]; done))
+
+/-- A Boolean formula in comparisons of bit vectors (unsigned, signed, top bits, equality):
+signed comparisons and top bits as unsigned ones, one goal for each value of each
+comparison, and each goal by arithmetic. -/
+macro "bv_bool_split" : tactic => `(tactic| (
+  (try simp only [BitVec.slt_eq_ult, BitVec.sle_eq_not_slt, BitVec.msb_and, BitVec.msb_or,
+    BitVec.msb_xor, BitVec.msb_not, BitVec.msb_zero, Braid.BV.ult_zero, Bool.xor_false,
+    Bool.bne_false, Bool.false_bne] at *)
+  (repeat' bv_cmp_split)
+  all_goals first | rfl | decide | bv_arith))
 
 /-- The decision procedures on their own, without splitting. -/
 macro "bv_solve" : tactic => `(tactic| first
-  | bv_guard bv_arith
-  | bv_budget 5000 ac_rfl
-  | bv_guard bv_bits
+  | bv_budget 30000 bv_arith
+  | bv_budget 20000 bv_ac
+  | bv_budget 60000 bv_bits
   | bv_budget 50000 bv_add_or
   | bv_guard ((bv_bit_simp at *) <;> bv_bool_decide))
 
@@ -490,9 +607,12 @@ macro "bv_auto" : tactic => `(tactic| (
   (try bv_norm at *)
   first
   | done
+  | (bv_has_ite; bv_guard ((repeat' split) <;> (try bv_norm at *) <;> bv_solve))
   | bv_solve
   | bv_guard ((repeat' split) <;> (try bv_norm at *) <;> bv_solve)
   | bv_guard (bv_enum <;> (try bv_norm at *) <;> bv_solve)
   | bv_guard (bv_bool_cases <;> (try bv_norm at *) <;> bv_solve)
+  | bv_guard (bv_peel <;> bv_solve)
+  | bv_budget 50000 bv_bool_split
   | contradiction
   | bv_contra bv_solve))

@@ -23,6 +23,7 @@ public import Examples.Sha256Main.Common
 public import Examples.Sha256.Common
 public import Braid.Logic
 import Std.Tactic.BVDecide
+import Braid.BV
 
 public section
 
@@ -57,7 +58,7 @@ theorem cellsAt_snoc (p q v : Word) (xs : List Word) (k : Nat) (w : Bool)
   rfl
 
 /-- An index scaled by four, as the code computes it. -/
-theorem shl2 (x : Word) : x <<< 2#64 = x * 4#64 := by bv_decide
+theorem shl2 (x : Word) : x <<< 2#64 = x * 4#64 := by bv_auto
 
 /-- The words of a block, the first `j` and one more. -/
 theorem w32s_range_succ (msg : List (BitVec 8)) (b j : Nat) :
@@ -103,7 +104,7 @@ theorem flatMap_wordBytes_cons (x : W32) (xs : List W32) :
 theorem total_mask (n : Nat) (hn : n < 2 ^ 32) :
     BitVec.ofNat 64 n + 8#64 &&& 18446744073709551552#64 = BitVec.ofNat 64 (total n - 64) := by
   have key : ∀ x : Word, x &&& 18446744073709551552#64 = (x >>> 6) <<< 6 := by
-    intro x; bv_decide
+    intro x; bv_auto
   rw [key]
   simp only [total]
   bv_omega
@@ -114,14 +115,14 @@ theorem total_shift (n : Nat) (hn : n < 2 ^ 32) :
       BitVec.ofNat 64 (8 * (total n - 1 - 64 * 0)) := by
   have key : ∀ x : Word, x <<< 3#64 ||| 504#64 =
       ((x &&& 18446744073709551552#64) + 63#64) * 8#64 := by
-    intro x; bv_decide
+    intro x; bv_auto
   have hT : 64 ≤ total n := by simp only [total]; omega
   have hT' := total_lt n
   rw [key, total_mask n hn]
   bv_omega
 
 theorem shl3 (n : Nat) : BitVec.ofNat 64 n <<< 3#64 = BitVec.ofNat 64 (8 * n) := by
-  have key : ∀ x : Word, x <<< 3#64 = x * 8#64 := by intro x; bv_decide
+  have key : ∀ x : Word, x <<< 3#64 = x * 8#64 := by intro x; bv_auto
   rw [key]
   bv_omega
 
@@ -168,7 +169,7 @@ theorem mem8_split (a v : Word) :
       Atoms.interp [.mem a 4 v true, .mem (a + 4#64) 4 (v >>> 32) true] := by
   have e : leBytes 8 v = leBytes 4 v ++ leBytes 4 (v >>> 32) := by
     simp only [leBytes, List.cons_append, List.nil_append, List.cons.injEq, and_true]
-    refine ⟨trivial, trivial, trivial, trivial, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+    refine ⟨trivial, trivial, trivial, trivial, ?_, ?_, ?_, ?_⟩ <;> bv_auto
   show memIs a 8 v true = iprop(memIs a 4 v true ∗ memIs (a + 4#64) 4 (v >>> 32) true ∗ emp)
   rw [memIs_eq_bytesAt a v 8 (by decide), memIs_eq_bytesAt a v 4 (by decide),
     memIs_eq_bytesAt (a + 4#64) (v >>> 32) 4 (by decide), e, bytesAt_append_eq, leBytes_length]
@@ -181,7 +182,7 @@ theorem total_or (n : Nat) (hn : n < 2 ^ 32) :
     BitVec.ofNat 64 (total n - 64) ||| 56#64 = BitVec.ofNat 64 (total n - 8) := by
   have key : ∀ x : Word, (x &&& 18446744073709551552#64) ||| 56#64 =
       (x &&& 18446744073709551552#64) + 56#64 := by
-    intro x; bv_decide
+    intro x; bv_auto
   have hT : 64 ≤ total n := by simp only [total]; omega
   have hT' := total_lt n
   rw [← total_mask n hn, key, total_mask n hn]

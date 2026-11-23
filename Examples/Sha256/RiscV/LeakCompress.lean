@@ -26,6 +26,7 @@ module
 
 public import Examples.Sha256.RiscV.Compress
 public import Examples.Sha256.RiscV.LeakBase
+import Braid.BV
 
 @[expose] public section
 
@@ -126,7 +127,7 @@ theorem compress_copy_block_trace (e : Word) (wm : Bool) : ∀ (n : Nat) (src ds
     braid_sym_run_to 0x1018c
     · sha256_forget_mem (sq + 1#64)
       sha256_forget_mem (dq + 1#64)
-      braid_call ih (sq + 5#64) (dq + 5#64) _ _ (by bv_decide) (by bv_decide)
+      braid_call ih (sq + 5#64) (dq + 5#64) _ _ (by bv_auto) (by bv_auto)
         (by rw [← he]; bv_omega) (by omega)
       sha256_fold cellsAny4_cons wm (sq + 1#64) (n + 1) (n + 1 + 1) rfl
       sha256_fold cellsAny4_cons true (dq + 1#64) (n + 1) (n + 1 + 1) rfl
@@ -181,7 +182,7 @@ theorem compress_copy_hash_trace (e : Word) : ∀ (n : Nat) (src dst x14 : Word)
     braid_sym_run_to 0x10224
     · sha256_forget_mem (sq + 1#64)
       sha256_forget_mem (dq + 1#64)
-      braid_call ih (sq + 5#64) (dq + 5#64) _ _ (by bv_decide) (by bv_decide)
+      braid_call ih (sq + 5#64) (dq + 5#64) _ _ (by bv_auto) (by bv_auto)
         (by rw [← he]; bv_omega) (by omega)
       sha256_fold cellsAny4_cons true (sq + 1#64) (n + 1) (n + 1 + 1) rfl
       sha256_fold cellsAny4_cons true (dq + 1#64) (n + 1) (n + 1 + 1) rfl
@@ -251,7 +252,7 @@ theorem compress_schedule_trace (e : Word) : ∀ (n : Nat)
     braid_sym_run_to 0x10204
     · schedule_forget_mem q'
       sha256_fold cellsAny16 true (q' + 5#64)
-      braid_call ih (q' + 5#64) _ _ _ _ _ _ _ _ _ (by bv_decide) (by rw [← he]; bv_omega)
+      braid_call ih (q' + 5#64) _ _ _ _ _ _ _ _ _ (by bv_auto) (by rw [← he]; bv_omega)
         (by omega)
       braid_unfold cellsAny16 true (q' + 5#64)
       sha256_fold cellsAny16 true (q' + 1#64)
@@ -324,8 +325,8 @@ theorem compress_rounds_trace (ke : Word) (wk : Bool) : ∀ (n : Nat)
     braid_sym_run_to 0x10314
     · sha256_forget_mem (kq + 1#64)
       sha256_forget_mem (wq + 1#64)
-      braid_call ih (kq + 5#64) (wq + 5#64) _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by bv_decide)
-        (by bv_decide) (by rw [← he]; bv_omega) (by omega)
+      braid_call ih (kq + 5#64) (wq + 5#64) _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by bv_auto)
+        (by bv_auto) (by rw [← he]; bv_omega) (by omega)
       sha256_fold cellsAny4_cons wk (kq + 1#64) (n + 1) (n + 1 + 1) rfl
       sha256_fold cellsAny4_cons true (wq + 1#64) (n + 1) (n + 1 + 1) rfl
       sha256_done
@@ -381,7 +382,7 @@ theorem compress_add_trace (e : Word) : ∀ (n : Nat) (va ha x13 x14 : Word) (t 
     braid_sym_run_to 0x10354
     · sha256_forget_mem (vq + 1#64)
       sha256_forget_mem (hq + 1#64)
-      braid_call ih (vq + 5#64) (hq + 5#64) _ _ _ (by bv_decide) (by bv_decide)
+      braid_call ih (vq + 5#64) (hq + 5#64) _ _ _ (by bv_auto) (by bv_auto)
         (by rw [← he]; bv_omega) (by omega)
       sha256_fold cellsAny4_cons true (vq + 1#64) (n + 1) (n + 1 + 1) rfl
       sha256_fold cellsAny4_cons true (hq + 1#64) (n + 1) (n + 1 + 1) rfl
@@ -456,13 +457,13 @@ theorem sha256_compress_trace (hp mp s r v8 v9 v18 : Word) (H M : List W32) (wm 
   -- The frame, and the block copied to the start of the schedule.
   braid_sym_run_to 0x10178
   braid_call compress_copy_block_trace (mq + 65#64) wm 15 (mq + 1#64) (sq + 33#64) _ _
-    (by bv_decide) (by bv_decide) (by bv_omega) (by omega)
+    (by bv_auto) (by bv_auto) (by bv_omega) (by omega)
   braid_name_reg 13
   braid_name_reg 14
   -- The message schedule.
   braid_sym_run_to 0x10194
   braid_call compress_schedule_trace (sq + 289#64) 47 (sq + 33#64) _ _ _ _ _ _ _ _ _
-    (by bv_decide) (by bv_omega) (by omega)
+    (by bv_auto) (by bv_omega) (by omega)
   braid_name_reg 13
   braid_name_reg 14
   braid_name_reg 15
@@ -474,7 +475,7 @@ theorem sha256_compress_trace (hp mp s r v8 v9 v18 : Word) (H M : List W32) (wm 
   -- The hash value copied to the working variables, and those loaded into registers.
   braid_sym_run_to 0x10210
   braid_call compress_copy_hash_trace (hq + 33#64) 7 (hq + 1#64) (sq + 1#64) _ _
-    (by bv_decide) (by bv_decide) (by bv_omega) (by omega)
+    (by bv_auto) (by bv_auto) (by bv_omega) (by omega)
   braid_name_reg 12
   braid_name_reg 14
   braid_unfold cellsAny8 true (sq + 1#64)
@@ -486,7 +487,7 @@ theorem sha256_compress_trace (hp mp s r v8 v9 v18 : Word) (H M : List W32) (wm 
   sha256_fold cellsAny_pre16 true (sq + 33#64) 48 64 rfl
   -- The rounds.
   braid_call compress_rounds_trace 0x10468#64 wk 63 0x10368#64 (sq + 33#64)
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by decide) (by bv_decide) (by decide) (by omega)
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ (by decide) (by bv_auto) (by decide) (by omega)
   braid_name_reg 7
   braid_name_reg 12
   braid_name_reg 13
@@ -502,7 +503,7 @@ theorem sha256_compress_trace (hp mp s r v8 v9 v18 : Word) (H M : List W32) (wm 
   vars_forget sq
   sha256_fold cellsAny8 true (sq + 1#64)
   braid_call compress_add_trace (hq + 33#64) 7 (sq + 1#64) (hq + 1#64) _ _ _
-    (by bv_decide) (by bv_decide) (by bv_omega) (by omega)
+    (by bv_auto) (by bv_auto) (by bv_omega) (by omega)
   braid_name_reg 8
   braid_name_reg 9
   braid_name_reg 18

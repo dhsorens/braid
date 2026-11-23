@@ -9,7 +9,7 @@
   Symbolic execution leaves a register or a cell with the value the code computed, a 64-bit
   expression. `sha256_reg` and `sha256_cell` replace it by a value of the specification, and
   leave the equation between the two as a goal of its own, about bit vectors only, which
-  `sha256_bv` proves by unfolding the specification and `bv_decide`. So a term the machine
+  `sha256_bv` proves by unfolding the specification and `bv_auto`. So a term the machine
   code built never outlives the instructions that built it.
 
   ## Main definitions
@@ -40,6 +40,8 @@ public import Examples.Spec.Sha256
 public import Braid.Logic
 import Iris.BI.DerivedLaws
 import Std.Tactic.BVDecide
+import Braid.BV
+import Braid.BV
 import Braid.BV
 
 @[expose] public section

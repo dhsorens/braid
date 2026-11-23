@@ -26,6 +26,7 @@ module
 
 public import Examples.ChaCha20.O2.X86.Image
 public import Examples.ChaCha20.Common
+import Braid.BV
 
 @[expose] public section
 
@@ -156,7 +157,7 @@ theorem colsCode_eq (s : List W32) :
       (s.getD 6 0) (s.getD 7 0) (s.getD 8 0) (s.getD 9 0) (s.getD 10 0) (s.getD 11 0)
       (s.getD 12 0) (s.getD 13 0) (s.getD 14 0) (s.getD 15 0) = columns s := by
   simp only [colsCode, columns, quarter, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The second half of a round computes the quarter rounds on the diagonals. -/
 theorem diagsCode_eq (s : List W32) :
@@ -164,7 +165,7 @@ theorem diagsCode_eq (s : List W32) :
       (s.getD 6 0) (s.getD 7 0) (s.getD 8 0) (s.getD 9 0) (s.getD 10 0) (s.getD 11 0)
       (s.getD 12 0) (s.getD 13 0) (s.getD 14 0) (s.getD 15 0) = diagonals s := by
   simp only [diagsCode, diagonals, quarter, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-! ## A round of the loop -/
 
@@ -390,6 +391,6 @@ theorem rounds_spec : ∀ (n : Nat) (s : List W32) (k : W32) (q u1c : Word),
       braid_done_perm 26
     · exfalso
       have : k - 1 ≠ 0#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 end Examples.ChaCha20.O2.X86

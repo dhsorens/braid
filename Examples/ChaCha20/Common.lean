@@ -28,6 +28,7 @@ public import Braid.Logic.Cells
 public import Braid.Logic.Tactic
 public import Examples.Spec.ChaCha20
 import Iris.BI.DerivedLaws
+import Braid.BV
 
 public section
 
@@ -83,75 +84,75 @@ theorem cells16 (p v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 v15 : Word)
 theorem zadd (x y : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 x + BitVec.setWidth 64 y)) =
       BitVec.setWidth 64 (x + y) := by
-  bv_decide
+  bv_auto
 
 /-- A 32-bit addition of two zero-extended words, the other way round. -/
 theorem zadd_comm (x y : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 x + BitVec.setWidth 64 y)) =
       BitVec.setWidth 64 (y + x) := by
-  bv_decide
+  bv_auto
 
 /-- An exclusive or of two zero-extended words. -/
 theorem zxor (x y : W32) :
     BitVec.setWidth 64 x ^^^ BitVec.setWidth 64 y = BitVec.setWidth 64 (x ^^^ y) := by
-  bv_decide
+  bv_auto
 
 /-- A 32-bit rotation of a zero-extended word, as AArch64's `ror` is lowered. -/
 theorem zror16 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x >>> 16#64 ||| BitVec.setWidth 64 x <<< 16#64)) =
       BitVec.setWidth 64 (x.rotateLeft 16) := by
-  bv_decide
+  bv_auto
 
 theorem zror20 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x >>> 20#64 ||| BitVec.setWidth 64 x <<< 12#64)) =
       BitVec.setWidth 64 (x.rotateLeft 12) := by
-  bv_decide
+  bv_auto
 
 theorem zror24 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x >>> 24#64 ||| BitVec.setWidth 64 x <<< 8#64)) =
       BitVec.setWidth 64 (x.rotateLeft 8) := by
-  bv_decide
+  bv_auto
 
 theorem zror25 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x >>> 25#64 ||| BitVec.setWidth 64 x <<< 7#64)) =
       BitVec.setWidth 64 (x.rotateLeft 7) := by
-  bv_decide
+  bv_auto
 
 /-- A 32-bit rotation of a zero-extended word, as x86-64's `rol` is lowered. -/
 theorem zrol16 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x <<< 16#64 ||| BitVec.setWidth 64 x >>> 16#64)) =
       BitVec.setWidth 64 (x.rotateLeft 16) := by
-  bv_decide
+  bv_auto
 
 theorem zrol12 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x <<< 12#64 ||| BitVec.setWidth 64 x >>> 20#64)) =
       BitVec.setWidth 64 (x.rotateLeft 12) := by
-  bv_decide
+  bv_auto
 
 theorem zrol8 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x <<< 8#64 ||| BitVec.setWidth 64 x >>> 24#64)) =
       BitVec.setWidth 64 (x.rotateLeft 8) := by
-  bv_decide
+  bv_auto
 
 theorem zrol7 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32
       (BitVec.setWidth 64 x <<< 7#64 ||| BitVec.setWidth 64 x >>> 25#64)) =
       BitVec.setWidth 64 (x.rotateLeft 7) := by
-  bv_decide
+  bv_auto
 
 /-- A 32-bit decrement of a zero-extended word, as `subs w, w, #1` is lowered. -/
 theorem zdec (x : W32) :
     BitVec.setWidth 64
       (BitVec.setWidth 32 (BitVec.setWidth 64 x + 18446744073709551615#64)) =
       BitVec.setWidth 64 (x - 1) := by
-  bv_decide
+  bv_auto
 
 /-! ## States of sixteen words -/
 

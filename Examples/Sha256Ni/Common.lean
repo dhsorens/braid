@@ -47,6 +47,7 @@ public import Examples.Sha256.Common
 public import Examples.ChaCha20Vec.Common
 import Iris.BI.DerivedLaws
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -248,13 +249,13 @@ theorem memIs_pack_any (w : Bool) (p : Word) (a b : W32) :
   have e1 : memIs p 4 (pack a b) w = memIs p 4 (a.setWidth 64) w := by
     have ea : ((pack a b).setWidth 32).setWidth 64 = a.setWidth 64 := by
       simp only [pack]
-      bv_decide
+      bv_auto
     funext h
     simp only [memIs]
     rw [Heap.bytes_setWidth32 p (pack a b) w, ea]
   have e2 : pack a b >>> (8 * 4) = b.setWidth 64 := by
     simp only [pack, Nat.reduceMul]
-    bv_decide
+    bv_auto
   rw [show (8 : Nat) = 4 + 4 from rfl, memIs_add w 4 4 p (pack a b) (by omega), e1, e2]
 
 /-- **An array of 32-bit words is an array of 64-bit cells**, each holding two of them,
@@ -371,7 +372,7 @@ theorem sig0_pack (a b : W32) :
       pack a b >>> 3#64 &&& 0x1fffffff1fffffff#64 =
       pack (smallSigma0 a) (smallSigma0 b) := by
   simp only [pack, smallSigma0, ROTR, SHR]
-  bv_decide
+  bv_auto
 
 /-- The second mixing of a schedule step, written the same way, is `σ₁` in each lane. -/
 theorem sig1_pack (a b : W32) :
@@ -382,6 +383,6 @@ theorem sig1_pack (a b : W32) :
       pack a b >>> 10#64 &&& 0x003fffff003fffff#64 =
       pack (smallSigma1 a) (smallSigma1 b) := by
   simp only [pack, smallSigma1, ROTR, SHR]
-  bv_decide
+  bv_auto
 
 end Examples.Sha256Ni

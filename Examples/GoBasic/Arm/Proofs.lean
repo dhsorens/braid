@@ -11,6 +11,7 @@ module
 public import Examples.GoBasic.Arm.Image
 public import Examples.ArmMachine
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -43,7 +44,7 @@ theorem main_MaxU64_spec (a b r : Word) (fn fz fc fv : Bool) :
     braid_forget_flag 2
     braid_forget_flag 3
     refine Triple.done_eq ?_
-    have h : b.ult a = !a.ule b := by bv_decide
+    have h : b.ult a = !a.ule b := by bv_auto
     simp [umax, h, hbr]
 
 /-- After `cmp a, b`, the condition `gt` is the signed comparison. -/
@@ -52,7 +53,7 @@ theorem cond_gt (a b : Word) :
       (ofBool (ofBool (BitVec.slt (a - b) 0#64) ==
         ofBool (BitVec.slt ((a ^^^ b) &&& (a ^^^ a - b)) 0#64))) = b.slt a := by
   simp only [ofBool]
-  bv_decide
+  bv_auto
 
 /-- The loop of `main.SumSlice`, from index `i`, with `rest` still to add. -/
 theorem main_SumSlice_loop (p len r : Word) : ∀ (rest : List Word) (i acc t4 : Word)
@@ -91,7 +92,7 @@ theorem main_SumSlice_loop (p len r : Word) : ∀ (rest : List Word) (i acc t4 :
     braid_step
     · braid_unfold wordsAt_cons (p + i <<< 3#64) x xs
       iterate 3 braid_step
-      have e : p + (i <<< 3#64 + 8#64) = p + (i + 1#64) <<< 3#64 := by bv_decide
+      have e : p + (i <<< 3#64 + 8#64) = p + (i + 1#64) <<< 3#64 := by bv_auto
       rw [e]
       braid_call ih (i + 1#64) (acc + x) x _ _ _ _ (by rw [← he]; bv_omega) hlen (by bv_omega)
       rw [← e]
@@ -103,7 +104,7 @@ theorem main_SumSlice_loop (p len r : Word) : ∀ (rest : List Word) (i acc t4 :
       have : i.slt len = true := by
         have h1 : i < len := by rw [← he]; bv_omega
         have h2 : len < 2305843009213693952#64 := by bv_omega
-        bv_decide
+        bv_auto
       simp [this] at hbr
 
 /-- `main.SumSlice` returns the sum of the words of a slice, given as a pointer and a length.
@@ -123,7 +124,7 @@ theorem main_SumSlice_spec (p t2 t3 t4 s old r : Word) (xs : List Word) (fn fz f
         .prop (flagAny Flags.v)]) := by
   have hloop := main_SumSlice_loop p (BitVec.ofNat 64 xs.length) r xs 0#64 0#64 t4 fn fz fc fv
     (by simp) (by simp; omega) (by simpa using hl)
-  have e : p + 0#64 <<< 3#64 = p := by bv_decide
+  have e : p + 0#64 <<< 3#64 = p := by bv_auto
   rw [e] at hloop
   iterate 4 braid_step
   braid_call hloop

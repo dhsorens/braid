@@ -22,6 +22,7 @@
 module
 
 public import Examples.Sha256Main.X86.Output
+import Braid.BV
 
 @[expose] public section
 
@@ -46,7 +47,7 @@ theorem total_or (n : Nat) (hn : n < 2 ^ 32) :
       BitVec.ofNat 64 (total n - 8) := by
   have key : ∀ x : Word, x &&& 18446744073709551552#64 ||| 56#64 =
       (x &&& 18446744073709551552#64) + 56#64 := by
-    intro x; bv_decide
+    intro x; bv_auto
   have hT : 64 ≤ total n := by simp only [total]; omega
   have hT' := total_lt n
   rw [key, total_mask n hn]
@@ -57,7 +58,7 @@ theorem total_shift_or (n : Nat) (hn : n < 2 ^ 32) :
     (BitVec.ofNat 64 n + 8#64 ||| 63#64) <<< 3#64 =
       BitVec.ofNat 64 (8 * (total n - 1 - 64 * 0)) := by
   have key : ∀ x : Word, (x ||| 63#64) <<< 3#64 = x <<< 3#64 ||| 504#64 := by
-    intro x; bv_decide
+    intro x; bv_auto
   rw [key, total_shift n hn]
 
 /-! ## The whole run -/
@@ -171,7 +172,7 @@ theorem sha256_main_trace (msg : List (BitVec 8)) (hn : msg.length < 2 ^ 32)
   refine Sha256.X86.tripleT_reg_val (r := 12)
     (BitVec.ofNat 64 (8 * (total msg.length - 1 - 64 * 0))) (by braid_upd)
     (total_shift_or _ hn) ?_
-  refine Sha256.X86.tripleT_reg_val (r := 14) 0#64 (by braid_upd) (by bv_decide) ?_
+  refine Sha256.X86.tripleT_reg_val (r := 14) 0#64 (by braid_upd) (by bv_auto) ?_
   braid_fold cellsAt_nil (k := 8) (w := true) 0x402ca8#64
   braid_fold cellsAt_cons (k := 8) (w := true) 0x402ca0#64 0x5be0cd191f83d9ab#64 []
   braid_fold cellsAt_cons (k := 8) (w := true) 0x402c98#64 0x9b05688c510e527f#64 _
@@ -199,7 +200,7 @@ theorem sha256_main_trace (msg : List (BitVec 8)) (hn : msg.length < 2 ^ 32)
   braid_name_reg 3
   x86_name_all_flags
   braid_sym_run_to 0x4024f0
-  refine Sha256.X86.tripleT_reg_val (r := 0) 0#64 (by braid_upd) (by bv_decide) ?_
+  refine Sha256.X86.tripleT_reg_val (r := 0) 0#64 (by braid_upd) (by bv_auto) ?_
   x86_name_all_flags
   braid_call out_loop Hf (List.replicate 8 0#64) (List.replicate 32 0#8) _ _ _ _ _ _ _ _ _
     hlen (by simp) (by simp)

@@ -9,7 +9,7 @@
   another, and then the four on the diagonals. Each half is run symbolically once, and ends
   in an expression of the sixteen words, `colsCode` or `diagsCode`, which is the code's
   arithmetic read as arithmetic on 32-bit words. That these are `ChaCha20.columns` and
-  `ChaCha20.diagonals` are separate lemmas, proved by `bv_decide`, one quarter round deep.
+  `ChaCha20.diagonals` are separate lemmas, proved by `bv_auto`, one quarter round deep.
   After each half the registers and slots hold the specification's function of the state, so
   nothing grows from round to round, and the loop is an induction on the number of rounds
   left.
@@ -26,6 +26,7 @@ module
 
 public import Examples.ChaCha20.X86.Image
 public import Examples.ChaCha20.Common
+import Braid.BV
 
 @[expose] public section
 
@@ -162,7 +163,7 @@ theorem colsCode_eq (s : List W32) :
       (s.getD 6 0) (s.getD 7 0) (s.getD 8 0) (s.getD 9 0) (s.getD 10 0) (s.getD 11 0)
       (s.getD 12 0) (s.getD 13 0) (s.getD 14 0) (s.getD 15 0) = columns s := by
   simp only [colsCode, columns, quarter, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The second half of a round computes the quarter rounds on the diagonals. -/
 theorem diagsCode_eq (s : List W32) :
@@ -170,7 +171,7 @@ theorem diagsCode_eq (s : List W32) :
       (s.getD 6 0) (s.getD 7 0) (s.getD 8 0) (s.getD 9 0) (s.getD 10 0) (s.getD 11 0)
       (s.getD 12 0) (s.getD 13 0) (s.getD 14 0) (s.getD 15 0) = diagonals s := by
   simp only [diagsCode, diagonals, quarter, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-! ## A round of the loop -/
 
@@ -416,6 +417,6 @@ theorem rounds_spec : ∀ (n : Nat) (s : List W32) (k : W32) (q t9 u18 u14 : Wor
       braid_done_perm 28
     · exfalso
       have : k - 1 ≠ 0#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 end Examples.ChaCha20.X86

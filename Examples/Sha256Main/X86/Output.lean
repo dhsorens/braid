@@ -23,6 +23,7 @@
 module
 
 public import Examples.Sha256Main.X86.Blocks
+import Braid.BV
 
 @[expose] public section
 
@@ -40,7 +41,7 @@ def swap32 (x : W32) : W32 :=
 first. -/
 theorem leBytes_swap32 (x : W32) : leBytes 4 ((swap32 x).setWidth 64) = wordBytes x := by
   simp only [leBytes, wordBytes, swap32, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The cells of the reversed words of a hash value are the bytes of its digest. -/
 theorem flatMap_leBytes_swap32 (H : List W32) :
@@ -55,7 +56,7 @@ theorem bswap_swap32 (x : W32) :
     BitVec.setWidth 64 (BitVec.setWidth 32 (bswap (BitVec.setWidth 64 x) >>> 32#64)) =
       BitVec.setWidth 64 (swap32 x) := by
   simp only [Braid.bswap, swap32]
-  bv_decide
+  bv_auto
 
 /-! ## The loop that reverses the bytes of each word -/
 
@@ -99,7 +100,7 @@ theorem swap_loop : ∀ (xs : List W32) (x : W32) (zs : List Word) (z : Word) (i
     braid_sym_run_to 0x402501
     rw [bswap_swap32]
     braid_sym_step
-    · exfalso; bv_decide
+    · exfalso; bv_auto
     · braid_fold cellsAt_cons (k := 4) (w := true) (0x402c78#64 + (x0 * 4#64 + 48#64))
         (BitVec.setWidth 64 (swap32 x)) []
       braid_fold cellsAt_cons (k := 4) (w := true) (0x402c78#64 + (x0 * 4#64 + 16#64))
@@ -177,7 +178,7 @@ theorem copy_loop : ∀ (ss ds : List (BitVec 8)) (s d : BitVec 8) (i : Nat)
     braid_unfold bytesAt_cons (x0 + 0x402d40#64) d []
     braid_sym_run_to 0x40251f
     braid_sym_step
-    · exfalso; bv_decide
+    · exfalso; bv_auto
     · braid_fold bytesAt_cons (x0 + 0x402d40#64) s []
       braid_fold bytesAt_cons (0x402c78#64 + (x0 * 1#64 + 48#64)) s []
       braid_forget 0
@@ -265,7 +266,7 @@ theorem out_loop (H : List W32) (zs : List Word) (ds : List (BitVec 8)) (x2 x3 :
   braid_name_reg 2
   x86_name_all_flags
   braid_sym_run_to 0x402510
-  refine Sha256.X86.tripleT_reg_val (r := 0) 0#64 (by braid_upd) (by bv_decide) ?_
+  refine Sha256.X86.tripleT_reg_val (r := 0) 0#64 (by braid_upd) (by bv_auto) ?_
   x86_name_all_flags
   braid_call copy_loop ss ds s d 0 0#64 x3 0x402ca8#64 0x402d40#64 _ _ _ _ _ _ _ (by omega)
     (by omega) rfl rfl rfl

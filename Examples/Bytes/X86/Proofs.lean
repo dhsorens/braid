@@ -9,6 +9,7 @@ module
 
 public import Examples.Bytes.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -47,7 +48,7 @@ theorem str_len_loop (p s r : Word) : ∀ (suf : List (BitVec 8)) (j : Word)
     braid_unfold bytesAt_cons (p + (j * 1#64 + 1#64)) b (bs ++ [0#8])
     iterate 2 braid_step
     braid_step
-    · have e : p + (j * 1#64 + 2#64) = p + ((j + 1#64) * 1#64 + 1#64) := by bv_decide
+    · have e : p + (j * 1#64 + 2#64) = p + ((j + 1#64) * 1#64 + 1#64) := by bv_auto
       rw [e]
       braid_call ih (j + 1#64) _ _ _ _ _ _ (fun c hc => hnz c (List.mem_cons_of_mem _ hc))
       rw [← e]
@@ -57,7 +58,7 @@ theorem str_len_loop (p s r : Word) : ∀ (suf : List (BitVec 8)) (j : Word)
         congr 2; bv_omega
       simp only [List.length_cons, e2]
       braid_done
-    · exact absurd (by bv_decide) hb
+    · exact absurd (by bv_auto) hb
 
 /-- `str_len` returns the number of bytes before the first zero byte. -/
 theorem str_len_spec (p t s r : Word) (str : List (BitVec 8)) (c pf af z sg o : Bool)
@@ -113,7 +114,7 @@ theorem fill_loop (p n v s r : Word) : ∀ (bs : List (BitVec 8)) (b : BitVec 8)
     braid_unfold bytesAt_cons (p + i * 1#64) b (d :: ds)
     iterate 3 braid_step
     braid_step
-    · have e1 : p + (i * 1#64 + 1#64) = p + (i + 1#64) * 1#64 := by bv_decide
+    · have e1 : p + (i * 1#64 + 1#64) = p + (i + 1#64) * 1#64 := by bv_auto
       rw [e1]
       braid_call ih d (i + 1#64) _ _ _ _ _ _ (by rw [← he]; bv_omega) (by bv_omega)
       rw [← e1]
@@ -190,7 +191,7 @@ theorem count_ones_loop (s r : Word) (k : Nat) : ∀ (x cnt t : Word) (c pf af z
       rw [BitVec.toNat_add, h1, h2]
       simp
     have e1 : x >>> 1#64 = x >>> 1 := rfl
-    have e2 : BitVec.setWidth 64 (BitVec.setWidth 32 x) &&& 1#64 = x &&& 1#64 := by bv_decide
+    have e2 : BitVec.setWidth 64 (BitVec.setWidth 32 x) &&& 1#64 = x &&& 1#64 := by bv_auto
     iterate 4 braid_step
     simp only [e1, e2]
     braid_step
@@ -275,7 +276,7 @@ private theorem hasBytes_one_trunc {m : MachineState} {a v : Word}
   rw [e] at h' ⊢
   rw [h']
   congr 1
-  bv_decide
+  bv_auto
 
 /-- **`str_len` on the machine.** A machine of the model that runs the executable of this
 image, is at the entry of `str_len`, has the bytes `str`, none of them zero, and then a zero

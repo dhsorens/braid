@@ -13,7 +13,7 @@
   triples. The proofs are those of `Examples.ChaCha20.Arm.Round` with the registers that are
   forgotten or named changed: each half is run symbolically once and ends in its expression,
   that the expressions are `ChaCha20.columns` and `ChaCha20.diagonals` is proved by
-  `bv_decide` one quarter round deep, and the loop is an induction on the number of rounds
+  `bv_auto` one quarter round deep, and the loop is an induction on the number of rounds
   left.
 
   ## Main results
@@ -29,6 +29,7 @@ module
 public import Examples.ChaCha20.O2.Arm.Image
 public import Examples.ChaCha20.Common
 public import Examples.ArmMachine
+import Braid.BV
 
 @[expose] public section
 
@@ -151,7 +152,7 @@ theorem colsCode_eq (s : List W32) :
       (s.getD 6 0) (s.getD 7 0) (s.getD 8 0) (s.getD 9 0) (s.getD 10 0) (s.getD 11 0)
       (s.getD 12 0) (s.getD 13 0) (s.getD 14 0) (s.getD 15 0) = columns s := by
   simp only [colsCode, columns, quarter, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The second half of a round computes the quarter rounds on the diagonals. -/
 theorem diagsCode_eq (s : List W32) :
@@ -159,7 +160,7 @@ theorem diagsCode_eq (s : List W32) :
       (s.getD 6 0) (s.getD 7 0) (s.getD 8 0) (s.getD 9 0) (s.getD 10 0) (s.getD 11 0)
       (s.getD 12 0) (s.getD 13 0) (s.getD 14 0) (s.getD 15 0) = diagonals s := by
   simp only [diagsCode, diagonals, quarter, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-! ## A round of the loop -/
 
@@ -386,6 +387,6 @@ theorem rounds_spec : ∀ (n : Nat) (s : List W32) (k : W32) (t19 t20 t21 t22 t2
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 end Examples.ChaCha20.O2.Arm

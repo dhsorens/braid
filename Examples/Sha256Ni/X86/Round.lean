@@ -35,6 +35,7 @@ module
 public import Examples.Sha256Ni.X86.Image
 public import Examples.Sha256Ni.X86.Lanes
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 @[expose] public section
 
@@ -93,7 +94,7 @@ local macro "turn_finish " wk:term ", " c:term ", " K:term ", " i:term ", " hq:t
 theorem aligned16 (i : Nat) : BitVec.ofNat 64 (16 * i) &&& 15#64 = 0#64 := by
   rw [BitVec.ofNat_mul]
   generalize BitVec.ofNat 64 i = j
-  bv_decide
+  bv_auto
 
 /-- **A turn of the first loop**, turn `i` of twelve: rounds `4 * i` to `4 * i + 3` on the
 working variables `v`, with the first four words of the window `win`, and the window moved
@@ -141,7 +142,7 @@ theorem step_spec (wk : Bool) (i : Nat) (hi : i < 12) (c : Word)
   have hq1 : c + 0x402118#64 = 0x402110#64 + BitVec.ofNat 64 (16 * i + 8) := by
     rw [hc, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * i) = z
-    bv_decide
+    bv_auto
   braid_unfold cells_quad_at wk 0x402110#64 (c + 0x402110#64) (c + 0x402118#64) K i hq hq0 hq1
   generalize hk0 : K.getD (4 * i) 0 = k0
   generalize hk1 : K.getD (4 * i + 1) 0 = k1
@@ -292,11 +293,11 @@ theorem tail_spec (wk : Bool) (j : Nat) (hj : j < 4) (c : Word)
   have hq0 : c + 0x4021d0#64 = 0x402110#64 + BitVec.ofNat 64 (16 * (12 + j)) := by
     rw [hc, Nat.mul_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   have hq1 : c + 0x4021d8#64 = 0x402110#64 + BitVec.ofNat 64 (16 * (12 + j) + 8) := by
     rw [hc, Nat.mul_add, BitVec.ofNat_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   braid_unfold cells_quad_at wk 0x402110#64 (c + 0x4021d0#64) (c + 0x4021d8#64) K (12 + j)
     hq hq0 hq1
   generalize hk0 : K.getD (4 * (12 + j)) 0 = k0
