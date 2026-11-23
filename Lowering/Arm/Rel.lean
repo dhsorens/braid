@@ -264,9 +264,9 @@ theorem run_shiftStages (w : RegWidth) (sh : ShiftType) (amount : Nat) (v : Word
       · bv_auto
       · bv_auto
       · have e1 : kb.toNat % 32 = kb.toNat := Nat.mod_eq_of_lt (by bv_omega)
-        have e2 : 32 - kb.toNat = (32#64 - kb).toNat := by bv_omega
-        rw [e1, e2]
-        bv_decide
+        rw [e1, BitVec.ushiftRight_eq',
+          Braid.BV.ror32_dup (BitVec.setWidth 32 v) _ (by bv_omega)]
+        simp only [BitVec.setWidth_setWidth_of_le, BitVec.setWidth_eq, Nat.reduceLeDiff]
   · simp only [shiftStages]
     obtain ⟨kb, hkb, hk⟩ := exists_bv_of_lt (k := amount % 64) (by omega)
     split
@@ -439,7 +439,7 @@ theorem wp_flagOps {d x y : Nat} {w : RegWidth} {isSub : Bool} {ρ : Env}
     simp only [BinOp.eval_add, BinOp.eval_sub, BinOp.eval_slt, BinOp.eval_eq, BinOp.eval_ne,
       BinOp.eval_ult, BinOp.eval_ule, BinOp.eval_xor, BinOp.eval_and, UnOp.eval_zext,
       UnOp.eval_sext]
-    first | bv_decide | (congr 1; bv_decide)
+    bv_auto
 
 theorem evalAddSub_ADDS (w : RegWidth) (x y : Word) :
     Arm64.evalAddSub w .ADDS x y none =
@@ -476,7 +476,7 @@ theorem wp_addSubOps (h : Rel s σ) {d x y : Nat} {w : RegWidth} {op : AddSubOp}
       refine (wpOps_ext (ρ := ρ) hw ?_ (fun y hy => by env_below hy)).elim fun ρ₁ hw => ⟨ρ₁, σ, h, hw⟩ <;>
       simp only [Arm64.evalAddSub, Arm64.AddWithCarry32, Arm64.AddWithCarry64,
         BinOp.eval_add, BinOp.eval_sub, UnOp.eval_zext, Env.set_same] <;>
-      generalize ρ x = a <;> generalize ρ y = b <;> bv_decide
+      generalize ρ x = a <;> generalize ρ y = b <;> bv_auto
 
 /-- A logical operation: the result, and the flags if the operation sets them. -/
 theorem wp_logicOps (h : Rel s σ) {d x y : Nat} {w : RegWidth} {op : LogicalOp} {ρ : Env}
@@ -501,9 +501,7 @@ theorem wp_logicOps (h : Rel s σ) {d x y : Nat} {w : RegWidth} {op : LogicalOp}
         Nat.reduceEqDiff, ofBool_bne_zero] at hnx hny ⊢ <;>
       generalize ρ x = a at * <;>
       generalize ρ y = b at * <;>
-      first
-        | bv_auto
-        | (refine congrArg (Arm64.State.setPState s) (Arm64.PState.ext ?_ ?_ ?_ ?_) <;> bv_decide)
+      bv_auto
   all_goals
     cases w <;>
       simp only [logicOps, List.cons_append, List.nil_append, wpOps, Op.wp, Env.set_apply,
