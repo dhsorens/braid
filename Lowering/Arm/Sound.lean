@@ -23,6 +23,7 @@ module
 
 public import Lowering.Arm.Sha
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -146,7 +147,7 @@ theorem run_cselStages (w : RegWidth) (op : CondSelectOp) (v : Word) :
   cases w <;> cases op <;>
     simp only [cselStages, Stage.run, Stage.eval, List.foldl, List.nil_append, List.cons_append,
       norm, BinOp.eval_add, UnOp.eval_not, UnOp.eval_neg, UnOp.eval_zext] <;>
-    bv_decide
+    bv_auto
 
 /-- A conditional select is sound. -/
 theorem sound_condSelect (prog : Arm64.Program) {w : RegWidth} {op : CondSelectOp}
@@ -257,7 +258,7 @@ theorem sound_condCompareImm (prog : Arm64.Program) {w : RegWidth} {isSub : Bool
   simp only [lower] at hw
   arm_ops h hw
   obtain ⟨ρ', σ', h', hw⟩ := wp_ccmpOps h (by env_simp; exact norm_readReg _ _)
-    (by env_simp; cases w <;> first | (simp only [norm]; done) | (simp only [norm]; bv_decide)) hw
+    (by env_simp; cases w <;> first | (simp only [norm]; done) | (simp only [norm]; bv_auto)) hw
   simp only [Term.wp] at hw
   refine step_done (h'.setPC _) hw ?_
   env_simp
@@ -283,7 +284,7 @@ theorem sound_dataProc3 (prog : Arm64.Program) {w : RegWidth} {op : DataProc3Op}
     refine wr_eq rd ?_ <;>
     generalize s.readReg64 rn = a <;> generalize s.readReg64 rm = b <;>
     generalize s.readReg64 ra = c
-  all_goals first | rfl | bv_decide
+  all_goals first | rfl | bv_auto
 
 /-- Unsigned division of 32-bit values is division of their zero extensions. -/
 theorem udiv_zext (x y : BitVec 32) :
@@ -298,30 +299,30 @@ theorem udiv_zext (x y : BitVec 32) :
 /-- Signed division of 32-bit values is the low half of division of their sign extensions. -/
 theorem sdiv_sext (x y : BitVec 32) :
     BitVec.setWidth 32 ((x.signExtend 64).sdiv (y.signExtend 64)) = x.sdiv y := by
-  have mx : (x.signExtend 64).msb = x.msb := by bv_decide
-  have my : (y.signExtend 64).msb = y.msb := by bv_decide
+  have mx : (x.signExtend 64).msb = x.msb := by bv_auto
+  have my : (y.signExtend 64).msb = y.msb := by bv_auto
   rw [BitVec.sdiv_eq, BitVec.sdiv_eq, mx, my]
   cases hx : x.msb <;> cases hy : y.msb <;> simp only [BitVec.udiv_eq]
-  · have ex : x.signExtend 64 = x.setWidth 64 := by bv_decide
-    have ey : y.signExtend 64 = y.setWidth 64 := by bv_decide
+  · have ex : x.signExtend 64 = x.setWidth 64 := by bv_auto
+    have ey : y.signExtend 64 = y.setWidth 64 := by bv_auto
     rw [ex, ey, ← udiv_zext]
     generalize x / y = r
-    bv_decide
-  · have ex : x.signExtend 64 = x.setWidth 64 := by bv_decide
-    have ey : -y.signExtend 64 = (-y).setWidth 64 := by bv_decide
+    bv_auto
+  · have ex : x.signExtend 64 = x.setWidth 64 := by bv_auto
+    have ey : -y.signExtend 64 = (-y).setWidth 64 := by bv_auto
     rw [ex, ey, ← udiv_zext]
     generalize x / -y = r
-    bv_decide
-  · have ex : -x.signExtend 64 = (-x).setWidth 64 := by bv_decide
-    have ey : y.signExtend 64 = y.setWidth 64 := by bv_decide
+    bv_auto
+  · have ex : -x.signExtend 64 = (-x).setWidth 64 := by bv_auto
+    have ey : y.signExtend 64 = y.setWidth 64 := by bv_auto
     rw [ex, ey, ← udiv_zext]
     generalize -x / y = r
-    bv_decide
-  · have ex : -x.signExtend 64 = (-x).setWidth 64 := by bv_decide
-    have ey : -y.signExtend 64 = (-y).setWidth 64 := by bv_decide
+    bv_auto
+  · have ex : -x.signExtend 64 = (-x).setWidth 64 := by bv_auto
+    have ey : -y.signExtend 64 = (-y).setWidth 64 := by bv_auto
     rw [ex, ey, ← udiv_zext]
     generalize -x / -y = r
-    bv_decide
+    bv_auto
 
 theorem udiv_w32 (a b : Word) :
     BitVec.zeroExtend 64 (BitVec.truncate 32 (BitVec.zeroExtend 64
@@ -331,7 +332,7 @@ theorem udiv_w32 (a b : Word) :
           BitVec.truncate 32 (BitVec.zeroExtend 64 (BitVec.truncate 32 b))))) =
     BitVec.zeroExtend 64 (BitVec.truncate 32 a) / BitVec.zeroExtend 64 (BitVec.truncate 32 b) := by
   have ta : ∀ v : Word, BitVec.truncate 32 (BitVec.zeroExtend 64 (BitVec.truncate 32 v)) =
-      BitVec.truncate 32 v := fun v => by bv_decide
+      BitVec.truncate 32 v := fun v => by bv_auto
   simp only [ta, BitVec.truncate_eq_setWidth]
   generalize BitVec.setWidth 32 a = x
   generalize BitVec.setWidth 32 b = y
@@ -342,7 +343,7 @@ theorem udiv_w32 (a b : Word) :
     · rfl
   rw [e]
   generalize x / y = r
-  bv_decide
+  bv_auto
 
 theorem sdiv_w32 (a b : Word) :
     BitVec.zeroExtend 64 (BitVec.truncate 32 (BitVec.zeroExtend 64
@@ -354,7 +355,7 @@ theorem sdiv_w32 (a b : Word) :
       ((BitVec.signExtend 64 (BitVec.truncate 32 a)).sdiv
         (BitVec.signExtend 64 (BitVec.truncate 32 b)))) := by
   have ta : ∀ v : Word, BitVec.truncate 32 (BitVec.zeroExtend 64 (BitVec.truncate 32 v)) =
-      BitVec.truncate 32 v := fun v => by bv_decide
+      BitVec.truncate 32 v := fun v => by bv_auto
   simp only [ta, BitVec.truncate_eq_setWidth]
   generalize BitVec.setWidth 32 a = x
   generalize BitVec.setWidth 32 b = y
@@ -365,7 +366,7 @@ theorem sdiv_w32 (a b : Word) :
     · rfl
   rw [e]
   generalize x.sdiv y = r
-  bv_decide
+  bv_auto
 
 theorem toNat_mod_64 (y : Word) : y.toNat % 64 = (y &&& 63#64).toNat := by
   rw [BitVec.toNat_and]
@@ -413,15 +414,66 @@ theorem sound_dataProc2 (prog : Arm64.Program) {w : RegWidth} {op : DataProc2Op}
        bv_decide)
 
 /-! The model counts leading zeros and sign bits, and reverses bits, with loops of its own.
-These are `BitVec.clz` and `BitVec.reverse`. -/
+These are `BitVec.clz` and `BitVec.reverse`, in every width, by induction on the loops. -/
 
-theorem clz64 (v : BitVec 64) : BitVec.ofNat 64 (Arm64.countLeadingZeros v) = v.clz := by
-  simp only [Arm64.countLeadingZeros, Arm64.countLeadingZeros.loop, Nat.reduceSub, apply_ite (BitVec.ofNat 64)]
-  bv_decide
+theorem clz_loop {w : Nat} (v : BitVec w) :
+    ∀ k, BitVec.ofNat w (Arm64.countLeadingZeros.loop v (k + 1)) = v.clzAuxRec k
+  | 0 => by
+    simp only [Arm64.countLeadingZeros.loop, BitVec.clzAuxRec, Nat.sub_zero]
+    split <;> rfl
+  | k + 1 => by
+    rw [Arm64.countLeadingZeros.loop, BitVec.clzAuxRec, ← clz_loop v k]
+    split <;> rfl
+
+theorem ofNat_countLeadingZeros {w : Nat} (v : BitVec w) (hw : 0 < w) :
+    BitVec.ofNat w (Arm64.countLeadingZeros v) = v.clz := by
+  obtain ⟨k, rfl⟩ : ∃ k, w = k + 1 := ⟨w - 1, by omega⟩
+  simp only [Arm64.countLeadingZeros, BitVec.clz, Nat.add_sub_cancel]
+  exact clz_loop v k
+
+theorem clz_loop_zext {m n : Nat} (v : BitVec m) (h : m ≤ n) :
+    ∀ k, k ≤ m → Arm64.countLeadingZeros.loop (v.setWidth n) k =
+      Arm64.countLeadingZeros.loop v k + (n - m)
+  | 0, _ => by simp only [Arm64.countLeadingZeros.loop]; omega
+  | k + 1, hk => by
+    simp only [Arm64.countLeadingZeros.loop, BitVec.getLsbD_setWidth,
+      show k < n by omega, decide_true, Bool.true_and]
+    split
+    · omega
+    · exact clz_loop_zext v h k (by omega)
+
+theorem clz_loop_high {m n : Nat} (v : BitVec m) :
+    ∀ j, m + j ≤ n → Arm64.countLeadingZeros.loop (v.setWidth n) (m + j) =
+      Arm64.countLeadingZeros.loop (v.setWidth n) m
+  | 0, _ => rfl
+  | j + 1, hj => by
+    rw [show m + (j + 1) = (m + j) + 1 by omega, Arm64.countLeadingZeros.loop]
+    simp only [BitVec.getLsbD_setWidth, BitVec.getLsbD_of_ge v (m + j) (by omega), Bool.and_false]
+    exact clz_loop_high v j (by omega)
+
+theorem countLeadingZeros_zext {m n : Nat} (v : BitVec m) (h : m ≤ n) :
+    Arm64.countLeadingZeros (v.setWidth n) = Arm64.countLeadingZeros v + (n - m) := by
+  simp only [Arm64.countLeadingZeros]
+  obtain ⟨j, rfl⟩ : ∃ j, n = m + j := ⟨n - m, by omega⟩
+  rw [clz_loop_high v j (Nat.le_refl _), clz_loop_zext v (by omega) m (Nat.le_refl _)]
+
+theorem countLeadingZeros_le {w : Nat} (v : BitVec w) : Arm64.countLeadingZeros v ≤ w := by
+  simp only [Arm64.countLeadingZeros]
+  suffices ∀ k, Arm64.countLeadingZeros.loop v k ≤ w from this w
+  intro k; induction k with
+  | zero => simp [Arm64.countLeadingZeros.loop]
+  | succ k ih => simp only [Arm64.countLeadingZeros.loop]; split <;> omega
+
+theorem clz64 (v : BitVec 64) : BitVec.ofNat 64 (Arm64.countLeadingZeros v) = v.clz :=
+  ofNat_countLeadingZeros v (by decide)
 
 theorem clz32 (v : BitVec 32) : BitVec.ofNat 64 (Arm64.countLeadingZeros v) = (v.zeroExtend 64).clz - 32#64 := by
-  simp only [Arm64.countLeadingZeros, Arm64.countLeadingZeros.loop, Nat.reduceSub, apply_ite (BitVec.ofNat 64)]
-  bv_decide
+  rw [BitVec.zeroExtend_eq_setWidth, ← ofNat_countLeadingZeros _ (by decide),
+    countLeadingZeros_zext v (by decide)]
+  have := countLeadingZeros_le v
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofNat, BitVec.toNat_sub]
+  omega
 
 theorem ite_yield {α : Type} (c : Prop) [Decidable c] (a b : α) :
     (if c then (pure (ForInStep.yield a) : Id (ForInStep α)) else pure (ForInStep.yield b)) =
@@ -434,26 +486,136 @@ theorem reverseBits_eq {n : Nat} (v : BitVec n) :
   simp only [Arm64.reverseBits, Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size]
   simp [ite_yield]
 
-set_option maxRecDepth 20000 in
-theorem rbit64 (v : BitVec 64) : Arm64.reverseBits v = v.reverse := by
-  rw [reverseBits_eq]
-  simp only [List.range', List.foldl, Nat.reduceAdd, Nat.reduceSub]
-  bv_decide
+theorem getLsbD_one_shl {n : Nat} (s j : Nat) (hj : j < n) :
+    (BitVec.ofNat n 1 <<< s).getLsbD j = decide (j = s) := by
+  rw [BitVec.getLsbD_shiftLeft, show BitVec.ofNat n 1 = 1#n from rfl, BitVec.getLsbD_one]
+  by_cases h : j = s
+  · subst h; simp; omega
+  · by_cases h2 : j < s
+    · simp [h2, h]
+    · simp [h2, h, hj]; omega
 
-set_option maxRecDepth 20000 in
-theorem rbit32 (v : BitVec 32) : (Arm64.reverseBits v).zeroExtend 64 = (v.zeroExtend 64).reverse >>> 32#64 := by
+/-- After the first `k` indices, the accumulator holds the reversed bits of those indices. -/
+theorem reverse_fold {n : Nat} (v : BitVec n) : ∀ k, k ≤ n → ∀ j, j < n →
+    ((List.range' 0 k).foldl (fun acc i =>
+      if v.getLsbD i then acc ||| (BitVec.ofNat n 1 <<< (n - 1 - i)) else acc) 0).getLsbD j =
+      (decide (n - 1 - j < k) && v.getLsbD (n - 1 - j))
+  | 0, _, j, _ => by simp
+  | k + 1, hk, j, hj => by
+    rw [List.range'_concat, List.foldl_append, List.foldl_cons, List.foldl_nil]
+    simp only [Nat.zero_add, Nat.one_mul]
+    have ih := reverse_fold v k (by omega) j hj
+    by_cases e : n - 1 - j = k
+    · subst e
+      split
+      · rename_i hv; simp only [BitVec.getLsbD_or, ih, getLsbD_one_shl _ _ hj]; simp [hv]; omega
+      · rename_i hv; rw [ih]; simp [hv]
+    · have hd : decide (n - 1 - j < k + 1) = decide (n - 1 - j < k) := by
+        simp only [decide_eq_decide]; omega
+      rw [hd]
+      split
+      · simp only [BitVec.getLsbD_or, ih, getLsbD_one_shl _ _ hj]
+        have : ¬ j = n - 1 - k := by omega
+        simp [this]
+      · exact ih
+
+theorem reverseBits_reverse {n : Nat} (v : BitVec n) : Arm64.reverseBits v = v.reverse := by
   rw [reverseBits_eq]
-  simp only [List.range', List.foldl, Nat.reduceAdd, Nat.reduceSub]
-  bv_decide
+  apply BitVec.eq_of_getLsbD_eq; intro j hj
+  rw [reverse_fold v n (Nat.le_refl _) j hj, BitVec.getLsbD_reverse, BitVec.getMsbD]
+  simp [hj]; omega
+
+theorem rbit64 (v : BitVec 64) : Arm64.reverseBits v = v.reverse := reverseBits_reverse v
+
+theorem rbit32 (v : BitVec 32) : (Arm64.reverseBits v).zeroExtend 64 = (v.zeroExtend 64).reverse >>> 32#64 := by
+  rw [reverseBits_reverse]
+  apply BitVec.eq_of_getLsbD_eq; intro j hj
+  simp only [BitVec.zeroExtend_eq_setWidth, BitVec.ushiftRight_eq', BitVec.toNat_ofNat,
+    BitVec.getLsbD_setWidth, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_reverse, BitVec.getMsbD]
+  by_cases h : j < 32
+  · rw [show 63 - (32 + j) = 31 - j by omega]
+    simp [show j < 64 by omega, show 32 + j < 64 by omega, show 31 - j < 64 by omega, h]
+  · simp [h]; omega
+
+/-- Bit `k` below the top of `v ^^^ v >>>ₛ 1` says whether bits `k` and `k + 1` differ. -/
+theorem getLsbD_xor_sshr {n : Nat} (v : BitVec n) (k : Nat) (hk : k + 1 < n) :
+    (v ^^^ v.sshiftRight' (1#n)).getLsbD k = (v.getLsbD k ^^ v.getLsbD (k + 1)) := by
+  have h1 : (1#n).toNat = 1 := by simp; omega
+  simp only [BitVec.getLsbD_xor, BitVec.sshiftRight', h1, BitVec.getLsbD_sshiftRight,
+    show ¬ n ≤ k by omega, decide_false, Bool.not_false, Bool.true_and,
+    Nat.add_comm 1 k, hk, ite_true]
+
+theorem getLsbD_xor_sshr_top {n : Nat} (v : BitVec n) (hn : 0 < n) :
+    (v ^^^ v.sshiftRight' (1#n)).getLsbD (n - 1) = false := by
+  have h1 : (1#n).toNat = 1 % 2 ^ n := by simp
+  simp only [BitVec.getLsbD_xor, BitVec.sshiftRight', BitVec.getLsbD_sshiftRight,
+    show ¬ n ≤ n - 1 by omega, decide_false, Bool.not_false, Bool.true_and,
+    BitVec.msb_eq_getLsbD_last]
+  have h1 : 1 % 2 ^ n = 1 := Nat.mod_eq_of_lt (Nat.one_lt_two_pow (by omega))
+  split
+  · rename_i h; simp only [BitVec.toNat_ofNat, h1] at h; omega
+  · simp
+
+/-- Counting down from bit `k`, while every bit above is the sign: the sign count is one less
+than the zero count of the differences. -/
+theorem cls_loop {n : Nat} (v : BitVec n) (hn : 1 < n) : ∀ k, k ≤ n - 1 →
+    (∀ i, k ≤ i → i < n → v.getLsbD i = v.msb) →
+    Arm64.countLeadingZeros.loop (v ^^^ v.sshiftRight' (1#n)) k =
+      Arm64.countLeadingSigns.loop v v.msb k + 1
+  | 0, _, _ => by simp only [Arm64.countLeadingZeros.loop, Arm64.countLeadingSigns.loop]; omega
+  | k + 1, hk, hs => by
+    simp only [Arm64.countLeadingZeros.loop, Arm64.countLeadingSigns.loop,
+      getLsbD_xor_sshr v k (by omega), hs (k + 1) (by omega) (by omega)]
+    by_cases hd : v.getLsbD k = v.msb
+    · rw [hd, Bool.xor_self, bne_self_eq_false]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      exact cls_loop v hn k (by omega) fun i hi hin => by
+        rcases Nat.eq_or_lt_of_le hi with rfl | hi
+        · exact hd
+        · exact hs i (by omega) hin
+    · have h1 : (v.getLsbD k ^^ v.msb) = true := by
+        revert hd; cases v.getLsbD k <;> cases v.msb <;> simp
+      have h2 : (v.getLsbD k != v.msb) = true := by
+        revert hd; cases v.getLsbD k <;> cases v.msb <;> simp
+      rw [h1, h2]
+      simp only [↓reduceIte]
+      omega
+
+theorem countLeadingSigns_eq {n : Nat} (v : BitVec n) (hn : 1 < n) :
+    Arm64.countLeadingZeros (v ^^^ v.sshiftRight' (1#n)) = Arm64.countLeadingSigns v + 1 := by
+  obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
+  simp only [Arm64.countLeadingZeros, Arm64.countLeadingSigns, show ¬ m + 1 ≤ 1 by omega,
+    ↓reduceIte, Nat.add_sub_cancel]
+  rw [Arm64.countLeadingZeros.loop]
+  have htop := getLsbD_xor_sshr_top v (by omega)
+  simp only [Nat.add_sub_cancel] at htop
+  rw [htop]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  exact cls_loop v hn m (by omega) fun i hi hin => by
+    rw [show i = m by omega, BitVec.msb_eq_getLsbD_last, Nat.add_sub_cancel]
+
+theorem xor_sshr_sext (v : BitVec 32) :
+    v.signExtend 64 ^^^ (v.signExtend 64).sshiftRight' 1#64 =
+      (v ^^^ v.sshiftRight' 1#32).setWidth 64 := by
+  bv_auto
 
 theorem cls64 (v : BitVec 64) : BitVec.ofNat 64 (Arm64.countLeadingSigns v) = (v ^^^ v.sshiftRight' 1#64).clz - 1#64 := by
-  simp only [Arm64.countLeadingSigns, Arm64.countLeadingSigns.loop, Nat.reduceSub, Nat.reduceLeDiff, ↓reduceIte, apply_ite (BitVec.ofNat 64)]
-  bv_decide
+  rw [← ofNat_countLeadingZeros _ (by decide), countLeadingSigns_eq v (by decide)]
+  have := countLeadingZeros_le (v ^^^ v.sshiftRight' 1#64)
+  have := countLeadingSigns_eq v (by decide)
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofNat, BitVec.toNat_sub]
+  omega
 
 theorem cls32 (v : BitVec 32) : BitVec.ofNat 64 (Arm64.countLeadingSigns v) =
     (v.signExtend 64 ^^^ (v.signExtend 64).sshiftRight' 1#64).clz - 33#64 := by
-  simp only [Arm64.countLeadingSigns, Arm64.countLeadingSigns.loop, Nat.reduceSub, Nat.reduceLeDiff, ↓reduceIte, apply_ite (BitVec.ofNat 64)]
-  bv_decide
+  rw [xor_sshr_sext, ← ofNat_countLeadingZeros _ (by decide), countLeadingZeros_zext _ (by decide),
+    countLeadingSigns_eq v (by decide)]
+  have := countLeadingZeros_le (v ^^^ v.sshiftRight' 1#32)
+  have := countLeadingSigns_eq v (by decide)
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofNat, BitVec.toNat_sub]
+  omega
 
 /-- A byte or bit reversal, or a count of leading zeros or sign bits, is sound. -/
 theorem sound_dataProc1 (prog : Arm64.Program) {w : RegWidth} {op : DataProc1Op}
@@ -515,14 +677,14 @@ theorem sound_extr (prog : Arm64.Program) {w : RegWidth} {rd rn rm : Arm64.Reg} 
       UnOp.eval_zext] <;>
     refine wr_eq rd ?_ <;>
     generalize s.readReg64 rn = a <;> generalize s.readReg64 rm = b
-  · bv_decide
+  · bv_auto
   · obtain ⟨k, hk, hke⟩ := exists_bv_of_lt (k := lsb % 32) (by omega)
     have hk32 : k < 32#64 := by bv_omega
     have hk0 : k ≠ 0#64 := by rintro rfl; exact h0 (by simpa using hke)
     have e2 : BitVec.ofNat 64 (32 - k.toNat) = 32#64 - k := by bv_omega
     simp only [hke, BitVec.ofNat_toNat, BitVec.setWidth_eq, e2]
     exact extr_w32 a b k hk32 hk0
-  · bv_decide
+  · bv_auto
   · obtain ⟨k, hk, hke⟩ := exists_bv_of_lt (k := lsb % 64) (by omega)
     have hk0 : k ≠ 0#64 := by rintro rfl; exact h0 (by simpa using hke)
     have e2 : BitVec.ofNat 64 (64 - k.toNat) = 64#64 - k := by bv_omega
@@ -660,9 +822,9 @@ theorem norm_readSized (sz : MemWidth) (m : Arm64.Memory) (a : Word) :
     norm (match sz with | .X64 => .W64 | _ => .W32) (m.readSized sz false a) =
       m.readSized sz false a := by
   cases sz <;> simp only [norm, Arm64.Memory.readSized, Bool.false_eq_true, ↓reduceIte]
-  · generalize m.read8 a = b; bv_decide
-  · generalize m.read16 a = b; bv_decide
-  · generalize m.read32 a = b; bv_decide
+  · generalize m.read8 a = b; bv_auto
+  · generalize m.read16 a = b; bv_auto
+  · generalize m.read32 a = b; bv_auto
 
 theorem evalInst_ldar (prog : Arm64.Program) (sz : MemWidth) (rn rt : Arm64.Reg)
     (hsp : Arm64.checkRegSPAligned s rn = true) (hal : sz.isAligned (s.readReg64 rn) = true)
@@ -1034,9 +1196,9 @@ theorem fetchMem_of_fetch {prog : Arm64.Program} {m : Arm64.Memory} {pc : Word} 
       have := congrArg BitVec.toNat hpc
       simp only [BitVec.toNat_add, BitVec.toNat_ofNat] at this
       omega
-    have e0 : pc + 0#64 = pc := by bv_decide
-    have e2 : pc + 1#64 + 1#64 = pc + 2#64 := by bv_decide
-    have e3 : pc + 2#64 + 1#64 = pc + 3#64 := by bv_decide
+    have e0 : pc + 0#64 = pc := by bv_auto
+    have e2 : pc + 1#64 + 1#64 = pc + 2#64 := by bv_auto
+    have e3 : pc + 2#64 + 1#64 = pc + 3#64 := by bv_auto
     rw [e0] at r0 p0
     simp only [Arm64.Program.fetchMem, hext, hal, Arm64.Memory.canExec, Arm64.Memory.allPerm,
       Arm64.Memory.read32, e0, e2, e3, p0, p1, p2, p3, r0, r1, r2, r3]

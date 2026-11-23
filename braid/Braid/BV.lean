@@ -790,6 +790,13 @@ macro "bv_align" : tactic => `(tactic| (
   (try simp only [BitVec.toNat_eq, BitVec.toNat_sub, BitVec.toNat_add] at *)
   bv_arith))
 
+/-- Sign extensions: each as its zero extension plus, when the top bit is set, the bits above,
+one goal for each value of the top bit, then arithmetic. -/
+macro "bv_sext" : tactic => `(tactic| (
+  simp only [BitVec.toNat_eq, BitVec.toNat_neg, BitVec.toNat_signExtend, BitVec.toNat_setWidth,
+    BitVec.msb_eq_decide]
+  (repeat' split) <;> bv_arith))
+
 /-- The decision procedures on their own, without splitting. -/
 macro "bv_solve" : tactic => `(tactic| first
   | bv_budget 30000 bv_arith
@@ -860,6 +867,7 @@ elab "bv_dispatch" : tactic => do
   let orArith ← `(tactic| bv_budget 120000 bv_or_arith)
   let boolEq ← `(tactic| bv_budget 30000 bv_bool_eq)
   let align ← `(tactic| bv_budget 30000 bv_align)
+  let sext ← `(tactic| bv_budget 40000 bv_sext)
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
@@ -872,11 +880,11 @@ elab "bv_dispatch" : tactic => do
     if 0 < sh.ites && sh.ites ≤ 4 then #[split]
     else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]
     else if sh.eqBV && !sh.bitwise then #[arith, ac, peel]
-    else if sh.eqBV then #[narrow, ac, peel, addOr, enum, arith, align, bits, orArith]
+    else if sh.eqBV then #[narrow, ac, peel, addOr, enum, arith, align, bits, sext, orArith]
     else if sh.eqBool then #[boolEq, arith, boolSplit, bitDecide]
     else #[arith, boolSplit, bitDecide, boolCases]
   let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
-    boolSplit, orArith, boolEq, align, contra, contraBy]
+    boolSplit, orArith, boolEq, align, sext, contra, contraBy]
   let mut tried : Array (TSyntax `tactic) := #[]
   for tac in first ++ rest do
     if tried.contains tac then continue
