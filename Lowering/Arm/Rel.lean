@@ -260,9 +260,9 @@ theorem run_shiftStages (w : RegWidth) (sh : ShiftType) (amount : Nat) (v : Word
     · rename_i h0
       have hk0 : kb ≠ 0#64 := by rintro rfl; exact h0 (by simpa using hk)
       cases sh <;> simp only [Stage.run, Stage.eval, Arm64.shiftVal, Arm64.shift32, norm, hk, List.foldl, BitVec.rotateRight_def, BitVec.ofNat_toNat, BitVec.setWidth_eq, BinOp.eval_shl, BinOp.eval_lshr, BinOp.eval_ashr, BinOp.eval_mul, UnOp.eval_zext, UnOp.eval_sext, BitVec.truncate_eq_setWidth]
-      · bv_decide
       · bv_auto
-      · bv_decide
+      · bv_auto
+      · bv_auto
       · have e1 : kb.toNat % 32 = kb.toNat := Nat.mod_eq_of_lt (by bv_omega)
         have e2 : 32 - kb.toNat = (32#64 - kb).toNat := by bv_omega
         rw [e1, e2]

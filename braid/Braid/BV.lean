@@ -154,6 +154,22 @@ theorem and_highMask {w : Nat} (x : BitVec w) (c m : Nat)
     x &&& BitVec.ofNat w c = x - (x &&& BitVec.ofNat w m) := by
   rw [h, and_not_eq_sub]
 
+/-- Sign-extending, shifting right arithmetically and cutting back is shifting right
+arithmetically in the narrow width. -/
+theorem setWidth_sshr_sext {w m : Nat} (x : BitVec m) (k : Nat) (h : m ≤ w) :
+    ((x.signExtend w).sshiftRight k).setWidth m = x.sshiftRight k := by
+  apply BitVec.eq_of_getLsbD_eq; intro i hi
+  simp only [BitVec.getLsbD_setWidth, BitVec.getLsbD_sshiftRight, BitVec.getLsbD_signExtend, hi,
+    decide_true, Bool.true_and, BitVec.msb_signExtend]
+  by_cases h1 : k + i < m
+  · simp [h1, show k + i < w by omega, show ¬ w ≤ i by omega, show ¬ m ≤ i by omega]
+  · by_cases h2 : k + i < w
+    · simp [h1, h2, show ¬ w ≤ i by omega, show ¬ m ≤ i by omega]
+    · simp [h1, h2, show ¬ w ≤ i by omega, show ¬ m ≤ i by omega]
+      by_cases hw : w ≤ m
+      · simp [hw, show 0 < w by omega, show m - w = 0 by omega, BitVec.msb]
+      · simp [hw, show 0 < w by omega]
+
 theorem uaddOverflow_eq_decide {w : Nat} (x y : BitVec w) :
     x.uaddOverflow y = decide (2 ^ w ≤ x.toNat + y.toNat) := rfl
 
@@ -766,15 +782,17 @@ macro "bv_or_arith" : tactic => `(tactic| (
 goes, a shift of a widened value cut back, two shifts that make a rotation made one, the
 changes of width of variables made variables, and then both sides put in one order. -/
 macro "bv_narrow_ac" : tactic => `(tactic| (
-  (try simp only [BitVec.shiftLeft_eq', BitVec.ushiftRight_eq', BitVec.toNat_ofNat,
-    Nat.reduceMod, Nat.reducePow])
+  (try simp only [BitVec.shiftLeft_eq', BitVec.ushiftRight_eq', BitVec.sshiftRight_eq',
+    BitVec.toNat_ofNat, Nat.reduceMod, Nat.reducePow])
   simp only [BitVec.setWidth_setWidth_of_le, BitVec.setWidth_shiftLeft_of_le,
-    ↓Braid.BV.setWidth_signExtend_self, ↓Braid.BV.setWidth_ushr_setWidth, Nat.reduceSub,
+    ↓Braid.BV.setWidth_signExtend_self, ↓Braid.BV.setWidth_ushr_setWidth,
+    ↓Braid.BV.setWidth_sshr_sext, Nat.reduceSub,
     Nat.reduceLeDiff, Nat.reduceLT, Nat.le_refl, BitVec.setWidth_or, BitVec.setWidth_xor,
     BitVec.setWidth_and, BitVec.setWidth_not, BitVec.setWidth_add, BitVec.setWidth_mul]
-  (try bv_gen_casts)
-  (try simp only [Braid.BV.or_shifts_eq_rotateLeft, Nat.reduceAdd, Nat.reduceLT])
-  bv_ac))
+  -- the narrowing may have closed the goal already
+  all_goals (try bv_gen_casts)
+  all_goals (try simp only [Braid.BV.or_shifts_eq_rotateLeft, Nat.reduceAdd, Nat.reduceLT])
+  all_goals bv_ac))
 
 /-- An equation between two Booleans as an equivalence of the statements that they are
 true, each test of bit vectors (`==`, `!=`) as an equation, then by arithmetic. -/
