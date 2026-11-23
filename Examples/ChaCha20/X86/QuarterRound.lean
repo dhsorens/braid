@@ -4,13 +4,14 @@
   `quarter_round` of `chacha20.c` on x86-64: the quarter round of ChaCha20 on four 32-bit
   words in memory. The symbolic execution ends in an expression of the four words, `qr`,
   which is the code's arithmetic read as arithmetic on 32-bit words; that it is
-  `ChaCha20.quarter` is a separate lemma, proved by `bv_decide`.
+  `ChaCha20.quarter` is a separate lemma, proved by `bv_auto`.
 -/
 
 module
 
 public import Examples.ChaCha20.X86.Image
 public import Examples.ChaCha20.Common
+import Braid.BV
 
 @[expose] public section
 
@@ -35,7 +36,7 @@ def qr (a b c d : W32) : W32 × W32 × W32 × W32 :=
 /-- The expression is the quarter round. -/
 theorem qr_eq (a b c d : W32) : qr a b c d = quarter a b c d := by
   simp only [qr, quarter, Prod.mk.injEq]
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-! ## The code -/
 

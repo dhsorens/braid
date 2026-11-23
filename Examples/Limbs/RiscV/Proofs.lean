@@ -8,7 +8,7 @@
 
   The loop is proved by induction on the limbs still to add, with the stepper: one round is
   run symbolically, the carry it leaves is shown to be `carryOut` (`carry_eq`, by
-  `bv_decide`), and the induction hypothesis is the rest of the loop. That `addLimbs` adds
+  `bv_auto`), and the induction hypothesis is the rest of the loop. That `addLimbs` adds
   the numbers is `addLimbs_val`, a theorem about lists.
 
   The limbs are loaded and stored as doublewords, which the machine model only does at
@@ -26,6 +26,7 @@ module
 public import Examples.Limbs.RiscV.Image
 public import Examples.Limbs.Common
 public import Lowering.RiscV.Logic
+import Braid.BV
 
 public section
 
@@ -38,7 +39,7 @@ open Braid Examples Examples.Limbs Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm.
 theorem carry_eq (a b c : Word) :
     ofBool (BitVec.ult (a + c) a) ||| ofBool ((a + (c + b)).ult (a + c)) = carryOut a b c := by
   unfold carryOut ofBool
-  bv_decide
+  bv_auto
 
 /-- The loop of `add_limbs`: add the limbs `a :: as` and `b :: bs` and the carry `c`, and
 store the sum over `r0 :: rs`, which end at `e`. -/
@@ -97,8 +98,8 @@ theorem add_limbs_loop (lrv e : Word) : ∀ (as bs rs : List Word) (a b r0 : Wor
     braid_sym_run
     · rw [carry_eq a b c]
       braid_call ih bs' rs' a' b' r' (pr + 8#64) (pa + 8#64) (pb + 8#64)
-        (carryOut a b c) _ _ (by omega) (by omega) (by bv_decide) (by bv_decide)
-        (by bv_decide) (by rw [← he]; bv_omega) (by omega)
+        (carryOut a b c) _ _ (by omega) (by omega) (by bv_auto) (by bv_auto)
+        (by bv_auto) (by rw [← he]; bv_omega) (by omega)
       braid_fold wordsAt_cons pa a (a' :: as)
       braid_fold wordsAt_cons pb b (b' :: bs')
       braid_fold wordsAt_cons pr (a + (c + b))

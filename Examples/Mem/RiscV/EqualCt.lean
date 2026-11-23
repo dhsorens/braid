@@ -27,6 +27,7 @@
 module
 
 public import Examples.Mem.RiscV.Proofs
+import Braid.BV
 
 public section
 
@@ -47,14 +48,14 @@ theorem acc_eq_zero (d : Word) (a b : BitVec 8) :
     BitVec.setWidth 64 b ^^^ BitVec.setWidth 64 a ||| d = 0#64 ↔ d = 0#64 ∧ a = b := by
   constructor
   · intro h
-    constructor <;> bv_decide
+    constructor <;> bv_auto
   · rintro ⟨rfl, rfl⟩
     simp
 
 /-- `sltiu` with one: whether a word is zero. -/
 theorem ult_one (x : Word) : ofBool (BitVec.ult x 1#64) = if x = 0#64 then 1#64 else 0#64 := by
   unfold ofBool
-  bv_decide
+  bv_auto
 
 /-- The result after the last round. -/
 theorem ctResult_last (d : Word) (a b : BitVec 8) :

@@ -35,6 +35,7 @@ module
 public import Braid.Logic.Traced
 public import Braid.Logic.Any
 public import Examples.Sha256Ni.Arm.Round
+import Braid.BV
 
 @[expose] public section
 
@@ -283,12 +284,12 @@ def tail_step_run (j : Nat) : { ls : Trace // ∀ (wk : Bool) (t10 : Word)
       0x20228#64 + BitVec.ofNat 64 (16 * (12 + j)) := by
     rw [Nat.mul_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   have hq1 : 0x20228#64 + (BitVec.ofNat 64 (16 * j) + 200#64) =
       0x20228#64 + BitVec.ofNat 64 (16 * (12 + j) + 8) := by
     rw [Nat.mul_add, BitVec.ofNat_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   braid_unfold cells_quad_at wk 0x20228#64 (0x20228#64 + (BitVec.ofNat 64 (16 * j) + 192#64))
     (0x20228#64 + (BitVec.ofNat 64 (16 * j) + 200#64)) K (12 + j) hq hq0 hq1
   -- The address of four round constants, and the count.

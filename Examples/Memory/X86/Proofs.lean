@@ -10,6 +10,7 @@ module
 
 public import Examples.Memory.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -48,7 +49,7 @@ theorem max2_spec (a b t s r : Word) (c p x z n o : Bool) :
   refine Triple.done_eq ?_
   simp only [umax, ofBool]
   by_cases h1 : a.ult b <;> by_cases h2 : a = b <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-- `max2` and `max3` together. -/
 def prog : Braid.Program := Braid.Program.ofList (max2.blocks ++ max3.blocks)
@@ -130,7 +131,7 @@ theorem sum_array_loop (p n s r : Word) : ∀ (xs : List Word) (x i acc : Word)
     braid_unfold wordsAt_cons (p + i * 8#64) x (y :: ys)
     iterate 3 braid_step
     braid_step
-    · have e : p + (i * 8#64 + 8#64) = p + (i + 1#64) * 8#64 := by bv_decide
+    · have e : p + (i * 8#64 + 8#64) = p + (i + 1#64) * 8#64 := by bv_auto
       rw [e]
       braid_call ih y (i + 1#64) (x + acc) _ _ _ _ _ _ (by rw [← he]; bv_omega) (by bv_omega)
       rw [← e]

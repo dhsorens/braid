@@ -18,6 +18,7 @@
 module
 
 public import Examples.Sha256Main.RiscV.Blocks
+import Braid.BV
 
 @[expose] public section
 
@@ -29,7 +30,7 @@ open Braid Examples Examples.Sha256 Lowering.RiscV Lowering.RiscV.Regs RiscvZkvm
 `out_byte a, b`. -/
 local macro "out_byte " a:term ", " b:term : tactic =>
   `(tactic| (refine TripleT.mem1_val (a := $a) (BitVec.zeroExtend 64 $b) (by braid_upd) ?_ ?_
-             · bv_decide))
+             · bv_auto))
 
 /-- What the loop that writes the digest out as bytes reveals, with `n + 1` words to go: the
 word read at `hq`, the four bytes written from `oq` on, and the branch. -/
@@ -105,7 +106,7 @@ theorem out_loop (e : Word) : ∀ (xs : List W32) (x : W32) (zs : List (BitVec 8
     simp only [List.length_cons, outLeak]
     out_word oq, hq, x, (x' :: xs), zs
     · braid_call ih x' zs (oq + 4#64) (hq + 4#64) _ _ _ _ _ (by omega)
-        (by rw [← he]; bv_omega) (by omega) (by bv_decide)
+        (by rw [← he]; bv_omega) (by omega) (by bv_auto)
       out_fold oq, hq, x, (x' :: xs), ((x' :: xs).flatMap wordBytes)
       braid_done
     · exfalso

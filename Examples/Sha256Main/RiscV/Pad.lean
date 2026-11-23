@@ -21,6 +21,7 @@
 module
 
 public import Examples.Sha256Main.RiscV.Program
+import Braid.BV
 
 @[expose] public section
 
@@ -40,7 +41,7 @@ theorem srl_byte (v : Word) (m : Nat) (hm : m < 64) :
     rw [BitVec.ushiftRight_eq', BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
   rw [e, e']
   generalize v >>> m = x
-  bv_decide
+  bv_auto
 
 /-- Close a goal that contradicts an unsigned comparison the code made. -/
 local macro "ult_omega " h:ident : tactic =>
@@ -146,7 +147,7 @@ theorem be32_bytes (msg : List (BitVec 8)) (b j : Nat) :
   generalize padByte msg (64 * b + 4 * j + 2) = c
   generalize padByte msg (64 * b + 4 * j + 1) = b'
   generalize padByte msg (64 * b + 4 * j) = a
-  bv_decide
+  bv_auto
 
 /-- What the four bytes of word `j` of block `b` reveal, the store of the word, and where
 the loop goes on, `e`. -/

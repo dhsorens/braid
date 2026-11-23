@@ -27,6 +27,7 @@ module
 public import Examples.Sha256Main.Arm.Own
 public import Examples.Sha256Main.Shared
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 @[expose] public section
 
@@ -54,7 +55,7 @@ theorem lsr_byte (v : Word) (m : Nat) (hm : m < 64) :
     rw [BitVec.ushiftRight_eq', BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
   rw [e, e']
   generalize v >>> m = x
-  bv_decide
+  bv_auto
 
 /-- Close a goal that contradicts a comparison the code made. -/
 local macro "cmp_omega " h:ident : tactic =>
@@ -180,7 +181,7 @@ theorem be32_acc (msg : List (BitVec 8)) (b j : Nat) :
   generalize padByte msg (64 * b + 4 * j + 2) = c
   generalize padByte msg (64 * b + 4 * j + 1) = b'
   generalize padByte msg (64 * b + 4 * j) = a
-  bv_decide
+  bv_auto
 
 /-- Name what a byte step leaves in the scratch register and the flags. -/
 local macro "byte_name" : tactic =>

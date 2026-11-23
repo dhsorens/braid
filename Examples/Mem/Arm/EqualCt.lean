@@ -22,6 +22,7 @@ module
 
 public import Examples.Mem.Arm.Proofs
 public import Examples.Mem.EqualCt
+import Braid.BV
 
 public section
 
@@ -54,13 +55,13 @@ theorem acc_round (a b d : BitVec 8) :
           BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 a)))) |||
       BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 d)) =
     BitVec.zeroExtend 64 (d ||| (a ^^^ b)) := by
-  bv_decide
+  bv_auto
 
 /-- What `cmp w8, #0` and `cset w0, eq` leave in `x0` from the gathered byte. -/
 theorem result_eq (x : BitVec 8) :
     (if ¬(BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.zeroExtend 64 x)) == 0#64) = true
       then 0#64 else 1#64) = if x = 0#8 then 1#64 else 0#64 := by
-  bv_decide
+  bv_auto
 
 /-- The loop of `equal_bytes_ct`: gather into the byte `d` of `x8` the XOR of each of the `n`
 pairs of bytes from `pa` and from `pb`, which are read through one set of bytes, and return

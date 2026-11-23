@@ -42,6 +42,7 @@ public import Examples.Sha256.O2.Arm.Image
 public import Examples.Sha256.Arm.Machine
 public import Examples.Sha256.RunTo
 import Iris.BI.DerivedLaws
+import Braid.BV
 
 public section
 
@@ -71,14 +72,14 @@ theorem Heap.bytes_pair (p x y : Word) (w : Bool) :
       have h1' : d < 4#64 := by bv_omega
       simp only [h1, h8, ↓reduceIte]
       congr 3
-      bv_decide
+      bv_auto
     · by_cases h2 : d.toNat < 8
       · have h4 : (d - 4#64).toNat < 4 := by bv_omega
         have h1' : 4#64 ≤ d := by bv_omega
         have h2' : d < 8#64 := by bv_omega
         simp only [h1, h2, h4, ↓reduceIte]
         congr 3
-        bv_decide
+        bv_auto
       · have h4 : ¬ (d - 4#64).toNat < 4 := by bv_omega
         simp only [h1, h2, h4, ↓reduceIte]
   | _ => rfl

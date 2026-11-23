@@ -13,7 +13,7 @@
   additions of lanes of the lowered code into arithmetic on the lanes, and what is left in
   each lane is an expression of four words, `qrCols` or `qrDiags`, which is the code's
   arithmetic read as arithmetic on 32-bit words. That these are `ChaCha20.quarter` are
-  separate lemmas, proved by `bv_decide`. After each half the registers hold the
+  separate lemmas, proved by `bv_auto`. After each half the registers hold the
   specification's function of the state, so nothing grows from round to round, and the loop
   is an induction on the number of rounds left.
 
@@ -30,6 +30,7 @@ module
 public import Examples.ChaCha20Vec.Arm.Image
 public import Examples.ChaCha20Vec.Common
 public import Examples.ArmMachine
+import Braid.BV
 
 @[expose] public section
 
@@ -68,12 +69,12 @@ def qrDiags (a b c d : W32) : W32 × W32 × W32 × W32 :=
 /-- The first half of a round computes the quarter round in each lane. -/
 theorem qrCols_eq (a b c d : W32) : qrCols a b c d = quarter a b c d := by
   simp only [qrCols, quarter, Prod.mk.injEq]
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- The second half of a round computes the quarter round in each lane. -/
 theorem qrDiags_eq (a b c d : W32) : qrDiags a b c d = quarter a b c d := by
   simp only [qrDiags, quarter, Prod.mk.injEq]
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-! ## A round of the loop -/
 
@@ -246,6 +247,6 @@ theorem rounds_spec : ∀ (n : Nat) (s : List W32) (k : W32) (t50 t51 t60 t61 : 
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 end Examples.ChaCha20Vec.Arm

@@ -32,6 +32,7 @@ module
 
 public import Braid.Logic.Traced
 public import Examples.Sha256Ni.X86.Round
+import Braid.BV
 
 @[expose] public section
 
@@ -125,7 +126,7 @@ def step_run (i : Nat) : { ls : Trace // ∀ (wk : Bool)
       0x402110#64 + BitVec.ofNat 64 (16 * i + 8) := by
     rw [BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * i) = z
-    bv_decide
+    bv_auto
   braid_unfold cells_quad_at wk 0x402110#64 (BitVec.ofNat 64 (16 * i) + 0x402110#64)
     (BitVec.ofNat 64 (16 * i) + 0x402118#64) K i hq hq0 hq1
   -- The four sums, and the first two rounds.
@@ -261,12 +262,12 @@ def tail_step_run (j : Nat) : { ls : Trace // ∀ (wk : Bool)
       0x402110#64 + BitVec.ofNat 64 (16 * (12 + j)) := by
     rw [Nat.mul_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   have hq1 : BitVec.ofNat 64 (16 * j) + 0x4021d8#64 =
       0x402110#64 + BitVec.ofNat 64 (16 * (12 + j) + 8) := by
     rw [Nat.mul_add, BitVec.ofNat_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   braid_unfold cells_quad_at wk 0x402110#64 (BitVec.ofNat 64 (16 * j) + 0x4021d0#64)
     (BitVec.ofNat 64 (16 * j) + 0x4021d8#64) K (12 + j) hq hq0 hq1
   -- The four sums.

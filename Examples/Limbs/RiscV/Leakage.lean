@@ -25,6 +25,7 @@
 module
 
 public import Examples.Limbs.RiscV.Proofs
+import Braid.BV
 
 public section
 
@@ -113,8 +114,8 @@ theorem add_limbs_loop_trace (lrv e : Word) : ∀ (as bs rs : List Word) (a b r0
     braid_sym_run
     · rw [carry_eq a b c]
       braid_call ih bs' rs' a' b' r' (pr + 8#64) (pa + 8#64) (pb + 8#64)
-        (carryOut a b c) _ _ _ (by omega) (by omega) (by bv_decide) (by bv_decide)
-        (by bv_decide) (by rw [← he]; bv_omega) (by omega)
+        (carryOut a b c) _ _ _ (by omega) (by omega) (by bv_auto) (by bv_auto)
+        (by bv_auto) (by rw [← he]; bv_omega) (by omega)
       braid_fold wordsAt_cons pa a (a' :: as)
       braid_fold wordsAt_cons pb b (b' :: bs')
       braid_fold wordsAt_cons pr (a + (c + b))

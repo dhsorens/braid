@@ -9,6 +9,7 @@ module
 public import Examples.Memory.RiscV.Image
 public import Lowering.RiscV.Logic
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -89,7 +90,7 @@ theorem sum_array_loop (r e : Word) : ∀ (xs : List Word) (x q acc t3 : Word),
     braid_unfold wordsAt_cons q x (y :: ys)
     iterate 3 braid_step
     braid_step
-    · braid_call ih y (q + 8#64) (x + acc) x (by bv_decide)
+    · braid_call ih y (q + 8#64) (x + acc) x (by bv_auto)
         (by simp only [List.length_cons] at he ⊢; bv_omega)
         (by simp only [List.length_cons] at hl ⊢; omega)
       braid_fold wordsAt_cons q x (y :: ys)
@@ -179,7 +180,7 @@ theorem swap_correct (s : MachineState) (x y : Word)
     refine Atom.disj_mem_mem fun a ⟨h1, h2⟩ => ?_
     have h1' : a - s.getReg .x10 < 8#64 := by simpa [BitVec.lt_def] using h1
     have h2' : a - s.getReg .x11 < 8#64 := by simpa [BitVec.lt_def] using h2
-    bv_decide
+    bv_auto
   obtain ⟨n, s', σ', hn, hr, hpost⟩ := machine_sound swap_lowered
     (swap_spec (s.getReg .x10) (s.getReg .x11) x y (s.getReg .x12) (s.getReg .x13)
       (s.getReg .x1) hp hq) hcode

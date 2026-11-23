@@ -40,6 +40,7 @@ public import Examples.Sha256Ni.Arm.Insts
 public import Examples.Sha256Ni.Arm.Lanes
 public import Examples.ArmMachine
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 @[expose] public section
 
@@ -299,12 +300,12 @@ theorem tail_spec (wk : Bool) (j : Nat) (hj : j < 4) (c : Word)
   have hq0 : 0x20228#64 + (c + 192#64) = 0x20228#64 + BitVec.ofNat 64 (16 * (12 + j)) := by
     rw [hc, Nat.mul_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   have hq1 : 0x20228#64 + (c + 200#64) =
       0x20228#64 + BitVec.ofNat 64 (16 * (12 + j) + 8) := by
     rw [hc, Nat.mul_add, BitVec.ofNat_add, BitVec.ofNat_add]
     generalize BitVec.ofNat 64 (16 * j) = z
-    bv_decide
+    bv_auto
   braid_unfold cells_quad_at wk 0x20228#64 (0x20228#64 + (c + 192#64))
     (0x20228#64 + (c + 200#64)) K (12 + j) hq hq0 hq1
   generalize hk0 : K.getD (4 * (12 + j)) 0 = k0

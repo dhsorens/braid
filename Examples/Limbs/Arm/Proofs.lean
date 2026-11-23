@@ -8,7 +8,7 @@
 
   The loop is proved by induction on the limbs still to add, with the stepper: one round is
   run symbolically, the carry it leaves is shown to be `carryOut` (`carry_eq`, by
-  `bv_decide`), and the induction hypothesis is the rest of the loop. That `addLimbs` adds
+  `bv_auto`), and the induction hypothesis is the rest of the loop. That `addLimbs` adds
   the numbers is `addLimbs_val`, a theorem about lists.
 
   ## Main results
@@ -23,6 +23,7 @@ module
 public import Examples.Limbs.Arm.Image
 public import Examples.Limbs.Common
 public import Examples.ArmMachine
+import Braid.BV
 
 public section
 
@@ -37,7 +38,7 @@ theorem carry_eq (a b c : Word) :
       BitVec.setWidth 64 (BitVec.setWidth 32 (if ¬BitVec.ult (a + c) a = true then 0#64 else 1#64))
     else 1#64) = carryOut a b c := by
   unfold carryOut
-  bv_decide
+  bv_auto
 
 /-- The loop of `add_limbs`: add the limbs `a :: as` and `b :: bs` and the carry `c`, and
 store the sum over `r0 :: rs`. -/

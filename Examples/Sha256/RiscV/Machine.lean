@@ -32,6 +32,7 @@ module
 public import Examples.Sha256.Common
 public import Lowering.RiscV.Logic
 import Iris.BI.DerivedLaws
+import Braid.BV
 
 @[expose] public section
 
@@ -105,7 +106,7 @@ theorem _root_.Braid.Triple.forget_high {P : Program} {as as' : Atoms} {r : Brai
   have hx : x = withLow (x.extractLsb' 32 32) v := by
     subst he
     unfold withLow
-    bv_decide
+    bv_auto
   rw [e]; rw [e'] at h
   refine h.conseq (sep_mono_left (fun _ hv => ⟨_, ⟨x.extractLsb' 32 32, rfl⟩, ?_⟩)) .rfl
   show regIs r (withLow (x.extractLsb' 32 32) v) _
@@ -119,7 +120,7 @@ theorem _root_.Braid.Triple.reg_low {P : Program} {as rest : Atoms} {r : Braid.R
     Triple P (Atoms.interp as) Q := by
   rw [hext.interp]
   exact (Triple.exists_pre fun hi : W32 =>
-    h (withLow hi v) (by unfold withLow; bv_decide)).conseq sep_exists_right.1 .rfl
+    h (withLow hi v) (by unfold withLow; bv_auto)).conseq sep_exists_right.1 .rfl
 
 /-- Give a register of the symbolic state, of whose value only the low 32 bits matter, the
 value `v` of the specification: `sha256_low r, v`. -/
@@ -143,6 +144,6 @@ theorem and3_add_mul4 (p : Word) (t : Nat) :
     rw [BitVec.ofNat_mul]
   rw [e]
   generalize BitVec.ofNat 64 t = x
-  bv_decide
+  bv_auto
 
 end Examples.Sha256.RiscV

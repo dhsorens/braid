@@ -40,6 +40,7 @@ public import Examples.Spec.Sha256
 public import Braid.Logic
 import Iris.BI.DerivedLaws
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -290,7 +291,7 @@ theorem Heap.bytes_setWidth32 (a v : Word) (w : Bool) :
       have hx' : x - a < 4#64 := by bv_omega
       generalize x - a = d at hx'
       congr 3
-      bv_decide
+      bv_auto
     · rfl
   | _ => rfl
 

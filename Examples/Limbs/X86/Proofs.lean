@@ -9,7 +9,7 @@
 
   The loop is proved by induction on the limbs still to add, at any index `i`, with the
   stepper: one round is run symbolically, the carry it leaves is shown to be `carryOut`
-  (`carry_eq`, by `bv_decide`), and the induction hypothesis is the rest of the loop. That
+  (`carry_eq`, by `bv_auto`), and the induction hypothesis is the rest of the loop. That
   `addLimbs` adds the numbers is `addLimbs_val`, a theorem about lists.
 
   ## Main results
@@ -23,6 +23,7 @@ module
 
 public import Examples.Limbs.X86.Image
 public import Examples.Limbs.Common
+import Braid.BV
 
 public section
 
@@ -52,11 +53,11 @@ theorem carry_eq (a b c t9 t10 : Word) :
             (t9 &&& 0xffffffffffffff00#64 ||| ofBool (BitVec.ult (a + c) a)))))) =
       carryOut a b c := by
   unfold carryOut ofBool
-  bv_decide
+  bv_auto
 
 /-- The sum the code computes in a round is that of `addLimbs`. -/
 theorem sum_eq (a b c : Word) : b + (a + c) = a + c + b := by
-  bv_decide
+  bv_auto
 
 /-- Forget the values of the six status flags, of which those the last instruction leaves
 undefined hold no value already. -/

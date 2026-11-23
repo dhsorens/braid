@@ -10,6 +10,7 @@ module
 public import Examples.Bytes.RiscV.Image
 public import Lowering.RiscV.Logic
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -51,7 +52,7 @@ theorem str_len_loop (p r : Word) : ∀ (suf : List (BitVec 8)) (i t : Word),
         congr 1; bv_omega
       simp only [List.length_cons, e]
       braid_done
-    · exact absurd (by bv_decide) hb
+    · exact absurd (by bv_auto) hb
 
 /-- `str_len` returns the number of bytes before the first zero byte. -/
 theorem str_len_spec (p r t1 t2 : Word) (s : List (BitVec 8)) (hnz : ∀ b ∈ s, b ≠ 0#8) :
@@ -204,7 +205,7 @@ theorem hasBytes_one_of_truncate {s : MachineState} {a v : Word}
   refine ⟨hv, hb.trans ?_⟩
   have e : x - a = 0#64 := by bv_omega
   rw [e]
-  bv_decide
+  bv_auto
 
 /-- **`str_len` on the machine.** A machine that holds the code of `str_len`, is at its
 entry, and has in memory where `a0` points the bytes `bs`, none of them zero, and then a zero
