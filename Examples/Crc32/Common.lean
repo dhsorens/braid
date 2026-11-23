@@ -16,6 +16,7 @@
 
   * `table_getElem`: entry `i` of the table is four bits of the division of `i`
   * `nibble_step`: a shift by four and an entry of the table are four bits of the division
+  * `byte_of_indices`: from the same register, the two table indices of a byte give the byte
   * `tableAt_open`: the table, opened at the entry a nibble selects
   * `cellsAt_cell`: the bytes of an array of cells that holds of a state
   * `tableAt_flat`, `forall_flat₂`, `pairwise_flat₂`: a state that ends with the message and
@@ -63,6 +64,20 @@ theorem table_getElem : ∀ i : Fin 16, table[i] = nibble (BitVec.ofNat 32 i) :=
 adding the entry of the table its low four bits select is four bits of the division. -/
 theorem nibble_step (x : BitVec 32) : (x >>> 4) ^^^ nibble (x &&& 15#32) = nibble x := by
   simp only [nibble, bit, poly]
+  bv_auto
+
+/-- A byte and the two indices of its lookups: the register before it being the same, bytes
+with the same two indices are the same. The first index is the low nibble of the register
+with the byte added; by `nibble_step`, the second is the high nibble with a term the two
+bytes share added, so the two give the byte. -/
+theorem byte_of_indices (c : BitVec 32) (b b' : BitVec 8)
+    (h₁ : (c ^^^ b.zeroExtend 32).truncate 4 = (c ^^^ b'.zeroExtend 32).truncate 4)
+    (h₂ : (nibble (c ^^^ b.zeroExtend 32)).truncate 4 =
+      (nibble (c ^^^ b'.zeroExtend 32)).truncate 4) : b = b' := by
+  have hlow : (c ^^^ b.zeroExtend 32) &&& 15#32 = (c ^^^ b'.zeroExtend 32) &&& 15#32 := by
+    bv_auto
+  rw [← nibble_step (c ^^^ b.zeroExtend 32), ← nibble_step (c ^^^ b'.zeroExtend 32), hlow] at h₂
+  generalize nibble _ = N at h₂
   bv_auto
 
 /-! ## The table in memory -/

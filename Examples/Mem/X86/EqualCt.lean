@@ -22,6 +22,7 @@ module
 
 public import Examples.Mem.X86.Proofs
 public import Examples.Mem.EqualCt
+import Braid.BV
 
 public section
 
@@ -58,7 +59,7 @@ theorem acc_round (a b d : BitVec 8) :
         (BitVec.setWidth 64 b &&& 0xffffffffffffff00#64 |||
           BitVec.setWidth 64 b ^^^ BitVec.setWidth 64 a))) =
     BitVec.zeroExtend 64 (d ||| (a ^^^ b)) := by
-  bv_decide
+  bv_auto
 
 /-- What `xor eax, eax`, `test cl, cl` and `sete al` leave in `rax` from the gathered byte. -/
 theorem result_eq (w : Word) (x : BitVec 8) :
@@ -67,7 +68,7 @@ theorem result_eq (w : Word) (x : BitVec 8) :
       ofBool (BitVec.setWidth 64 x &&& BitVec.setWidth 64 x == 0#64) =
     if x = 0#8 then 1#64 else 0#64 := by
   simp only [ofBool]
-  bv_decide
+  bv_auto
 
 /-- The loop of `equal_bytes_ct`, at index `i`: gather into the byte `d` of `rcx` the XOR of
 each pair of bytes from index `i` on, which are read through one set of bytes, and return one

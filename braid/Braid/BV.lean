@@ -184,7 +184,8 @@ def known (n : Name) : Bool :=
     `HPow, `HAnd, `HOr, `HXor, `HShiftLeft, `HShiftRight, `HAppend, `Complement, `Neg, `OfNat,
     `BEq, `bne, `instBEqOfDecidableEq, `Add, `Sub, `Mul, `Div, `Mod, `Pow, `AndOp, `OrOp,
     `Xor, `ShiftLeft, `ShiftRight, `Max, `Min, `Exists, `outParam, `id, `instDecidableEqBool,
-    `instDecidableEqNat]
+    `instDecidableEqNat, `Std.PreorderPackage, `Std.LinearPreorderPackage,
+    `Std.LinearOrderPackage, `LawfulBEq, `ReflBEq]
   ns.any (fun p => p.isPrefixOf n) || (n.toString.splitOn "inst").head? == some ""
 
 /-- Whether `sub` occurs in `e`. -/
@@ -471,12 +472,16 @@ elab "bv_peel" : tactic => do
   let mut peeled := false
   for _ in [0:64] do
     let g ← getMainGoal
-    let t ← instantiateMVars (← g.getType)
+    -- the goal may come wrapped in annotations
+    let t := (← instantiateMVars (← g.getType)).cleanupAnnotations
     let some (_, l, r) := t.eq? | break
     let fl := l.getAppFn
     unless fl.isConst && fl == r.getAppFn && l.getAppNumArgs == r.getAppNumArgs do break
     let (la, ra) := (l.getAppArgs, r.getAppArgs)
-    let idx := (List.range la.size).filter fun i => la[i]! != ra[i]!
+    -- the operands that differ, up to unfolding reducible definitions only
+    let idx ← (List.range la.size).filterM fun i => do
+      if la[i]! == ra[i]! then pure false
+      else return !(← withReducible (isDefEq la[i]! ra[i]!))
     let [i] := idx | break
     let (a, b) := (la[i]!, ra[i]!)
     let α ← inferType a
@@ -738,7 +743,7 @@ def shapeOf (t : Expr) : MetaM Shape := do
   let has (ns : List Name) := (t.find? fun e => match e.getAppFn.constName? with
     | some n => ns.contains n && e.getAppNumArgs ≥ 2
     | none => false).isSome
-  let eqBV ← match t.eq? with
+  let eqBV ← match t.cleanupAnnotations.eq? with
     | some (α, _, _) => pure ((← whnfR α).isAppOfArity ``BitVec 1)
     | none => pure false
   return {
@@ -755,7 +760,11 @@ shape suits, then the others. Each runs on a budget of its own, so that one that
 leaves the rest of the budget to those after it. -/
 elab "bv_dispatch" : tactic => do
   let sh ← shapeOf (← instantiateMVars (← getMainTarget))
-  let split ← `(tactic| bv_guard ((repeat' split) <;> (try bv_norm at *) <;> bv_solve))
+  -- after the split, a test `a == b` that chose a side is an equation, and a side the tests
+  -- rule out is closed by contradiction
+  let split ← `(tactic| bv_guard ((repeat' split) <;>
+    (try simp only [beq_iff_eq, beq_eq_false_iff_ne, ne_eq] at *) <;> (try bv_norm at *) <;>
+    first | bv_solve | bv_contra bv_solve))
   let arith ← `(tactic| bv_budget 30000 bv_arith)
   let ac ← `(tactic| bv_budget 20000 bv_ac)
   let narrow ← `(tactic| bv_budget 30000 bv_narrow_ac)
@@ -768,7 +777,12 @@ elab "bv_dispatch" : tactic => do
   let boolSplit ← `(tactic| bv_budget 50000 bv_bool_split)
   let orArith ← `(tactic| bv_budget 120000 bv_or_arith)
   let contra ← `(tactic| bv_guard contradiction)
-  let contraBy ← `(tactic| bv_contra bv_solve)
+  -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
+  let contraBy ← `(tactic| bv_contra (first
+    | bv_solve
+    | bv_guard ((repeat' split) <;>
+        (try simp only [beq_iff_eq, beq_eq_false_iff_ne, ne_eq] at *) <;>
+        (try bv_norm at *) <;> bv_solve)))
   let first : Array (TSyntax `tactic) :=
     if 0 < sh.ites && sh.ites ≤ 4 then #[split]
     else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]

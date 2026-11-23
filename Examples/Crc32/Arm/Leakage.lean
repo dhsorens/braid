@@ -82,15 +82,6 @@ with the starting value they give the message back (`crcIndices_inj`). -/
 def crc32Leak (tbl p : Word) (n : Nat) (r : Word) (is : List (BitVec 4)) : Trace :=
   [.jump (if n = 0 then 0x1003c#64 else 0x10004#64)] ++ crcRoundsLeak tbl p is ++ [.jump r]
 
-/-- A byte and the two indices of its lookups: the register before it being the same, bytes
-with the same two indices are the same. -/
-theorem byte_of_indices (c : BitVec 32) (b b' : BitVec 8)
-    (h₁ : (c ^^^ b.zeroExtend 32).truncate 4 = (c ^^^ b'.zeroExtend 32).truncate 4)
-    (h₂ : (nibble (c ^^^ b.zeroExtend 32)).truncate 4 =
-      (nibble (c ^^^ b'.zeroExtend 32)).truncate 4) : b = b' := by
-  simp only [nibble, bit, poly] at h₂
-  bv_decide
-
 /-- **The indices reveal the message.** From the same register, two messages with the same
 table indices are the same message. -/
 theorem tableIndices_inj : ∀ (c : BitVec 32) (bs bs' : List (BitVec 8)),

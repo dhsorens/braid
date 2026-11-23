@@ -20,6 +20,8 @@ public import Examples.Crc32.Common
 import Braid.BV
 import Braid.BV
 import Braid.BV
+import Braid.BV
+import Braid.BV
 
 public section
 
