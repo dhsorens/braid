@@ -10,6 +10,7 @@ module
 public import Examples.Bytes.Arm.Image
 public import Examples.ArmMachine
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -50,7 +51,7 @@ theorem str_len_loop (p r : Word) : ∀ (suf : List (BitVec 8)) (i t : Word),
         congr 1; bv_omega
       simp only [List.length_cons, e]
       braid_done
-    · exact absurd (by bv_decide) hb
+    · exact absurd (by bv_auto) hb
 
 /-- `str_len` returns the number of bytes before the first zero byte. -/
 theorem str_len_spec (p r t8 t9 : Word) (s : List (BitVec 8)) (hnz : ∀ b ∈ s, b ≠ 0#8) :

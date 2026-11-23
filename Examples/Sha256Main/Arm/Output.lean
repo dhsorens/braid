@@ -22,6 +22,7 @@ module
 public import Examples.Sha256Main.Arm.Own
 public import Examples.Sha256Main.Shared
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 @[expose] public section
 
@@ -47,7 +48,7 @@ the word, most significant first. -/
 theorem leBytes_rev (x : W32) :
     leBytes 4 (bswap (BitVec.setWidth 64 x) >>> 32#64) = wordBytes x := by
   simp only [leBytes, wordBytes, bswap, List.cons.injEq, and_true]
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_decide
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> bv_auto
 
 /-- One word of the digest written as four bytes: run the iteration up to its branch, and
 read the cell written as the bytes of the word. -/

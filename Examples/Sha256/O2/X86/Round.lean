@@ -7,7 +7,7 @@
   The code is straight-line, between two pushes and two pops of callee-saved registers.
   Symbolic execution leaves each cell with the value the machine computed, a 64-bit
   expression; that its low 32 bits are the specification's is a separate goal about bit
-  vectors for each cell, which `bv_decide` proves (`sha256_cell`).
+  vectors for each cell, which `bv_auto` proves (`sha256_cell`).
 
   This is the proof of `Examples.Sha256.X86.Round` again, on the binary compiled at `-O2`,
   where the compiler emits for `sha256_round` the instructions it emits at `-O1`, at the same
@@ -24,6 +24,7 @@ module
 public import Examples.Sha256.O2.X86.Image
 public import Examples.Sha256.X86.Machine
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 public section
 

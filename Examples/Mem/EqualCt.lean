@@ -21,6 +21,7 @@
 module
 
 public import Braid
+import Braid.BV
 
 @[expose] public section
 
@@ -41,7 +42,7 @@ two bytes are the same. -/
 theorem or_xor_eq_zero (d a b : BitVec 8) : d ||| (a ^^^ b) = 0#8 ↔ d = 0#8 ∧ a = b := by
   constructor
   · intro h
-    constructor <;> bv_decide
+    constructor <;> bv_auto
   · rintro ⟨rfl, rfl⟩
     simp
 

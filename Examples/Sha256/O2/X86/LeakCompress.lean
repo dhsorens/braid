@@ -41,6 +41,7 @@ module
 
 public import Examples.Sha256.O2.X86.Compress
 public import Examples.Sha256.X86.LeakBase
+import Braid.BV
 
 @[expose] public section
 
@@ -451,7 +452,7 @@ theorem compress_mid_trace (hp s : Word) (wk : Bool)
   vars_name hq
   kept_name sq
   braid_sym_run_to 0x4011f9
-  refine tripleT_reg_val (r := 0) 0#64 (by braid_upd) (by bv_decide) ?_
+  refine tripleT_reg_val (r := 0) 0#64 (by braid_upd) (by bv_auto) ?_
   braid_sym_run_to 0x401230
   vars_forget hq
   kept_forget sq

@@ -9,6 +9,7 @@ module
 
 public import Examples.SwiftBasic.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -30,7 +31,7 @@ theorem swift_add3_spec (a b d t s r : Word) (c pf af z sg o : Bool) :
   braid_run
   x86_forget_flags
   refine Triple.done_eq ?_
-  have e : d + (a + b) = a + (b + d) := by bv_decide
+  have e : d + (a + b) = a + (b + d) := by bv_auto
   simp only [BitVec.mul_one, e]
 
 /-- `swift_min` returns the smaller of its arguments. It sets the flags. -/

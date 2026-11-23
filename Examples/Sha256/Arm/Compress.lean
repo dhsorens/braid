@@ -14,7 +14,7 @@
     of `Examples.Sha256.Arm.Schedule` as its invariant;
   * a round is `compress_round_step`: one iteration run symbolically, the two tables opened
     at the index of the round, and each register then given the value of the specification's
-    `round`, a goal about bit vectors for `bv_decide`;
+    `round`, a goal about bit vectors for `bv_auto`;
   * the 64 rounds are `compress_rounds_loop`, an induction on the rounds left whose invariant
     is the specification's rounds so far (`roundsFrom`), which uses the round only through
     its triple.
@@ -30,6 +30,7 @@ module
 public import Examples.Sha256.Arm.Image
 public import Examples.Sha256.Arm.Machine
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 public section
 

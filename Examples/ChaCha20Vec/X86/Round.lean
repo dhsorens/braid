@@ -30,6 +30,7 @@ module
 
 public import Examples.ChaCha20Vec.X86.Image
 public import Examples.ChaCha20Vec.Common
+import Braid.BV
 
 @[expose] public section
 
@@ -264,6 +265,6 @@ theorem rounds_spec : ∀ (n : Nat) (s : List W32) (k : W32) (fp fa fz fs fo : B
       braid_done_perm 39
     · exfalso
       have : k - 1 ≠ 0#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 end Examples.ChaCha20Vec.X86

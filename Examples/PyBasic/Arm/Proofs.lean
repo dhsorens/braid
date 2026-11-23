@@ -11,6 +11,7 @@ module
 public import Examples.PyBasic.Arm.Image
 public import Examples.ArmMachine
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -47,7 +48,7 @@ theorem py_max_u64_spec (p a b t8 t9 old r : Word) (fn fz fc fv : Bool) :
   refine Triple.done_eq ?_
   simp only [umax, ofBool]
   by_cases h1 : a = b <;> by_cases h2 : b.ule a <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-! ## On the machine -/
 

@@ -10,7 +10,7 @@
   with the value the machine computed, a 64-bit expression: the code loads each working
   variable sign-extended and adds with the 64-bit `add`, and only `sw` narrows the result.
   That its low 32 bits are the specification's is a separate goal about bit vectors for each
-  cell, which `bv_decide` proves (`sha256_cell`).
+  cell, which `bv_auto` proves (`sha256_cell`).
 
   ## Main results
 
@@ -23,6 +23,7 @@ module
 public import Examples.Sha256.RiscV.Image
 public import Examples.Sha256.RiscV.Machine
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 public section
 

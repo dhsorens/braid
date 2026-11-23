@@ -32,6 +32,7 @@
 module
 
 public import Examples.ChaCha20.RiscV.Round
+import Braid.BV
 
 public section
 
@@ -122,7 +123,7 @@ theorem add_lit_ne {P : Prop} {p a b : Word} (h : a ≠ b) (e : p + a = p + b) :
 /-- The low half of the sum of two registers, the other way round. -/
 theorem low_add_comm (x y : Word) :
     BitVec.setWidth 32 (x + y) = BitVec.setWidth 32 y + BitVec.setWidth 32 x := by
-  bv_decide
+  bv_auto
 
 /-- A round of the loop that copies the input to the frame: five instructions, the last a
 branch, and the side of it that leaves the loop, which is refuted. -/

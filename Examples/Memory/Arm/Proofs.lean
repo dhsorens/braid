@@ -11,6 +11,7 @@ module
 public import Examples.Memory.Arm.Image
 public import Examples.ArmMachine
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -44,7 +45,7 @@ theorem max2_spec (a b r : Word) (fn fz fc fv : Bool) :
   refine Triple.done_eq ?_
   simp only [umax, ofBool]
   by_cases h1 : a = b <;> by_cases h2 : b.ule a <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-- `max2` and `max3` together. -/
 def prog : Braid.Program := Braid.Program.ofList (max2.blocks ++ max3.blocks)

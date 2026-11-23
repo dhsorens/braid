@@ -10,6 +10,7 @@ module
 public import Examples.RustBasic.Arm.Image
 public import Examples.ArmMachine
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -42,7 +43,7 @@ theorem max_u64_spec (a b r : Word) (fn fz fc fv : Bool) :
   refine Triple.done_eq ?_
   simp only [umax, ofBool]
   by_cases h1 : a = b <;> by_cases h2 : b.ule a <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-- The loop of `gcd`, entered with a divisor that is not zero. -/
 theorem gcd_loop (r : Word) (k : Nat) : ∀ a b t : Word, b.toNat = k → b ≠ 0#64 →

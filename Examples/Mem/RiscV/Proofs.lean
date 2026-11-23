@@ -21,6 +21,7 @@ public import Examples.Mem.RiscV.Image
 public import Examples.Mem.Common
 public import Lowering.RiscV.Logic
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -114,7 +115,7 @@ theorem copy_bytes_spec (pd ps r t : Word) (ss ds : List (BitVec 8))
 /-- Two bytes that are equal as words are equal. -/
 theorem byte_eq_of_word {a b : BitVec 8}
     (h : BitVec.setWidth 64 a = BitVec.setWidth 64 b) : a = b := by
-  bv_decide
+  bv_auto
 
 /-- Forget what `equal_bytes` leaves in the registers it uses. -/
 local macro "equal_bytes_forget" : tactic =>

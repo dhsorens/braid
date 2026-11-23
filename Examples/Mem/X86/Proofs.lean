@@ -22,6 +22,7 @@ module
 public import Examples.Mem.X86.Image
 public import Examples.Mem.Common
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -160,7 +161,7 @@ theorem byte_cmp (a b : BitVec 8) :
     BitVec.setWidth 64 (BitVec.setWidth 8 (BitVec.setWidth 64 a - BitVec.setWidth 64 b)) = 0#64 ↔
       a = b := by
   constructor
-  · intro h; bv_decide
+  · intro h; bv_auto
   · rintro rfl; simp
 
 /-- Forget what `equal_bytes` leaves in the registers it uses and in the flags. -/

@@ -23,6 +23,7 @@ module
 public import Examples.Sha256.RiscV.Image
 public import Examples.Sha256.RiscV.Machine
 public import Examples.Sha256.RunTo
+import Braid.BV
 
 public section
 
@@ -89,7 +90,7 @@ theorem sha256_schedule_loop (e r : Word) : ∀ (js : List Word) (win : List W32
             js)
       braid_call ih [w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, nextWord
         [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15]]
-        j' (q' + 5#64) _ _ _ _ _ _ _ _ rfl (by bv_decide) (by rw [← he]; bv_omega) (by omega)
+        j' (q' + 5#64) _ _ _ _ _ _ _ _ rfl (by bv_auto) (by rw [← he]; bv_omega) (by omega)
       sha256_fold cellsAt_cons (k := 4) (w := true) (q' + 1#64) (w0.setWidth 64)
         (w32s (extend (js.length + 1) [w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13,
             w14, w15,

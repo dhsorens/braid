@@ -11,6 +11,7 @@ module
 
 public import Examples.PyBasic.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -51,7 +52,7 @@ theorem py_max_u64_spec (p a b t old s r : Word) (c pf af z sg o : Bool) :
   have e : (if ofBool (a.ult b) ||| ofBool (a - b == 0#64) = 0#64 then a else b) = umax a b := by
     simp only [umax, ofBool]
     by_cases h1 : a.ult b <;> by_cases h2 : a = b <;> simp_all
-    all_goals bv_decide
+    all_goals bv_auto
   simp only [e, BitVec.xor_self]
 
 /-! ## On the machine -/

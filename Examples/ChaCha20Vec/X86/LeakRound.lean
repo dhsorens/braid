@@ -33,6 +33,7 @@ module
 
 public import Braid.Logic.Traced
 public import Examples.ChaCha20Vec.X86.Block
+import Braid.BV
 
 @[expose] public section
 
@@ -231,7 +232,7 @@ def rounds_run : (n : Nat) → { ls : Trace // ∀ (a a' b b' c c' d d' : Word) 
       braid_done
     · exfalso
       have : k - 1 ≠ 0#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 /-- What the loop of rounds reveals with `n` rounds left after the one it is in: the trace
 that `rounds_run` finds. It is the branch back to the head of the loop after each round but

@@ -25,6 +25,7 @@ module
 
 public import Braid.Logic.Traced
 public import Examples.ChaCha20.Arm.Round
+import Braid.BV
 
 @[expose] public section
 
@@ -182,7 +183,7 @@ def rounds_run : (n : Nat) → { ls : Trace // ∀
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 /-- With one round left the loop reveals the way out. -/
 example : (rounds_run 0).1 = [.jump 0x10218#64] := rfl

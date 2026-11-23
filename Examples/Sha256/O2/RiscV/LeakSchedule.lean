@@ -25,6 +25,7 @@ module
 
 public import Examples.Sha256.O2.RiscV.Schedule
 public import Examples.Sha256.RiscV.LeakBase
+import Braid.BV
 
 public section
 
@@ -102,7 +103,7 @@ theorem schedule_loop_trace (e r : Word) : ∀ (n : Nat) (q x12 x13 x14 x15 x16 
     braid_sym_run
     · schedule_forget_mem q'
       sha256_fold cellsAny16 true (q' + 5#64)
-      braid_call ih (q' + 5#64) _ _ _ _ _ _ _ _ _ (by bv_decide) (by rw [← he]; bv_omega)
+      braid_call ih (q' + 5#64) _ _ _ _ _ _ _ _ _ (by bv_auto) (by rw [← he]; bv_omega)
         (by omega)
       braid_unfold cellsAny16 true (q' + 5#64)
       sha256_fold cellsAny16 true (q' + 1#64)

@@ -9,6 +9,7 @@ module
 
 public import Examples.SwiftBasic.Arm.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -41,7 +42,7 @@ theorem swift_min_spec (a b r : Word) (fn fz fc fv : Bool) :
   refine Triple.done_eq ?_
   simp only [umin]
   by_cases h1 : a.ult b <;> by_cases h2 : b.ule a <;> simp_all
-  all_goals bv_decide
+  all_goals bv_auto
 
 /-- The loop of `swift_gcd`, entered with a divisor that is not zero. -/
 theorem swift_gcd_loop (r : Word) (k : Nat) : ∀ a b t8 t9 : Word, b.toNat = k → b ≠ 0#64 →

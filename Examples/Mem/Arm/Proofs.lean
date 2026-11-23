@@ -21,6 +21,7 @@ public import Examples.Mem.Arm.Image
 public import Examples.Mem.Common
 public import Examples.ArmMachine
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -123,7 +124,7 @@ theorem copy_bytes_spec (pd ps r t : Word) (ss ds : List (BitVec 8)) (fn fz fc f
 theorem byte_eq_of_cmp {a b : BitVec 8}
     (h : BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 a)) =
       BitVec.setWidth 64 (BitVec.setWidth 32 (BitVec.setWidth 64 b))) : a = b := by
-  bv_decide
+  bv_auto
 
 /-- Forget what `equal_bytes` leaves in the registers it uses and in the flags. -/
 local macro "equal_bytes_forget" : tactic =>

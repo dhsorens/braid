@@ -29,6 +29,7 @@ module
 public import Braid.Logic.Traced
 public import Examples.ChaCha20.X86.Round
 public import Braid.Logic.Any
+import Braid.BV
 
 @[expose] public section
 
@@ -286,7 +287,7 @@ def rounds_run (q : Word) : (n : Nat) → { ls : Trace // ∀
       braid_done_traced 28
     · exfalso
       have : k - 1 ≠ 0#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 /-- With one round left the loop reveals what the round does, and the way on. -/
 example (q : Word) : (rounds_run q 0).1 = (double_round_run q).1 ++ [.jump 0x40123c#64] := rfl
