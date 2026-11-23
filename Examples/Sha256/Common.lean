@@ -41,12 +41,6 @@ public import Braid.Logic
 import Iris.BI.DerivedLaws
 import Std.Tactic.BVDecide
 import Braid.BV
-import Braid.BV
-import Braid.BV
-import Braid.BV
-import Braid.BV
-import Braid.BV
-import Braid.BV
 
 @[expose] public section
 
