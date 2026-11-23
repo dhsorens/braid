@@ -30,6 +30,7 @@ module
 
 public import Examples.Spec.Sha256
 import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -261,7 +262,7 @@ theorem ofNat_bitsToNatBE_bytes (a b c d : BitVec 8) :
     bitsToNatBE_append, bitsToNatBE_byte, List.length_append, natToBitsBE_length]
   simp only [BitVec.ofNat_add, BitVec.ofNat_mul, BitVec.ofNat_toNat, be32, Nat.reduceAdd,
     Nat.reducePow]
-  bv_decide
+  bv_auto
 
 /-! ## The cases of a byte of the padded message -/
 

@@ -31,6 +31,7 @@ module
 
 public import Braid.Logic.Any
 public import Examples.ChaCha20Vec.X86.LeakRound
+import Braid.BV
 
 @[expose] public section
 
@@ -43,7 +44,7 @@ open Braid Examples Examples.ChaCha20 Lowering.X86 Lowering.X86.Regs
 /-- A word is its two halves, as lanes. -/
 theorem pack_halves (w : Word) : pack (w.truncate 32) ((w >>> 32).truncate 32) = w := by
   simp only [pack]
-  bv_decide
+  bv_auto
 
 /-- Eight 64-bit cells are sixteen 32-bit cells, which hold the two halves of each. -/
 theorem cells8_halves (p w0 w1 w2 w3 w4 w5 w6 w7 : Word) :

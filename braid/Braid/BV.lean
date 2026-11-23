@@ -62,6 +62,25 @@ theorem setWidth_sub_of_le {w i : Nat} (x y : BitVec w) (h : i ≤ w) :
   rw [BitVec.sub_eq_add_neg, BitVec.setWidth_add _ _ h, BitVec.setWidth_neg_of_le h,
     ← BitVec.sub_eq_add_neg]
 
+/-- A sign extension is zero exactly when what it extends is. -/
+theorem signExtend_eq_zero_iff {v w : Nat} (x : BitVec v) (h : v ≤ w) :
+    x.signExtend w = 0#w ↔ x = 0#v := by
+  constructor
+  · intro e
+    apply BitVec.eq_of_getLsbD_eq; intro i hi
+    have := congrArg (·.getLsbD i) e
+    simp only [BitVec.getLsbD_signExtend, BitVec.getLsbD_zero] at this ⊢
+    simp only [show i < w by omega, hi, decide_true, Bool.true_and, ite_true] at this
+    exact this
+  · rintro rfl; apply BitVec.eq_of_getLsbD_eq; intro i hi
+    simp [BitVec.getLsbD_signExtend, BitVec.msb_zero]
+
+/-- A product with a power of two is a shift. -/
+theorem mul_pow2 {w : Nat} (x : BitVec w) (k c : Nat) (h : c = 2 ^ k) :
+    x * BitVec.ofNat w c = x <<< k := by
+  rw [BitVec.shiftLeft_eq_mul_twoPow]; congr 1
+  apply BitVec.eq_of_toNat_eq; simp [BitVec.toNat_twoPow, h]
+
 theorem uaddOverflow_eq_decide {w : Nat} (x y : BitVec w) :
     x.uaddOverflow y = decide (2 ^ w ≤ x.toNat + y.toNat) := rfl
 
@@ -133,6 +152,48 @@ partial def isPlain (goal : Expr) (e : Expr) : MetaM Bool := do
   | .letE _ t v b _ => return (← isPlain goal t) && (← isPlain goal v) && (← isPlain goal b)
   | .proj _ _ b => isPlain goal b
   | _ => return false
+
+/-- The largest subterms of `e` that are bit vectors built by something other than the
+operations on bit vectors, such as a register of a machine state. -/
+partial def foreignAtoms (e : Expr) (acc : Array Expr) : MetaM (Array Expr) := do
+  if e.hasLooseBVars || e.isFVar || e.isMVar then
+    match e with
+    | .app f a => return ← foreignAtoms a (← foreignAtoms f acc)
+    | .mdata _ b => return ← foreignAtoms b acc
+    | .forallE _ d b _ | .lam _ d b _ => return ← foreignAtoms b (← foreignAtoms d acc)
+    | _ => return acc
+  if let some n := e.getAppFn.constName? then
+    if !known n && e.isApp then
+      let ty ← whnfR (← inferType e)
+      if ty.isAppOfArity ``BitVec 1 then
+        return if acc.contains e then acc else acc.push e
+  match e with
+  | .app f a => foreignAtoms a (← foreignAtoms f acc)
+  | .mdata _ b => foreignAtoms b acc
+  | .forallE _ d b _ | .lam _ d b _ => foreignAtoms b (← foreignAtoms d acc)
+  | _ => pure acc
+
+/-- Each bit vector built by something other than the operations on bit vectors, in the goal
+or in a hypothesis about bit vectors, made a variable. -/
+elab "bv_atoms" : tactic => do
+  let g ← getMainGoal
+  g.withContext do
+  let mut atoms ← foreignAtoms (← instantiateMVars (← g.getType)) #[]
+  let mut hyps : Array FVarId := #[]
+  for d in (← getLCtx) do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    if !(← isProp ty) then continue
+    let as ← foreignAtoms ty #[]
+    if as.isEmpty then continue
+    hyps := hyps.push d.fvarId
+    for a in as do
+      if !atoms.contains a then atoms := atoms.push a
+  if atoms.isEmpty then return
+  let (ns, g) ← g.revert hyps (preserveOrder := true)
+  let (_, g) ← g.generalize (atoms.map fun a => { expr := a })
+  let (_, g) ← g.introNP ns.size
+  replaceMainGoal [g]
 
 /-- Drop every hypothesis that is not a statement about bit vectors, Booleans and numbers.
 What a hypothesis mentions beyond those may be kept only if it is in the goal too. -/
@@ -234,6 +295,17 @@ simproc reduceAndMask ((_ : Nat) &&& _) := fun e => do
     (← mkEqRefl (mkNatLit n))
   return .done { expr := ← mkAppM ``HMod.hMod #[x, mkNatLit (n + 1)], proof? := some pf }
 
+/-- `x * c` for a literal `c` that is a power of two is a shift. -/
+simproc reduceMulPow2 ((_ : BitVec _) * _) := fun e => do
+  let_expr HMul.hMul _ _ _ _ x c := e | return .continue
+  let some ⟨w, cv⟩ ← getBitVecValue? c | return .continue
+  let n := cv.toNat
+  if n < 2 || n &&& (n - 1) != 0 then return .continue
+  let k := n.log2
+  let pf := mkApp5 (mkConst ``Braid.BV.mul_pow2) (toExpr w) x (mkNatLit k) (mkNatLit n)
+    (← mkEqRefl (mkNatLit n))
+  return .done { expr := ← mkAppM ``HShiftLeft.hShiftLeft #[x, mkNatLit k], proof? := some pf }
+
 /-- `Nat.testBit` of two literals. -/
 dsimproc reduceTestBit (Nat.testBit _ _) := fun e => do
   let_expr Nat.testBit m i := e | return .continue
@@ -278,6 +350,33 @@ elab "bv_guard " tac:tactic : tactic => do
   tryCatchRuntimeEx (evalTactic tac) fun e => do
     s.restore
     throwError "bv_guard: {e.toMessageData}"
+
+/-- A Boolean `b`, not a variable, under `BitVec.ofBool`: one goal for each value of it. -/
+elab "bv_bool_cases" : tactic => do
+  let g ← getMainGoal
+  g.withContext do
+  let t ← instantiateMVars (← g.getType)
+  let some e := t.find? (fun e => e.isAppOfArity ``BitVec.ofBool 1 &&
+      !(e.getArg! 0).isFVar && !(e.getArg! 0).hasLooseBVars && (e.getArg! 0).constName?.isNone)
+    | throwError "bv_bool_cases: no Boolean to split"
+  let stx ← Term.exprToSyntax (e.getArg! 0)
+  evalTactic (← `(tactic| (cases _h : $stx <;>
+    simp only [BitVec.ofBool_true, BitVec.ofBool_false] at *)))
+
+/-- Run `tac` with at most `n` thousand heartbeats more than spent so far, and never more
+than the limit already in force: an attempt that fails leaves the rest of the budget to the
+attempts after it. -/
+elab "bv_budget " n:num tac:tactic : tactic => do
+  let ctx ← readThe Core.Context
+  let used := (← IO.getNumHeartbeats) - ctx.initHeartbeats
+  let mut lim := used + n.getNat * 1000
+  if ctx.maxHeartbeats != 0 && ctx.maxHeartbeats < lim then lim := ctx.maxHeartbeats
+  let s ← saveState
+  tryCatchRuntimeEx
+    (withTheReader Core.Context (fun c => { c with maxHeartbeats := lim }) (evalTactic tac))
+    fun e => do
+      s.restore
+      throwError "bv_budget: {e.toMessageData}"
 
 /-- A contradiction with a hypothesis `¬ P`, `P` proved by `tac`. -/
 elab "bv_contra " tac:tactic : tactic => do
@@ -345,7 +444,8 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     BitVec.reduceAppend, BitVec.reduceSetWidth, BitVec.reduceExtractLsb, BitVec.reduceToNat,
     BitVec.reduceEq, BitVec.reduceBEq, BitVec.reduceULT, BitVec.reduceULE, BitVec.reduceLT,
     BitVec.reduceLE, BitVec.reduceAllOnes, BitVec.reduceSignExtend, BitVec.reduceGetLsb,
-    BitVec.reduceRotateLeft, BitVec.reduceRotateRight] $[$loc]?)
+    BitVec.reduceRotateLeft, BitVec.reduceRotateRight, ← BitVec.getLsbD_eq_getElem,
+    Braid.BV.signExtend_eq_zero_iff] $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
@@ -356,6 +456,7 @@ macro "bv_arith" : tactic => `(tactic| (
       decide_eq_decide, decide_eq_true_eq, decide_eq_false_iff_not,
       Bool.not_true, Bool.not_false, BitVec.toNat_and, BitVec.toNat_or, BitVec.toNat_ofBool,
       BitVec.toNat_ofNat, BitVec.lt_def, BitVec.le_def, BitVec.toNat_eq, BitVec.toNat_setWidth,
+      BitVec.ofNat_eq_ofNat, BitVec.toNat_zero,
       Nat.reducePow, Nat.reduceMod, Braid.BV.reduceAndMask] at *)
   bv_omega))
 
@@ -366,21 +467,32 @@ macro "bv_bits" : tactic => `(tactic| (
   bv_index_split
   all_goals (try bv_inst_bits) <;> (try bv_bit_simp at *) <;> bv_bool_decide))
 
+/-- Sums of parts with no bit in common, such as bytes shifted into place, as disjunctions:
+each product with a power of two a shift, each such sum an `|||`, then bit by bit. -/
+macro "bv_add_or" : tactic => `(tactic| (
+  simp only [Braid.BV.reduceMulPow2] at *
+  simp (disch := ((try bv_norm); bv_bits)) only [BitVec.add_eq_or_of_and_eq_zero]
+  bv_bits))
+
 /-- The decision procedures on their own, without splitting. -/
 macro "bv_solve" : tactic => `(tactic| first
   | bv_guard bv_arith
-  | bv_guard ac_rfl
+  | bv_budget 5000 ac_rfl
   | bv_guard bv_bits
+  | bv_budget 50000 bv_add_or
   | bv_guard ((bv_bit_simp at *) <;> bv_bool_decide))
 
 /-- Close a goal about bit vectors, with a proof the kernel checks. -/
 macro "bv_auto" : tactic => `(tactic| (
+  (try bv_atoms)
   bv_clear
+  (try subst_vars)
   (try bv_norm at *)
   first
   | done
   | bv_solve
   | bv_guard ((repeat' split) <;> (try bv_norm at *) <;> bv_solve)
   | bv_guard (bv_enum <;> (try bv_norm at *) <;> bv_solve)
+  | bv_guard (bv_bool_cases <;> (try bv_norm at *) <;> bv_solve)
   | contradiction
   | bv_contra bv_solve))

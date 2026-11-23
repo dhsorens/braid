@@ -29,6 +29,7 @@
 module
 
 public import Examples.ChaCha20.O2.RiscV.Round
+import Braid.BV
 
 @[expose] public section
 
@@ -156,6 +157,6 @@ theorem rounds_trace : ∀ (n : Nat)
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 
 end Examples.ChaCha20.O2.RiscV

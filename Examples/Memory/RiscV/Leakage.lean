@@ -18,6 +18,7 @@
 module
 
 public import Examples.Memory.RiscV.Proofs
+import Braid.BV
 
 public section
 
@@ -56,7 +57,7 @@ theorem swap_leakage (s : MachineState) (x y : Word)
     refine Atom.disj_mem_mem fun a ⟨h1, h2⟩ => ?_
     have h1' : a - s.getReg .x10 < 8#64 := by simpa [BitVec.lt_def] using h1
     have h2' : a - s.getReg .x11 < 8#64 := by simpa [BitVec.lt_def] using h2
-    bv_decide
+    bv_auto
   obtain ⟨s', σ', hrun, hr, hpost⟩ := machine_soundT swap_lowered
     (swap_trace (s.getReg .x10) (s.getReg .x11) x y (s.getReg .x12) (s.getReg .x13)
       (s.getReg .x1) hp hq []) hcode rfl

@@ -24,6 +24,7 @@ module
 
 public import Examples.ChaCha20.O2.RiscV.QuarterRound
 public import Examples.ChaCha20.RiscV.Round
+import Braid.BV
 
 public section
 
@@ -172,5 +173,5 @@ theorem rounds_spec : ∀ (n : Nat) (vs : List Word) (k : W32) (t20 : Word),
       braid_done
     · exfalso
       have : k ≠ 1#32 := by rw [hk]; bv_omega
-      exact this (by bv_decide)
+      exact this (by bv_auto)
 end Examples.ChaCha20.O2.RiscV

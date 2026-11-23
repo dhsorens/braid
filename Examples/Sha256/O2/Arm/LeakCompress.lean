@@ -42,6 +42,7 @@ module
 public import Examples.Sha256.O2.Arm.Compress
 public import Examples.Sha256.Arm.LeakBase
 import Iris.BI.DerivedLaws
+import Braid.BV
 
 @[expose] public section
 
@@ -112,7 +113,7 @@ theorem memAny_pair (w : Bool) (p q : Word) (h : q = p + 4#64) :
       iprop(memIs p 4 x w ∗ memIs q 4 y w ∗ emp) := fun x y => by
     have := mem_pair w p q x y h
     simpa only [Atom.interp, Atoms.interp_cons, Atoms.interp_nil] using this
-  have hv : ∀ v : Word, pair v (v >>> 32) = v := fun v => by unfold pair; bv_decide
+  have hv : ∀ v : Word, pair v (v >>> 32) = v := fun v => by unfold pair; bv_auto
   simp only [Atom.interp, Atoms.interp_cons, Atoms.interp_nil, memAny]
   refine SProp.ext ⟨exists_elim fun v => ?_, ?_⟩
   · rw [← hv v, e]
