@@ -15,7 +15,6 @@
 module
 
 public import RiscvZkvm.Rv64.Execution
-import Std.Tactic.BVDecide
 import Braid.BV
 
 @[expose] public section
@@ -74,30 +73,30 @@ theorem getMem_bytes (s : MachineState) {a : Word} (ha : a &&& 7#64 = 0#64) :
   have e1 : (a + 1) &&& ~~~7#64 = a := by bv_auto
   have e2 : (a + 2) &&& ~~~7#64 = a := by bv_auto
   have e3 : (a + 3) &&& ~~~7#64 = a := by bv_auto
-  have e4 : (a + 4) &&& ~~~7#64 = a := by bv_decide
-  have e5 : (a + 5) &&& ~~~7#64 = a := by bv_decide
-  have e6 : (a + 6) &&& ~~~7#64 = a := by bv_decide
-  have e7 : (a + 7) &&& ~~~7#64 = a := by bv_decide
+  have e4 : (a + 4) &&& ~~~7#64 = a := by bv_auto
+  have e5 : (a + 5) &&& ~~~7#64 = a := by bv_auto
+  have e6 : (a + 6) &&& ~~~7#64 = a := by bv_auto
+  have e7 : (a + 7) &&& ~~~7#64 = a := by bv_auto
   simp only [getByte_eq, e0, e1, e2, e3, e4, e5, e6, e7, MachineState.getMem, byteAt]
   generalize s.mem a = w
-  bv_decide
+  bv_auto
 
 theorem getWord32_bytes (s : MachineState) {a : Word} (ha : a &&& 3#64 = 0#64) :
     s.getWord32 a = s.getByte (a + 3) ++ s.getByte (a + 2) ++ s.getByte (a + 1) ++
       s.getByte a := by
-  have e1 : (a + 1) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_decide
-  have e2 : (a + 2) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_decide
-  have e3 : (a + 3) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_decide
+  have e1 : (a + 1) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_auto
+  have e2 : (a + 2) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_auto
+  have e3 : (a + 3) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_auto
   simp only [getByte_eq, getWord32_eq, e1, e2, e3, byteAt]
   generalize s.mem (a &&& ~~~7#64) = w
-  bv_decide
+  bv_auto
 
 theorem getHalfword_bytes (s : MachineState) {a : Word} (ha : a &&& 1#64 = 0#64) :
     s.getHalfword a = s.getByte (a + 1) ++ s.getByte a := by
   have e1 : (a + 1) &&& ~~~7#64 = a &&& ~~~7#64 := by bv_auto
   simp only [getByte_eq, getHalfword_eq, e1, byteAt]
   generalize s.mem (a &&& ~~~7#64) = w
-  bv_decide
+  bv_auto
 
 /-! ## The bytes after an aligned write -/
 
@@ -113,7 +112,7 @@ theorem getByte_setMem (s : MachineState) {a : Word} (v x : Word) (ha : a &&& 7#
   by_cases hx : x &&& ~~~7#64 = a
   · have : x - a < 8#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
-    bv_decide
+    bv_auto
   · have : ¬ x - a < 8#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 
@@ -146,7 +145,7 @@ theorem getByte_setWord32 (s : MachineState) {a : Word} (v x : Word) (ha : a &&&
   by_cases hx : x &&& ~~~7#64 = a &&& ~~~7#64
   · simp only [hx, ↓reduceIte]
     generalize s.mem (a &&& ~~~7#64) = w
-    bv_decide
+    bv_auto
   · have : ¬ x - a < 4#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 
@@ -159,7 +158,7 @@ theorem getByte_setHalfword (s : MachineState) {a : Word} (v x : Word)
   by_cases hx : x &&& ~~~7#64 = a &&& ~~~7#64
   · simp only [hx, ↓reduceIte]
     generalize s.mem (a &&& ~~~7#64) = w
-    bv_decide
+    bv_auto
   · have : ¬ x - a < 2#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 
@@ -171,7 +170,7 @@ theorem getByte_setByte (s : MachineState) (a v x : Word) :
   by_cases hx : x &&& ~~~7#64 = a &&& ~~~7#64
   · simp only [hx, ↓reduceIte]
     generalize s.mem (a &&& ~~~7#64) = w
-    bv_decide
+    bv_auto
   · have : ¬ x - a < 1#64 := by bv_auto
     simp only [hx, this, ↓reduceIte]
 

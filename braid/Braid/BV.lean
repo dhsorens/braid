@@ -305,6 +305,18 @@ theorem and_mask_nat (x k c : Nat) (h : c = 2 ^ k - 1) : x &&& c = x % (c + 1) :
   subst h
   rw [Nat.and_two_pow_sub_one_eq_mod, Nat.sub_add_cancel (Nat.one_le_two_pow)]
 
+/-- The bits a mask `c` keeps, from those a wider mask `m` keeps. -/
+theorem and_of_and_mask {w : Nat} {x k m : BitVec w} (c : BitVec w) (h : x &&& m = k)
+    (hc : m &&& c = c) : x &&& c = k &&& c := by
+  conv => lhs; rw [← hc, ← BitVec.and_assoc, h]
+
+/-- The bits of `x` that a mask `m` keeps, as one of the numbers up to `m`. -/
+theorem exists_and_mask {w : Nat} (x : BitVec w) (m : Nat) :
+    ∃ k, k ≤ m ∧ x &&& BitVec.ofNat w m = BitVec.ofNat w k := by
+  refine ⟨(x &&& BitVec.ofNat w m).toNat, ?_, ((BitVec.ofNat_toNat _ _).trans (BitVec.setWidth_eq _)).symm⟩
+  rw [BitVec.toNat_and]
+  exact Nat.le_trans Nat.and_le_right (by simp only [BitVec.toNat_ofNat]; exact Nat.mod_le _ _)
+
 end Braid.BV
 
 end
@@ -1116,6 +1128,169 @@ def Braid.BV.proveByOmega (p : Expr) : TacticM (Option Expr) := do
   catch _ => s.restore; return none
 
 open Lean Elab Tactic Meta in
+/-- `p` proved by `bv_arith` from the hypotheses, if it can be. -/
+def Braid.BV.proveByArith (p : Expr) : TacticM (Option Expr) := do
+  let mv ← mkFreshExprMVar p
+  let s ← saveState
+  try
+    let gs ← Tactic.run mv.mvarId! (withoutRecover (evalTactic (← `(tactic| (
+      -- masks that clear low bits as subtractions, masks that keep them as remainders
+      (try simp only [BitVec.reduceNot, Braid.BV.reduceHighMask] at *)
+      (try simp only [BitVec.toNat_eq, BitVec.toNat_sub, BitVec.toNat_add, BitVec.toNat_and,
+        BitVec.toNat_ofNat, Braid.BV.reduceAndMask] at *)
+      bv_arith)))))
+    if gs.isEmpty then return some (← instantiateMVars mv)
+    s.restore; return none
+  catch _ => s.restore; return none
+
+open Lean Meta in
+/-- The value modulo `2 ^ w` of `e`, made of variables and literals by `+` and `-`, from the
+values `val` gives its variables. -/
+partial def Braid.BV.evalOffset (val : Expr → Option Nat) (w : Nat) (e : Expr) :
+    MetaM (Option Nat) := do
+  if let some n := val e then return some n
+  if let some ⟨_, v⟩ ← getBitVecValue? e then return some v.toNat
+  match_expr e with
+  | HAdd.hAdd _ _ _ _ x y =>
+    let some a ← evalOffset val w x | return none
+    let some b ← evalOffset val w y | return none
+    return some ((a + b) % 2 ^ w)
+  | HSub.hSub _ _ _ _ x y =>
+    let some a ← evalOffset val w x | return none
+    let some b ← evalOffset val w y | return none
+    return some ((a + 2 ^ w - b) % 2 ^ w)
+  | _ => return none
+
+open Lean Meta in
+/-- The width of a bit vector `e`. -/
+def Braid.BV.widthOf? (e : Expr) : MetaM (Option Nat) := do
+  let ty ← whnfR (← inferType e)
+  unless ty.isAppOfArity ``BitVec 1 do return none
+  return ty.appArg!.nat?
+
+open Lean Elab Tactic Meta in
+/-- Addresses read at a byte within a word, as `(a + 3) &&& 7` or a shift by `(x &&& 7) <<< 3`.
+First each term read through a small mask, and each difference of addresses in which the
+variables cancel (`x - a`, when the hypotheses say the high bits of `x` and `a` agree),
+written in terms of the low bits of the variables, each by `bv_arith` once; then one case for
+each value of those low bits, in which the terms are numbers: so each shift is by a number,
+and a case the hypotheses deny is `False`. -/
+elab "bv_offsets" : tactic => do
+  let g ← getMainGoal
+  let ((vars, m, facts, hyps) : Array Expr × Nat × Array (Expr × Expr) × Array FVarId) ←
+      g.withContext do
+    let t ← instantiateMVars (← g.getType)
+    let isMasked := fun (e : Expr) => e.isAppOfArity ``HAnd.hAnd 6
+    -- the variables, and the widest mask
+    let mut vars : Array Expr := #[]
+    let mut mx := 0
+    for e in Braid.BV.collectSub isMasked t do
+      let x := e.getArg! 4
+      let some ⟨w, c⟩ ← getBitVecValue? (e.getArg! 5) | continue
+      if c.toNat == 0 || 256 ≤ c.toNat then continue
+      let fvs := Braid.BV.collectSub Expr.isFVar x
+      if fvs.isEmpty then continue
+      if (← Braid.BV.evalOffset (fun y => if fvs.contains y then some 0 else none) w x).isNone
+        then continue
+      mx := max mx c.toNat
+      for v in fvs do
+        unless vars.contains v do vars := vars.push v
+    if vars.isEmpty then throwError "bv_offsets: no offset to split on"
+    let m := 2 ^ (Nat.log2 mx + 1) - 1
+    let isVar := fun (y : Expr) => vars.contains y
+    -- the hypotheses that read the low bits of the variables too
+    let mut hyps : Array FVarId := #[]
+    let mut terms := Braid.BV.collectSub isMasked t
+    for d in (← getLCtx) do
+      if d.isImplementationDetail then continue
+      let ty ← instantiateMVars d.type
+      let ms := Braid.BV.collectSub (fun e => isMasked e &&
+        (Braid.BV.collectSub isVar (e.getArg! 4)).size > 0) ty
+      if ms.isEmpty then continue
+      hyps := hyps.push d.fvarId
+      for e in ms do
+        unless terms.contains e do terms := terms.push e
+    let lows ← vars.mapM fun v => do
+      let some w ← Braid.BV.widthOf? v | return (v, v)
+      return (v, ← mkAppM ``HAnd.hAnd #[v, toExpr (BitVec.ofNat w m)])
+    let low := fun (_ : Nat) (y : Expr) => y.replace fun z => (lows.find? (·.1 == z)).map (·.2)
+    let mut facts : Array Expr := #[]
+    for e in terms do
+      let x := e.getArg! 4
+      let some ⟨w, c⟩ ← getBitVecValue? (e.getArg! 5) | continue
+      unless c.toNat &&& m == c.toNat && c.toNat != 0 do continue
+      unless (Braid.BV.collectSub isVar x).size > 0 do continue
+      if (← Braid.BV.evalOffset (fun y => if isVar y then some 0 else none) w x).isNone
+        then continue
+      let mE := toExpr (BitVec.ofNat w m)
+      let xm ← mkAppM ``HAnd.hAnd #[x, mE]
+      -- `x &&& m` in terms of the low bits
+      let pf ← if isVar x then pure none else
+        Braid.BV.proveByArith (← mkEq xm (← mkAppM ``HAnd.hAnd #[low w x, mE]))
+      if c.toNat == m then
+        if let some pf := pf then facts := facts.push pf
+      else
+        let hc ← mkDecideProof (← mkEq (← mkAppM ``HAnd.hAnd #[mE, e.getArg! 5]) (e.getArg! 5))
+        let pf ← match pf with
+          | some pf => pure pf
+          | none => mkEqRefl xm
+        facts := facts.push (← mkAppM ``Braid.BV.and_of_and_mask #[e.getArg! 5, pf, hc])
+    -- the differences
+    for e in Braid.BV.collectSub (fun e => e.isAppOfArity ``HAdd.hAdd 6 ||
+        e.isAppOfArity ``HSub.hSub 6) t do
+      unless (Braid.BV.collectSub isVar e).size > 0 do continue
+      let some w ← Braid.BV.widthOf? e | continue
+      let at0 ← Braid.BV.evalOffset (fun y => if isVar y then some 0 else none) w e
+      let at1 ← Braid.BV.evalOffset (fun y => if isVar y then some 1 else none) w e
+      unless at0.isSome && at0 == at1 do continue
+      if let some pf ← Braid.BV.proveByArith (← mkEq e (low w e)) then facts := facts.push pf
+    let typed ← facts.mapM fun f => return (f, ← inferType f)
+    return (vars, m, typed, hyps)
+  -- the terms rewritten in terms of the low bits
+  let mut g := g
+  let mut names : Array Ident := #[]
+  for (f, ty) in facts do
+    let n ← mkFreshUserName `h
+    let (_, g') ← (← g.assert n ty f).intro1P
+    g := g'
+    names := names.push (mkIdent n)
+  replaceMainGoal [g]
+  unless names.isEmpty do
+    g.withContext do
+      let ns : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+        names.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $n:ident)
+      let hs ← hyps.mapM fun (h : FVarId) => return mkIdent (← h.getUserName)
+      evalTactic (← `(tactic| simp only [$ns,*] at $hs:ident* ⊢))
+      evalTactic (← `(tactic| clear $names*))
+  -- the cases
+  let mL := Syntax.mkNumLit (toString m)
+  let mut i := 0
+  let mut hvs : Array Ident := #[]
+  for v in vars do
+    let vs ← (← getMainGoal).withContext (Term.exprToSyntax v)
+    let kn := s!"bvOffK{i}"
+    let k := mkIdent (Name.mkSimple kn)
+    let hk := mkIdent (Name.mkSimple s!"bvOffB{i}")
+    let hv := mkIdent (Name.mkSimple s!"bvOffH{i}")
+    evalTactic (← `(tactic| all_goals obtain ⟨$k, $hk, $hv⟩ := Braid.BV.exists_and_mask $vs $mL))
+    let pat := String.intercalate " | " (List.replicate (m + 1) "_") ++ s!" | {kn}"
+    let stx ← ofExcept (Parser.runParserCategory (← getEnv) `tactic
+      s!"all_goals rcases {kn} with {pat}")
+    evalTactic stx
+    -- the case past the mask
+    evalTactic (← `(tactic| all_goals (try (exfalso; omega))))
+    hvs := hvs.push hv
+    i := i + 1
+  let hvl : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+    hvs.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $n:ident)
+  evalTactic (← `(tactic| all_goals (
+    (simp only [$hvl,*, Nat.reduceAdd, Nat.zero_add, BitVec.reduceAnd, BitVec.reduceAdd,
+      BitVec.reduceSub, BitVec.reduceEq, BitVec.reduceHShiftLeft, BitVec.reduceHShiftLeft',
+      BitVec.reduceNot,
+      BitVec.reduceLT, BitVec.reduceToNat, ↓reduceIte] at *)
+    (try bv_relevant))))
+
+open Lean Elab Tactic Meta in
 /-- After the bits of shifts by an amount `n` are read: each test on `n` that the bounds on it
 settle made `true` or `false`, and the positions of the bits of one vector that the bounds
 show equal (`8 - n` and `7 - (n - 1)`) written the same, all by `bv_omega`. -/
@@ -1216,7 +1391,8 @@ macro "bv_bool_eq" : tactic => `(tactic| (
 those bits, then arithmetic. -/
 macro "bv_align" : tactic => `(tactic| (
   simp only [Braid.BV.reduceHighMask] at *
-  (try simp only [BitVec.toNat_eq, BitVec.toNat_sub, BitVec.toNat_add] at *)
+  (try simp only [BitVec.toNat_eq, BitVec.toNat_sub, BitVec.toNat_add, BitVec.toNat_and,
+    BitVec.toNat_ofNat, Braid.BV.reduceAndMask] at *)
   bv_arith))
 
 /-- Sign extensions: each as its zero extension plus, when the top bit is set, the bits above,
@@ -1309,6 +1485,17 @@ def isOneBitWider (e : Expr) : Bool :=
     | some w, some v => v == w + 1
     | _, _ => false
 
+/-- A mask that clears the low bits of an address, `~~~7` or its value as a literal. -/
+def isHighMask (c : Expr) : Bool :=
+  if c.isAppOfArity ``Complement.complement 3 then true
+  else if c.isAppOfArity ``BitVec.ofNat 2 then
+    match (c.getArg! 0).nat?, (c.getArg! 1).nat? with
+    | some w, some n =>
+      let lo := 2 ^ w - 1 - n
+      n < 2 ^ w && n != 0 && lo != 0 && (lo + 1) &&& lo == 0
+    | _, _ => false
+  else false
+
 /-- A shift by an amount that is not a number. -/
 def isVarShift (e : Expr) : Bool :=
   (e.isAppOfArity ``HShiftLeft.hShiftLeft 6 || e.isAppOfArity ``HShiftRight.hShiftRight 6) &&
@@ -1389,6 +1576,7 @@ elab "bv_dispatch" : tactic => do
   let flags ← `(tactic| bv_budget 40000 bv_flags)
   let varShift ← `(tactic| bv_budget 40000 bv_varshift)
   let ovf ← `(tactic| bv_budget 30000 bv_ovf)
+  let offsets ← `(tactic| bv_budget 180000 (bv_offsets <;> bv_auto))
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
@@ -1399,9 +1587,13 @@ elab "bv_dispatch" : tactic => do
     | bv_budget 40000 bv_bits))
   let first : Array (TSyntax `tactic) :=
     if sh.ovf then #[ovf, flags]
-    else if sh.varShift then #[varShift]
+    else if sh.varShift then #[offsets, varShift]
     else if sh.flags then #[flags]
     else if 0 < sh.ites && sh.ites ≤ 4 then #[split]
+    else if sh.eqBV && (t.find? fun e => e.isAppOfArity ``HAnd.hAnd 6 &&
+        isHighMask (e.getArg! 5)).isSome then
+      -- an address aligned down, `x &&& ~~~7`
+      #[align, narrow, ac, peel, arith, bits]
     else if sh.eqBV && !sh.arith then
       -- a change of width, as in code for a narrower width, is cheaper to push in than to
       -- check bit by bit
@@ -1412,7 +1604,7 @@ elab "bv_dispatch" : tactic => do
     else if sh.eqBool then #[boolEq, arith, boolSplit, bitDecide]
     else #[arith, boolSplit, bitDecide, boolCases]
   let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
-    boolSplit, orArith, boolEq, align, sext, flags, varShift, ovf, contra, contraBy]
+    boolSplit, orArith, boolEq, align, sext, flags, varShift, ovf, offsets, contra, contraBy]
   let mut tried : Array (TSyntax `tactic) := #[]
   for tac in first ++ rest do
     if tried.contains tac then continue
