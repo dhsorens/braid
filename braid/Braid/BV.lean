@@ -227,6 +227,29 @@ theorem getLsbD_eq_msb {w : Nat} (x : BitVec w) (i : Nat) (h : i + 1 = w) :
     x.getLsbD i = x.msb := by
   rw [BitVec.msb_eq_getLsbD_last]; congr; omega
 
+/-- Truth values written as words `1` and `0` combine as the truth values do. -/
+theorem ite01_or {w : Nat} (p q : Bool) :
+    ((if p = true then 1#w else 0#w) ||| (if q = true then 1#w else 0#w)) =
+      if (p || q) = true then 1#w else 0#w := by
+  cases p <;> cases q <;> simp
+
+/-- Truth values written as words `1` and `0` combine as the truth values do. -/
+theorem ite01_and {w : Nat} (p q : Bool) :
+    ((if p = true then 1#w else 0#w) &&& (if q = true then 1#w else 0#w)) =
+      if (p && q) = true then 1#w else 0#w := by
+  cases p <;> cases q <;> simp
+
+/-- Truth values written as words `1` and `0` combine as the truth values do. -/
+theorem ite01_xor {w : Nat} (p q : Bool) :
+    ((if p = true then 1#w else 0#w) ^^^ (if q = true then 1#w else 0#w)) =
+      if (p ^^ q) = true then 1#w else 0#w := by
+  cases p <;> cases q <;> simp
+
+/-- A truth value written as a word is zero when it is false. -/
+theorem ite01_eq_zero {w : Nat} (p : Bool) (h : 0 < w) :
+    ((if p = true then 1#w else 0#w) = 0#w) = (p = false) := by
+  cases p <;> simp [← BitVec.toNat_inj] <;> omega
+
 /-- A test of one bit with a mask is that bit. -/
 theorem and_pow2_bne_zero {w : Nat} (x : BitVec w) (i : Nat) (h : i < w) :
     (x &&& BitVec.ofNat w (2 ^ i) != 0#w) = x.getLsbD i := by
@@ -952,7 +975,8 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     ↓reduceIte, ite_true, ite_false, bne_self_eq_false, beq_self_eq_true,
     Braid.BV.restoreAppendWidth,
     Braid.BV.setWidth_ofBool_or, Braid.BV.setWidth_ofBool_bne_zero, Nat.reduceLT,
-    Braid.BV.cpop_parity, Braid.BV.reduceMulPow2] $[$loc]?)
+    Braid.BV.cpop_parity, Braid.BV.reduceMulPow2, Braid.BV.ite01_or, Braid.BV.ite01_and,
+    Braid.BV.ite01_xor, Braid.BV.ite01_eq_zero] $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
@@ -1321,10 +1345,21 @@ def shapeOf (t : Expr) : MetaM Shape := do
       (t.find? isOneBitWider).isSome }
 
 /-- Fail at once on a goal with holes still to fill, such as `x = ?m`, which `bv_auto` is
-not for: an alternative of `first` that offers one moves on without delay. -/
+not for: an alternative of `first` that offers one moves on without delay. Hypotheses with
+holes are dropped. -/
 elab "bv_no_holes" : tactic => do
   if (← instantiateMVars (← getMainTarget)).hasExprMVar then
     throwError "bv_auto: the goal has holes"
+  -- a hypothesis with holes is dropped: rewriting it could fill them, and so change the other
+  -- goals that share them
+  let g ← getMainGoal
+  let g ← g.withContext do
+    let mut g := g
+    for d in (← getLCtx) do
+      if d.isImplementationDetail then continue
+      if (← instantiateMVars d.type).hasExprMVar then g ← g.tryClear d.fvarId
+    return g
+  replaceMainGoal [g]
 
 /-- Try the procedures in an order chosen from the shape of the goal: first those that its
 shape suits, then the others. Each runs on a budget of its own, so that one that fails
