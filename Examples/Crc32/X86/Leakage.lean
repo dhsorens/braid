@@ -36,6 +36,7 @@
 module
 
 public import Examples.Crc32.X86.Proofs
+import Braid.BV
 
 public section
 
@@ -112,7 +113,7 @@ theorem entryAddr_eq (y : BitVec 32) :
     0x402050#64 + (BitVec.setWidth 64 y &&& 15#64) * 4#64 =
       entryAddr 0x402050#64 (BitVec.setWidth 4 y) := by
   unfold entryAddr
-  bv_decide
+  bv_auto
 
 /-! ## The traced triple -/
 
@@ -130,12 +131,12 @@ local macro "crc32_lookup " w:term ", " y:term : tactic =>
   `(tactic| (
     braid_unfold tableAt_open $w 0x402050#64
       (0x402050#64 + @HMul.hMul Word Word Word instHMul (BitVec.setWidth 64 $y &&& 15#64) 4#64)
-      $y (by bv_decide)
+      $y (by bv_auto)
     braid_sym_step
     crc32_forget_flags
     braid_fold tableAt_open $w 0x402050#64
       (0x402050#64 + @HMul.hMul Word Word Word instHMul (BitVec.setWidth 64 $y &&& 15#64) 4#64)
-      $y (by bv_decide)
+      $y (by bv_auto)
     rw [nibble_reg]))
 
 /-- One round of `crc32`, up to the branch at its end, as in the functional proof. -/
@@ -180,7 +181,7 @@ theorem crc32_loop_trace (w : Bool) (p n s r : Word) :
     braid_unfold bytesAt_index p j b []
     crc32_round w, c, b
     iterate 3 braid_sym_step
-    · exact absurd (show n - (j + 1#64) = 0#64 by rw [he']; bv_decide) hbr
+    · exact absurd (show n - (j + 1#64) = 0#64 by rw [he']; bv_auto) hbr
     · braid_sym_run
       rw [not_reg]
       braid_fold bytesAt_index p j b []
@@ -198,7 +199,7 @@ theorem crc32_loop_trace (w : Bool) (p n s r : Word) :
     braid_unfold bytesAt_index p j b (d :: ds)
     crc32_round w, c, b
     iterate 3 braid_sym_step
-    · have e : p + (j * 1#64 + 1#64) = p + (j + 1#64) * 1#64 := by bv_decide
+    · have e : p + (j * 1#64 + 1#64) = p + (j + 1#64) * 1#64 := by bv_auto
       rw [e]
       crc32_name_flags
       braid_call ih d (byte c b) (j + 1#64) _ _ _ _ _ _ _ _ _ (by rw [he]; bv_omega)
@@ -257,7 +258,7 @@ theorem crc32_trace (w : Bool) (c p s r a t2 t8 t9 : Word) (bs : List (BitVec 8)
       crc32_name_flags
       have h := crc32_loop_trace w p (BitVec.ofNat 64 (bs.length + 1)) s r bs b
         (~~~c.truncate 32) 0#64 t8 t9
-      have e : p + 0#64 * 1#64 = p := by bv_decide
+      have e : p + 0#64 * 1#64 = p := by bv_auto
       rw [e, BitVec.add_zero] at h
       braid_call h _ _ _ _ _ _ _ (by simp) hl
       braid_forget 5

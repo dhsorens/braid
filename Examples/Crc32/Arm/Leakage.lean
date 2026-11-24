@@ -32,6 +32,7 @@
 module
 
 public import Examples.Crc32.Arm.Proofs
+import Braid.BV
 
 public section
 
@@ -108,7 +109,7 @@ theorem entryAddr_reg (y : BitVec 32) :
         (BitVec.setWidth 32 (BitVec.setWidth 64 y &&& 15#64)) <<< 2#64 =
       entryAddr 0x20040#64 (BitVec.setWidth 4 y) := by
   unfold entryAddr
-  bv_decide
+  bv_auto
 
 /-! ## The traced triple -/
 
@@ -125,11 +126,11 @@ local macro "crc32_nibble_trace " w:term ", " y:term : tactic =>
   `(tactic| (
     braid_sym_step
     braid_unfold tableAt_open $w 0x20040#64 (0x20040#64 + BitVec.setWidth 64
-      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_decide)
+      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_auto)
     braid_sym_step
     braid_sym_step
     braid_fold tableAt_open $w 0x20040#64 (0x20040#64 + BitVec.setWidth 64
-      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_decide)
+      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_auto)
     rw [nibble_reg]))
 
 /-- The loop of `crc32`, with what it reveals: the table indices of the bytes from `q` on,
