@@ -22,7 +22,6 @@ public import Lowering.X86.Lower
 public import Lowering.X86.Mem
 public import Lowering.X86.Flags
 public import Kraken.X64.OmniSemantics
-import Std.Tactic.BVDecide
 import Braid.BV
 
 @[expose] public section
@@ -408,13 +407,13 @@ theorem wp_pzs {n r : Nat} {w : Width} {val : w.type} (hr : ρ r = val.setWidth 
       ((val.take 8).cpop_ % 2 == BitVec.zero _) := by
     clear hw hr
     simp only [cpop_eq, BitVec.take]
-    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   have e2 : (BinOp.eq.eval (BitVec.setWidth 64 val) 0 != 0#64) = (val == BitVec.zero _) := by
     clear hw hr e1
     cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   have e3 : (BinOp.and.eval (BitVec.setWidth 64 val) (signBit w) != 0#64) = val.msb := by
     clear hw hr e1 e2
-    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   rw [e1, e2, e3] at hw
   exact ⟨_, by agree, hw⟩
 
@@ -441,13 +440,13 @@ theorem wp_pzsVals {n r : Nat} {w : Width} {val : w.type} (hr : ρ r = val.setWi
       ((val.take 8).cpop_ % 2 == BitVec.zero _) := by
     clear hw hr
     simp only [cpop_eq, BitVec.take]
-    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   have e2 : (BinOp.eq.eval (BitVec.setWidth 64 val) 0 != 0#64) = (val == BitVec.zero _) := by
     clear hw hr e1
     cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   have e3 : (BinOp.and.eval (BitVec.setWidth 64 val) (signBit w) != 0#64) = val.msb := by
     clear hw hr e1 e2
-    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_decide
+    cases w <;> dsimp only [Width.type, Width.bits] at val ⊢ <;> simp <;> bv_auto
   refine ⟨_, by agree, ?_, ?_, ?_, hw⟩
   · simpa [Env.set_apply] using e1
   · simpa [Env.set_apply] using e2

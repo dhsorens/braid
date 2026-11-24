@@ -194,6 +194,18 @@ theorem getLsbD_sub_setWidth {m n : Nat} (x y : BitVec m) (i : Nat) (hi : i < m)
       BitVec.setWidth_setWidth_of_le _ h, BitVec.setWidth_eq, BitVec.setWidth_eq]
   rw [e, BitVec.getLsbD_setWidth]; simp [hi]
 
+/-- The parity of a value, counted after widening it (as the parity flag of x86 is computed)
+or in its own width, is the same. -/
+theorem cpop_parity {m n : Nat} (x : BitVec m) (h : m ≤ n) (h2 : 2 ≤ m) :
+    ((x.setWidth n).cpop &&& 1#n == 0#n) = (x.cpop % 2#m == 0#m) := by
+  rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, ← BitVec.toNat_inj, ← BitVec.toNat_inj]
+  have hc := BitVec.toNat_cpop_le x
+  have hm : 2 < 2 ^ m := Nat.lt_of_lt_of_le (by decide) (Nat.pow_le_pow_right (by decide) h2)
+  have hn : 1 < 2 ^ n :=
+    Nat.lt_of_lt_of_le (by decide) (Nat.pow_le_pow_right (by decide) (show 1 ≤ n by omega))
+  simp only [BitVec.toNat_and, BitVec.toNat_umod, BitVec.toNat_cpop_setWidth_eq_of_le h,
+    BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn, Nat.mod_eq_of_lt hm, Nat.zero_mod, Nat.and_one_is_mod]
+
 /-- A test of one bit with a mask is that bit. -/
 theorem and_pow2_bne_zero {w : Nat} (x : BitVec w) (i : Nat) (h : i < w) :
     (x &&& BitVec.ofNat w (2 ^ i) != 0#w) = x.getLsbD i := by
@@ -899,7 +911,8 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     BitVec.ushiftRight_zero, BitVec.zero_add, BitVec.add_zero, Bool.false_eq_true,
     ↓reduceIte, ite_true, ite_false, bne_self_eq_false, beq_self_eq_true,
     Braid.BV.restoreAppendWidth,
-    Braid.BV.setWidth_ofBool_or, Braid.BV.setWidth_ofBool_bne_zero, Nat.reduceLT] $[$loc]?)
+    Braid.BV.setWidth_ofBool_or, Braid.BV.setWidth_ofBool_bne_zero, Nat.reduceLT,
+    Braid.BV.cpop_parity] $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
