@@ -947,7 +947,7 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     ↓reduceIte, ite_true, ite_false, bne_self_eq_false, beq_self_eq_true,
     Braid.BV.restoreAppendWidth,
     Braid.BV.setWidth_ofBool_or, Braid.BV.setWidth_ofBool_bne_zero, Nat.reduceLT,
-    Braid.BV.cpop_parity] $[$loc]?)
+    Braid.BV.cpop_parity, Braid.BV.reduceMulPow2] $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
@@ -962,8 +962,10 @@ macro "bv_arith" : tactic => `(tactic| (
       Nat.reducePow, Nat.reduceMod, Braid.BV.reduceAndMask] at *)
   bv_omega))
 
-/-- The goal, an equation between bit vectors, bit by bit. -/
+/-- The goal, an equation between bit vectors, bit by bit; a product with a power of two
+first as a shift, whose bits are known. -/
 macro "bv_bits" : tactic => `(tactic| (
+  (try simp only [Braid.BV.reduceMulPow2])
   apply Braid.BV.eq_of_bits
   (try bv_hyp_bits)
   bv_index_split
@@ -1019,7 +1021,8 @@ macro "bv_narrow_ac" : tactic => `(tactic| (
     ↓Braid.BV.setWidth_signExtend_self, ↓Braid.BV.setWidth_ushr_setWidth,
     ↓Braid.BV.setWidth_sshr_sext, Nat.reduceSub,
     Nat.reduceLeDiff, Nat.reduceLT, Nat.le_refl, BitVec.setWidth_or, BitVec.setWidth_xor,
-    BitVec.setWidth_and, BitVec.setWidth_not, BitVec.setWidth_add, BitVec.setWidth_mul]
+    BitVec.setWidth_and, BitVec.setWidth_not, BitVec.setWidth_add, BitVec.setWidth_mul,
+    BitVec.reduceSetWidth, BitVec.setWidth_eq]
   -- the narrowing may have closed the goal already; a 32-bit rotation computed on a value
   -- written twice side by side, and the majority of SHA-256 in one form
   all_goals (try simp only [↓Braid.BV.ror32_or_dup, Braid.BV.maj_eq, Nat.reduceLT])
@@ -1322,7 +1325,8 @@ elab "bv_no_holes" : tactic => do
 shape suits, then the others. Each runs on a budget of its own, so that one that fails
 leaves the rest of the budget to those after it. -/
 elab "bv_dispatch" : tactic => do
-  let sh ← shapeOf (← instantiateMVars (← getMainTarget))
+  let t ← instantiateMVars (← getMainTarget)
+  let sh ← shapeOf t
   -- after the split, a test `a == b` that chose a side is an equation, and a side the tests
   -- rule out is closed by contradiction
   let split ← `(tactic| bv_guard ((repeat' split) <;>
@@ -1358,7 +1362,11 @@ elab "bv_dispatch" : tactic => do
     else if sh.varShift then #[varShift]
     else if sh.flags then #[flags]
     else if 0 < sh.ites && sh.ites ≤ 4 then #[split]
-    else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]
+    else if sh.eqBV && !sh.arith then
+      -- a change of width, as in code for a narrower width, is cheaper to push in than to
+      -- check bit by bit
+      if (t.find? (·.isAppOfArity ``BitVec.setWidth 3)).isSome then #[narrow, bits, peel, ac, enum]
+      else #[bits, peel, ac, enum]
     else if sh.eqBV && !sh.bitwise then #[arith, ac, peel]
     else if sh.eqBV then #[narrow, ac, peel, addOr, enum, arith, align, bits, sext, orArith]
     else if sh.eqBool then #[boolEq, arith, boolSplit, bitDecide]

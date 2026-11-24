@@ -66,11 +66,11 @@ macro "crc32_nibble " w:term ", " y:term : tactic =>
   `(tactic| (
     braid_sym_step
     braid_unfold tableAt_open $w 0x20040#64 (0x20040#64 + BitVec.setWidth 64
-      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_decide)
+      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_auto)
     braid_step
     braid_sym_step
     braid_fold tableAt_open $w 0x20040#64 (0x20040#64 + BitVec.setWidth 64
-      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_decide)
+      (BitVec.setWidth 32 (BitVec.setWidth 64 $y &&& 15#64)) <<< 2#64) $y (by bv_auto)
     rw [nibble_reg]))
 
 /-! ## The triple -/

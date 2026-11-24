@@ -80,12 +80,12 @@ instruction is run with `braid_step`, which finds the entry's atom up to the unf
 macro "crc32_nibble " w:term ", " y:term : tactic =>
   `(tactic| (
     braid_unfold tableAt_open $w 0x402050#64
-      (0x402050#64 + (BitVec.setWidth 64 $y &&& 15#64) * 4#64) $y (by bv_decide)
+      (0x402050#64 + (BitVec.setWidth 64 $y &&& 15#64) * 4#64) $y (by bv_auto)
     crc32_name_flags
     braid_step
     crc32_forget_flags
     braid_fold tableAt_open $w 0x402050#64
-      (0x402050#64 + (BitVec.setWidth 64 $y &&& 15#64) * 4#64) $y (by bv_decide)
+      (0x402050#64 + (BitVec.setWidth 64 $y &&& 15#64) * 4#64) $y (by bv_auto)
     rw [nibble_reg]))
 
 /-! ## The triple -/
