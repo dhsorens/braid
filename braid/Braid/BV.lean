@@ -154,6 +154,45 @@ theorem and_highMask {w : Nat} (x : BitVec w) (c m : Nat)
     x &&& BitVec.ofNat w c = x - (x &&& BitVec.ofNat w m) := by
   rw [h, and_not_eq_sub]
 
+/-- A mask that keeps only bits below the width of a value sign-extended sees the value, not
+its extension. -/
+theorem signExtend_and_of_lt {w v : Nat} (x : BitVec w) (c : BitVec v) (hc : c.toNat < 2 ^ w) :
+    x.signExtend v &&& c = (x &&& c.setWidth w).setWidth v := by
+  ext i hi
+  simp only [BitVec.getElem_and, BitVec.getElem_signExtend, BitVec.getElem_setWidth,
+    BitVec.getLsbD_and, BitVec.getLsbD_setWidth]
+  by_cases h : i < w
+  · simp [h, BitVec.getLsbD_eq_getElem, hi]
+  · have hci : c[i] = false := by
+      rw [BitVec.getElem_eq_testBit_toNat]
+      exact Nat.testBit_lt_two_pow
+        (Nat.lt_of_lt_of_le hc (Nat.pow_le_pow_right (by omega) (by omega)))
+    simp [h, hci]
+
+/-- A mask below `2 ^ k` keeps only the low `k` bits: the operation taken in `k` bits. -/
+theorem and_of_lt_two_pow {w : Nat} (x c : BitVec w) (k : Nat) (hc : c.toNat < 2 ^ k) :
+    x &&& c = (x.setWidth k &&& c.setWidth k).setWidth w := by
+  ext i hi
+  simp only [BitVec.getElem_and, BitVec.getElem_setWidth, BitVec.getLsbD_and,
+    BitVec.getLsbD_setWidth]
+  by_cases h : i < k
+  · simp [h, BitVec.getLsbD_eq_getElem, hi]
+  · have hci : c[i] = false := by
+      rw [BitVec.getElem_eq_testBit_toNat]
+      exact Nat.testBit_lt_two_pow
+        (Nat.lt_of_lt_of_le hc (Nat.pow_le_pow_right (by omega) (by omega)))
+    simp [h, hci]
+
+/-- Narrowing pushed into bitwise operations, and only narrowing: a widening is left outside. -/
+theorem setWidth_and_of_le {w k : Nat} (x y : BitVec w) (_ : k ≤ w) :
+    (x &&& y).setWidth k = x.setWidth k &&& y.setWidth k := BitVec.setWidth_and ..
+
+theorem setWidth_or_of_le {w k : Nat} (x y : BitVec w) (_ : k ≤ w) :
+    (x ||| y).setWidth k = x.setWidth k ||| y.setWidth k := BitVec.setWidth_or ..
+
+theorem setWidth_xor_of_le {w k : Nat} (x y : BitVec w) (_ : k ≤ w) :
+    (x ^^^ y).setWidth k = x.setWidth k ^^^ y.setWidth k := BitVec.setWidth_xor ..
+
 /-- Sign-extending, shifting right arithmetically and cutting back is shifting right
 arithmetically in the narrow width. -/
 theorem setWidth_sshr_sext {w m : Nat} (x : BitVec m) (k : Nat) (h : m ≤ w) :
@@ -684,6 +723,37 @@ simproc reduceHighMask ((_ : BitVec _) &&& _) := fun e => do
   let low ← mkAppM ``HAnd.hAnd #[x, ← mkAppM ``BitVec.ofNat #[toExpr w, mkNatLit lo]]
   return .done { expr := ← mkAppM ``HSub.hSub #[x, low], proof? := some pf }
 
+/-- `x.signExtend v &&& c` for a literal `c` below `2 ^ w`, `x` of `w` bits: the mask taken in
+`w` bits, then widened, as `signExtend_and_of_lt`. -/
+simproc_decl reduceSextAnd ((BitVec.signExtend _ _) &&& _) := fun e => do
+  let_expr HAnd.hAnd _ _ _ _ s c := e | return .continue
+  let_expr BitVec.signExtend w v x := s | return .continue
+  let some ⟨_, cv⟩ ← getBitVecValue? c | return .continue
+  let some wn := (← instantiateMVars w).nat? | return .continue
+  unless cv.toNat < 2 ^ wn do return .continue
+  let hc ← mkDecideProof (← mkLt (← mkAppM ``BitVec.toNat #[c]) (← mkAppM ``HPow.hPow
+    #[mkNatLit 2, w]))
+  let pf ← mkAppM ``Braid.BV.signExtend_and_of_lt #[x, c, hc]
+  let rhs ← mkAppM ``BitVec.setWidth #[v, ← mkAppM ``HAnd.hAnd
+    #[x, ← mkAppM ``BitVec.setWidth #[w, c]]]
+  return .visit { expr := rhs, proof? := some pf }
+
+/-- `x &&& c` for a literal `c` of `k` significant bits, fewer than the width: the operation in
+`k` bits, widened, as `and_of_lt_two_pow`; the changes of width can then be pushed in. -/
+simproc_decl narrowAnd ((_ : BitVec _) &&& _) := fun e => do
+  let_expr HAnd.hAnd _ _ _ _ x c := e | return .continue
+  let some ⟨w, cv⟩ ← getBitVecValue? c | return .continue
+  let n := cv.toNat
+  if n == 0 then return .continue
+  let k := n.log2 + 1
+  unless k < w do return .continue
+  let hc ← mkDecideProof (← mkLt (← mkAppM ``BitVec.toNat #[c]) (← mkAppM ``HPow.hPow
+    #[mkNatLit 2, mkNatLit k]))
+  let pf ← mkAppM ``Braid.BV.and_of_lt_two_pow #[x, c, mkNatLit k, hc]
+  let rhs ← mkAppM ``BitVec.setWidth #[toExpr w, ← mkAppM ``HAnd.hAnd
+    #[← mkAppM ``BitVec.setWidth #[mkNatLit k, x], ← mkAppM ``BitVec.setWidth #[mkNatLit k, c]]]
+  return .visit { expr := rhs, proof? := some pf }
+
 /-- `Nat.testBit` of two literals. -/
 dsimproc reduceTestBit (Nat.testBit _ _) := fun e => do
   let_expr Nat.testBit m i := e | return .continue
@@ -791,26 +861,31 @@ elab "bv_peel" : tactic => do
   let mut peeled := false
   for _ in [0:64] do
     let g ← getMainGoal
-    -- the goal may come wrapped in annotations
-    let t := (← instantiateMVars (← g.getType)).cleanupAnnotations
-    let some (_, l, r) := t.eq? | break
-    let fl := l.getAppFn
-    unless fl.isConst && fl == r.getAppFn && l.getAppNumArgs == r.getAppNumArgs do break
-    let (la, ra) := (l.getAppArgs, r.getAppArgs)
-    -- the operands that differ, up to unfolding reducible definitions only
-    let idx ← (List.range la.size).filterM fun i => do
-      if la[i]! == ra[i]! then pure false
-      else return !(← withReducible (isDefEq la[i]! ra[i]!))
-    let [i] := idx | break
-    let (a, b) := (la[i]!, ra[i]!)
-    let α ← inferType a
-    unless (← whnfR α).isAppOfArity ``BitVec 1 do break
-    -- `l = r` from `a = b`, by `congrArg` on `l` with its `i`-th operand abstracted
-    let f ← withLocalDeclD `x α fun x =>
-      mkLambdaFVars #[x] (mkAppN fl (la.set! i x))
-    let h ← mkFreshExprSyntheticOpaqueMVar (← mkEq a b)
-    g.assign (← mkCongrArg f h)
-    replaceMainGoal [h.mvarId!]
+    -- in the context of the goal, whose variables a tactic may have introduced
+    let next ← g.withContext do
+      -- the goal may come wrapped in annotations
+      let t := (← instantiateMVars (← g.getType)).cleanupAnnotations
+      let some (_, l, r) := t.eq? | return none
+      let fl := l.getAppFn
+      unless fl.isConst && fl == r.getAppFn && l.getAppNumArgs == r.getAppNumArgs do
+        return none
+      let (la, ra) := (l.getAppArgs, r.getAppArgs)
+      -- the operands that differ, up to unfolding reducible definitions only
+      let idx ← (List.range la.size).filterM fun i => do
+        if la[i]! == ra[i]! then pure false
+        else return !(← withReducible (isDefEq la[i]! ra[i]!))
+      let [i] := idx | return none
+      let (a, b) := (la[i]!, ra[i]!)
+      let α ← inferType a
+      unless (← whnfR α).isAppOfArity ``BitVec 1 do return none
+      -- `l = r` from `a = b`, by `congrArg` on `l` with its `i`-th operand abstracted
+      let f ← withLocalDeclD `x α fun x =>
+        mkLambdaFVars #[x] (mkAppN fl (la.set! i x))
+      let h ← mkFreshExprSyntheticOpaqueMVar (← mkEq a b)
+      g.assign (← mkCongrArg f h)
+      return some h.mvarId!
+    let some h := next | break
+    replaceMainGoal [h]
     peeled := true
   unless peeled do throwError "bv_peel: the two sides do not differ in one operand"
 
@@ -988,7 +1063,7 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     Braid.BV.restoreAppendWidth,
     Braid.BV.setWidth_ofBool_or, Braid.BV.setWidth_ofBool_bne_zero, Nat.reduceLT,
     Braid.BV.cpop_parity, Braid.BV.reduceMulPow2, Braid.BV.ite01_or, Braid.BV.ite01_and,
-    Braid.BV.ite01_xor, Braid.BV.ite01_eq_zero] $[$loc]?)
+    Braid.BV.ite01_xor, Braid.BV.ite01_eq_zero, Braid.BV.reduceSextAnd] $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
@@ -1064,6 +1139,10 @@ macro "bv_narrow_ac" : tactic => `(tactic| (
     Nat.reduceLeDiff, Nat.reduceLT, Nat.le_refl, BitVec.setWidth_or, BitVec.setWidth_xor,
     BitVec.setWidth_and, BitVec.setWidth_not, BitVec.setWidth_add, BitVec.setWidth_mul,
     BitVec.reduceSetWidth, BitVec.setWidth_eq]
+  -- a mask that keeps low bits, taken in as few bits, and the narrowing pushed in again
+  all_goals (try simp only [Braid.BV.narrowAnd, BitVec.setWidth_setWidth_of_le,
+    Braid.BV.setWidth_or_of_le, Braid.BV.setWidth_xor_of_le, Braid.BV.setWidth_and_of_le,
+    BitVec.reduceSetWidth, BitVec.setWidth_eq, Nat.reduceLeDiff, Nat.le_refl])
   -- the narrowing may have closed the goal already; a 32-bit rotation computed on a value
   -- written twice side by side, and the majority of SHA-256 in one form
   all_goals (try simp only [↓Braid.BV.ror32_or_dup, Braid.BV.maj_eq, Nat.reduceLT])
@@ -1126,6 +1205,26 @@ def Braid.BV.proveByOmega (p : Expr) : TacticM (Option Expr) := do
     if gs.isEmpty then return some (← instantiateMVars mv)
     s.restore; return none
   catch _ => s.restore; return none
+
+/-- `set_option trace.bv_auto true` shows which procedures `bv_auto` tried on a goal. -/
+initialize Lean.registerTraceClass `bv_auto
+
+open Lean Elab Tactic Meta in
+/-- Each variable or hypothesis whose name cannot be written, such as an atom `x✝` made by
+`bv_atoms`, renamed to one that can, so that a procedure that names it in a tactic finds it. -/
+elab "bv_names" : tactic => do
+  let mut g ← getMainGoal
+  let mut i := 0
+  for d in (← g.withContext getLCtx) do
+    if d.isImplementationDetail then continue
+    unless d.userName.hasMacroScopes || d.userName.isInaccessibleUserName do continue
+    let mut n := Name.mkSimple s!"bvA{i}"
+    while (← g.withContext getLCtx).usesUserName n do
+      i := i + 1
+      n := Name.mkSimple s!"bvA{i}"
+    g ← g.rename d.fvarId n
+    i := i + 1
+  replaceMainGoal [g]
 
 open Lean Elab Tactic Meta in
 /-- `p` proved by `bv_arith` from the hypotheses, if it can be. -/
@@ -1576,7 +1675,9 @@ elab "bv_dispatch" : tactic => do
   let flags ← `(tactic| bv_budget 40000 bv_flags)
   let varShift ← `(tactic| bv_budget 40000 bv_varshift)
   let ovf ← `(tactic| bv_budget 30000 bv_ovf)
-  let offsets ← `(tactic| bv_budget 180000 (bv_offsets <;> bv_auto))
+  let offsets ← `(tactic| bv_budget 180000 (bv_offsets <;>
+    -- with each shift by a number, bit by bit first
+    first | bv_budget 30000 bv_bits | bv_auto))
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
@@ -1590,7 +1691,7 @@ elab "bv_dispatch" : tactic => do
     else if sh.varShift then #[offsets, varShift]
     else if sh.flags then #[flags]
     else if 0 < sh.ites && sh.ites ≤ 4 then #[split]
-    else if sh.eqBV && (t.find? fun e => e.isAppOfArity ``HAnd.hAnd 6 &&
+    else if sh.eqBV && sh.arith && (t.find? fun e => e.isAppOfArity ``HAnd.hAnd 6 &&
         isHighMask (e.getArg! 5)).isSome then
       -- an address aligned down, `x &&& ~~~7`
       #[align, narrow, ac, peel, arith, bits]
@@ -1610,12 +1711,17 @@ elab "bv_dispatch" : tactic => do
     if tried.contains tac then continue
     tried := tried.push tac
     let s ← saveState
+    let h0 ← IO.getNumHeartbeats
     let closed ← tryCatchRuntimeEx
       (do
         withoutRecover (evalTactic tac)
         pure (← getGoals).isEmpty)
       fun _ => pure false
-    if closed then return
+    let spent := ((← IO.getNumHeartbeats) - h0) / 1000
+    if closed then
+      trace[bv_auto] "closed by {tac} ({spent})"
+      return
+    trace[bv_auto] "not closed by {tac} ({spent})"
     s.restore
   throwError "bv_auto: no procedure closes the goal"
 
@@ -1628,6 +1734,7 @@ macro_rules | `(tactic| bv_auto) => `(tactic| (
   -- a `match` on a constructor, such as on the width of an instruction, made its choice
   (try dsimp only)
   (try bv_atoms)
+  bv_names
   bv_clear
   (try bv_widths)
   (try subst_vars)

@@ -30,6 +30,7 @@ module
 public import Examples.Crc32.RiscV.Image
 public import Examples.Crc32.Common
 public import Lowering.RiscV.Logic
+import Braid.BV
 
 public section
 
@@ -48,7 +49,7 @@ theorem nibble_reg₁ (v : Word) (b : BitVec 8) :
     BitVec.signExtend 64 (nibble (BitVec.setWidth 32 v ^^^ BitVec.setWidth 32 b)) := by
   rw [← nibble_step (BitVec.setWidth 32 v ^^^ BitVec.setWidth 32 b)]
   generalize nibble ((BitVec.setWidth 32 v ^^^ BitVec.setWidth 32 b) &&& 15#32) = n
-  bv_decide
+  bv_auto
 
 /-- `srliw` and `xor` after the second lookup of a round: four more bits of the division. -/
 theorem nibble_reg₂ (y : BitVec 32) :
@@ -56,22 +57,22 @@ theorem nibble_reg₂ (y : BitVec 32) :
       BitVec.signExtend 64 (nibble (y &&& 15#32)) = BitVec.signExtend 64 (nibble y) := by
   rw [← nibble_step y]
   generalize nibble (y &&& 15#32) = n
-  bv_decide
+  bv_auto
 
 /-- `xori` with minus one: the complement of the register, in the low half. -/
 theorem not_reg (y : BitVec 32) :
     BitVec.signExtend 64 y ^^^ 0xffffffffffffffff#64 = BitVec.signExtend 64 (~~~y) := by
-  bv_decide
+  bv_auto
 
 /-- `xori` with minus one: the register starts as the complement of the low half of the
 argument. -/
 theorem not_arg (c : Word) :
     BitVec.setWidth 32 (c ^^^ 0xffffffffffffffff#64) = ~~~BitVec.setWidth 32 c := by
-  bv_decide
+  bv_auto
 
 /-- The low half of a word that is the sign extension of a register is the register. -/
 theorem low_signExtend (y : BitVec 32) : BitVec.setWidth 32 (BitVec.signExtend 64 y) = y := by
-  bv_decide
+  bv_auto
 
 /-- What `crc32` leaves in `a0`: the CRC-32, sign extended as RISC-V keeps a value of 32 bits
 in a register, if there is a message; the argument as it was if there is none, since the
@@ -94,10 +95,10 @@ instructions, and close the table. -/
 local macro "crc32_nibble " w:term ", " a3:term ", " y:term : tactic =>
   `(tactic| (
     braid_unfold tableAt_open $w 0x1005c#64 (0x1005c#64 + ($a3 &&& 15#64) <<< 2#64) $y
-      (by bv_decide)
+      (by bv_auto)
     iterate 3 braid_sym_step
     braid_fold tableAt_open $w 0x1005c#64 (0x1005c#64 + ($a3 &&& 15#64) <<< 2#64) $y
-      (by bv_decide)))
+      (by bv_auto)))
 
 /-- One round of `crc32`, up to the branch at its end: take the byte `b` into the
 register. -/

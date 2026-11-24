@@ -31,6 +31,7 @@
 module
 
 public import Examples.Crc32.RiscV.Proofs
+import Braid.BV
 
 public section
 
@@ -107,14 +108,14 @@ theorem entryAddr₁ (v : Word) (b : BitVec 8) :
       entryAddr 0x1005c#64
         (BitVec.setWidth 4 (BitVec.setWidth 32 v ^^^ BitVec.setWidth 32 b)) := by
   unfold entryAddr
-  bv_decide
+  bv_auto
 
 /-- The address of the second lookup of a round, as the code computes it. -/
 theorem entryAddr₂ (y : BitVec 32) :
     0x1005c#64 + (BitVec.signExtend 64 y &&& 15#64) <<< 2#64 =
       entryAddr 0x1005c#64 (BitVec.setWidth 4 y) := by
   unfold entryAddr
-  bv_decide
+  bv_auto
 
 /-! ## The traced triple -/
 
@@ -122,10 +123,10 @@ theorem entryAddr₂ (y : BitVec 32) :
 local macro "crc32_nibble " w:term ", " a3:term ", " y:term : tactic =>
   `(tactic| (
     braid_unfold tableAt_open $w 0x1005c#64 (0x1005c#64 + ($a3 &&& 15#64) <<< 2#64) $y
-      (by bv_decide)
+      (by bv_auto)
     iterate 3 braid_sym_step
     braid_fold tableAt_open $w 0x1005c#64 (0x1005c#64 + ($a3 &&& 15#64) <<< 2#64) $y
-      (by bv_decide)))
+      (by bv_auto)))
 
 /-- One round of `crc32`, up to the branch at its end, as in the functional proof. -/
 local macro "crc32_round " w:term ", " v:term ", " b:term : tactic =>
