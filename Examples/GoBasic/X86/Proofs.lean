@@ -53,8 +53,16 @@ theorem cond_g (a b : Word) :
     ((ofBool (a - b &&& 9223372036854775808#64 != 0#64) ^^^
         ofBool ((a ^^^ b) &&& (a ^^^ a - b) &&& 9223372036854775808#64 != 0#64) |||
       ofBool (a - b == 0#64)) == 0#64) = b.slt a := by
-  simp only [ofBool]
-  bv_decide
+  -- the flags combined as truth values, each as a top bit, then case by case
+  have hx : ∀ p q : Bool, ofBool p ^^^ ofBool q = ofBool (p ^^ q) := by
+    intro p q; cases p <;> cases q <;> rfl
+  have ho : ∀ p q : Bool, ofBool p ||| ofBool q = ofBool (p || q) := by
+    intro p q; cases p <;> cases q <;> rfl
+  have hz : ∀ p : Bool, (ofBool p == 0#64) = !p := by intro p; cases p <;> rfl
+  rw [hx, ho, hz]
+  simp (disch := omega) only [Braid.BV.reduceBitTest, Braid.BV.getLsbD_eq_msb, BitVec.msb_and,
+    BitVec.msb_xor, BitVec.slt_eq_ult]
+  bv_bool_split
 
 theorem cond_g_iff (a b : Word) :
     (ofBool (a - b &&& 9223372036854775808#64 != 0#64) ^^^

@@ -222,6 +222,11 @@ theorem maj_eq {w : Nat} (a b c : BitVec w) :
     (a &&& (b ^^^ c) ^^^ b &&& c) = (a &&& b ||| (a ||| b) &&& c) := by
   ext i; simp; cases a[i] <;> cases b[i] <;> cases c[i] <;> rfl
 
+/-- The last bit of a bit vector is its top bit. -/
+theorem getLsbD_eq_msb {w : Nat} (x : BitVec w) (i : Nat) (h : i + 1 = w) :
+    x.getLsbD i = x.msb := by
+  rw [BitVec.msb_eq_getLsbD_last]; congr; omega
+
 /-- A test of one bit with a mask is that bit. -/
 theorem and_pow2_bne_zero {w : Nat} (x : BitVec w) (i : Nat) (h : i < w) :
     (x &&& BitVec.ofNat w (2 ^ i) != 0#w) = x.getLsbD i := by
