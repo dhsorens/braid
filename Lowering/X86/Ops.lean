@@ -7,7 +7,6 @@
 module
 
 public import Lowering.X86.Rel
-import Std.Tactic.BVDecide
 import Braid.BV
 
 @[expose] public section
@@ -153,12 +152,12 @@ theorem add_sound {w : Width} (dst : Dst w) (src : Operand w) :
     x86_ops at hw
     simp only [ha', hb] at hw
     generalize hst : StatusFlags.from_result _ _ = st
-    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a + b) (by simp <;> bv_decide)
+    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a + b) (by simp <;> bv_auto)
       (by decide) (hw (ofBool st.af))
     refine writeRM_sound (n := 48) (val := a + b)
       (RelD.status h st (by rfl) (by rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_)
       (by first
-        | exact (hag4 17 (by decide)).trans (by simp; bv_decide)
+        | exact (hag4 17 (by decide)).trans (by simp; bv_auto)
         | exact (hag4 16 (by decide)).trans (by simp))
       (by decide) hw fun s' ρ5 σ' _ h' hq => done_sound h' hq
     x86_flags h hst
@@ -180,12 +179,12 @@ theorem sub_sound {w : Width} (dst : Dst w) (src : Operand w) :
     x86_ops at hw
     simp only [ha', hb] at hw
     generalize hst : StatusFlags.from_result _ _ = st
-    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := b - a) (by simp <;> bv_decide)
+    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := b - a) (by simp <;> bv_auto)
       (by decide) (hw (ofBool st.af))
     refine writeRM_sound (n := 48) (val := b - a)
       (RelD.status h st (by rfl) (by rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_)
       (by first
-        | exact (hag4 17 (by decide)).trans (by simp; bv_decide)
+        | exact (hag4 17 (by decide)).trans (by simp; bv_auto)
         | exact (hag4 16 (by decide)).trans (by simp))
       (by decide) hw fun s' ρ5 σ' _ h' hq => done_sound h' hq
     x86_flags h hst
@@ -227,12 +226,12 @@ theorem inc_sound {w : Width} (dst : RegOrMem w) :
     x86_ops at hw
     simp only [ha] at hw
     generalize hst : StatusFlags.from_result _ _ = st
-    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a + 1) (by simp <;> bv_decide)
+    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a + 1) (by simp <;> bv_auto)
       (by decide) (hw (ofBool st.af))
     refine writeRM_sound (n := 48) (val := a + 1)
       (RelD.status h st (by rfl) (by rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_)
       (by first
-        | exact (hag4 17 (by decide)).trans (by simp; bv_decide)
+        | exact (hag4 17 (by decide)).trans (by simp; bv_auto)
         | exact (hag4 16 (by decide)).trans (by simp))
       (by decide) hw fun s' ρ5 σ' _ h' hq => done_sound h' hq
     x86_flags h hst
@@ -252,12 +251,12 @@ theorem dec_sound {w : Width} (dst : RegOrMem w) :
     x86_ops at hw
     simp only [ha] at hw
     generalize hst : StatusFlags.from_result _ _ = st
-    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a - 1) (by simp <;> bv_decide)
+    obtain ⟨ρ4, hag4, hw⟩ := wp_pzs (n := 32) (val := a - 1) (by simp <;> bv_auto)
       (by decide) (hw (ofBool st.af))
     refine writeRM_sound (n := 48) (val := a - 1)
       (RelD.status h st (by rfl) (by rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_)
       (by first
-        | exact (hag4 17 (by decide)).trans (by simp; bv_decide)
+        | exact (hag4 17 (by decide)).trans (by simp; bv_auto)
         | exact (hag4 16 (by decide)).trans (by simp))
       (by decide) hw fun s' ρ5 σ' _ h' hq => done_sound h' hq
     x86_flags h hst
@@ -282,7 +281,7 @@ theorem neg_sound {w : Width} (dst : RegOrMem w) :
     refine writeRM_sound (n := 48) (val := -a)
       (RelD.status h st (by rfl) (by rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_)
       (by first
-        | exact (hag4 17 (by decide)).trans (by simp <;> bv_decide)
+        | exact (hag4 17 (by decide)).trans (by simp <;> bv_auto)
         | exact (hag4 16 (by decide)).trans (by simp))
       (by decide) hw fun s' ρ5 σ' _ h' hq => done_sound h' hq
     x86_flags h hst

@@ -177,6 +177,23 @@ theorem slt_zero_eq_msb {w : Nat} (x : BitVec w) : x.slt 0#w = x.msb := by
 /-- `slt_zero_eq_msb`, with the zero written as a numeral. -/
 theorem slt_zero_eq_msb' {w : Nat} (x : BitVec w) : x.slt 0 = x.msb := slt_zero_eq_msb x
 
+/-- A bit below `m` of a sum of values of width `m` widened is that bit of their sum. -/
+theorem getLsbD_add_setWidth {m n : Nat} (x y : BitVec m) (i : Nat) (hi : i < m) (h : m ≤ n) :
+    (x.setWidth n + y.setWidth n).getLsbD i = (x + y).getLsbD i := by
+  have e : x + y = (x.setWidth n + y.setWidth n).setWidth m := by
+    rw [BitVec.setWidth_add _ _ h, BitVec.setWidth_setWidth_of_le _ h,
+      BitVec.setWidth_setWidth_of_le _ h, BitVec.setWidth_eq, BitVec.setWidth_eq]
+  rw [e, BitVec.getLsbD_setWidth]; simp [hi]
+
+/-- A bit below `m` of a difference of values of width `m` widened is that bit of their
+difference. -/
+theorem getLsbD_sub_setWidth {m n : Nat} (x y : BitVec m) (i : Nat) (hi : i < m) (h : m ≤ n) :
+    (x.setWidth n - y.setWidth n).getLsbD i = (x - y).getLsbD i := by
+  have e : x - y = (x.setWidth n - y.setWidth n).setWidth m := by
+    rw [setWidth_sub_of_le _ _ h, BitVec.setWidth_setWidth_of_le _ h,
+      BitVec.setWidth_setWidth_of_le _ h, BitVec.setWidth_eq, BitVec.setWidth_eq]
+  rw [e, BitVec.getLsbD_setWidth]; simp [hi]
+
 /-- A test of one bit with a mask is that bit. -/
 theorem and_pow2_bne_zero {w : Nat} (x : BitVec w) (i : Nat) (h : i < w) :
     (x &&& BitVec.ofNat w (2 ^ i) != 0#w) = x.getLsbD i := by
@@ -1085,6 +1102,8 @@ Booleans, each change of width pushed through the bitwise operations, each top b
 bound on the value, each sign extension as its value plus, when the top bit is set, the bits
 above, one goal for each value of the top bits, then arithmetic. -/
 macro "bv_flags" : tactic => `(tactic| (
+  (try simp only [BitVec.saddOverflow_eq, BitVec.ssubOverflow_eq, BitVec.negOverflow_eq,
+    Nat.reduceLT, decide_true, Bool.true_and])
   -- a test for zero of a value narrowed, when the value fits, as a test of the value
   (try simp (disch := bv_guard ((try bv_norm at *); bv_bits)) only
     [BitVec.truncate_eq_setWidth, Braid.BV.setWidth_beq_zero])
@@ -1100,11 +1119,23 @@ macro "bv_flags" : tactic => `(tactic| (
   all_goals (try rw [Bool.eq_iff_iff])
   all_goals simp only [bne_iff_ne, beq_iff_eq, ne_eq, Bool.and_eq_true, Bool.or_eq_true,
     Bool.not_eq_true', decide_eq_decide, decide_eq_true_eq, decide_eq_false_iff_not,
-    BitVec.toNat_eq,
+    beq_eq_false_iff_ne, Bool.beq_eq_decide_eq, BitVec.toNat_eq, BitVec.toNat_intMin,
     BitVec.msb_eq_decide, BitVec.toNat_signExtend, BitVec.toNat_setWidth, BitVec.toNat_add,
     BitVec.toNat_sub, BitVec.toNat_not, BitVec.toNat_ofNat, Nat.reducePow, Nat.reduceSub,
     Nat.reduceMod, Nat.reduceAdd] at *
   all_goals ((repeat' split) <;> omega)))
+
+/-- Signed overflow, as the model states it (`saddOverflow`, `ssubOverflow`) and as code computes
+it from the top bits: the overflows by the top bits, each bit of a sum or difference computed
+in a wider register as that bit of the narrow one, a mask that clears the low bits as a test
+of the top bit, and then the bits decided. -/
+macro "bv_ovf" : tactic => `(tactic| (
+  simp (disch := bv_guard (first | decide | omega)) only [BitVec.saddOverflow_eq,
+    BitVec.ssubOverflow_eq, ← Braid.BV.and_not_eq_sub, BitVec.reduceNot,
+    Braid.BV.reduceBitTest, BitVec.msb_eq_getLsbD_last, Nat.reduceSub,
+    Braid.BV.getLsbD_add_setWidth, Braid.BV.getLsbD_sub_setWidth, ← BitVec.getLsbD_eq_getElem,
+    BitVec.getLsbD_and, BitVec.getLsbD_xor, BitVec.getLsbD_or, BitVec.getLsbD_not]
+  all_goals bv_bool_decide))
 
 /-- The decision procedures on their own, without splitting. -/
 macro "bv_solve" : tactic => `(tactic| first
@@ -1132,6 +1163,8 @@ structure Shape where
   ites : Nat
   /-- An equation between Booleans. -/
   eqBool : Bool
+  /-- Signed overflow as the model states it. -/
+  ovf : Bool
   /-- A shift by an amount that is not a number, or a test of one bit with a mask. -/
   varShift : Bool
   /-- A test of a top bit (`msb`, `slt`, `sle`), or a value widened by one bit: the flags and
@@ -1176,6 +1209,7 @@ def shapeOf (t : Expr) : MetaM Shape := do
     eqBool := match t.cleanupAnnotations.eq? with
       | some (α, _, _) => α.isConstOf ``Bool
       | none => false
+    ovf := has [``BitVec.saddOverflow, ``BitVec.ssubOverflow, ``BitVec.negOverflow]
     varShift := (t.find? fun e => isVarShift e || isBitTest e).isSome
     flags := has [``BitVec.msb, ``BitVec.slt, ``BitVec.sle] ||
       (t.find? isOneBitWider).isSome }
@@ -1212,6 +1246,7 @@ elab "bv_dispatch" : tactic => do
   let sext ← `(tactic| bv_budget 40000 bv_sext)
   let flags ← `(tactic| bv_budget 40000 bv_flags)
   let varShift ← `(tactic| bv_budget 40000 bv_varshift)
+  let ovf ← `(tactic| bv_budget 30000 bv_ovf)
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
@@ -1221,7 +1256,8 @@ elab "bv_dispatch" : tactic => do
         (try bv_norm at *) <;> bv_arith)
     | bv_budget 40000 bv_bits))
   let first : Array (TSyntax `tactic) :=
-    if sh.varShift then #[varShift]
+    if sh.ovf then #[ovf, flags]
+    else if sh.varShift then #[varShift]
     else if sh.flags then #[flags]
     else if 0 < sh.ites && sh.ites ≤ 4 then #[split]
     else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]
@@ -1230,7 +1266,7 @@ elab "bv_dispatch" : tactic => do
     else if sh.eqBool then #[boolEq, arith, boolSplit, bitDecide]
     else #[arith, boolSplit, bitDecide, boolCases]
   let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
-    boolSplit, orArith, boolEq, align, sext, flags, varShift, contra, contraBy]
+    boolSplit, orArith, boolEq, align, sext, flags, varShift, ovf, contra, contraBy]
   let mut tried : Array (TSyntax `tactic) := #[]
   for tac in first ++ rest do
     if tried.contains tac then continue

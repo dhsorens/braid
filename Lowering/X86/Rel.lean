@@ -543,7 +543,7 @@ macro "x86_flags" h:ident hst:ident : tactic => `(tactic|
    all_goals try simp only [StatusFlags.from_result, uadd_ne, sadd_ne, usub_ne, ssub_ne, neg_ne,
      inc_ne8, inc_ne16, inc_ne32, inc_ne64, dec_ne8, dec_ne16, dec_ne32, dec_ne64]
    all_goals simp [State.setFlag, ($h).df, ($h).cf]
-   all_goals bv_decide))
+   all_goals bv_auto))
 
 /-- The instruction `i` is lowered soundly: if its operations and terminator run without fault
 and establish `Q`, every outcome of `i` in the model is related to a state satisfying `Q`. -/
