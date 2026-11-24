@@ -51,7 +51,7 @@ theorem interpMasked_imm (c : ConstExpr) (s : MachineData) (w : Width) :
 theorem immCount_lt (c : ConstExpr) (w : Width) : immCount p w c < 64#8 := by
   simp only [immCount]
   generalize (c.interp p).toBitVec.take 8 = x
-  cases w <;> bv_decide
+  cases w <;> bv_auto
 
 theorem immCount_lt32 (c : ConstExpr) {w : Width} (hw : w ≠ .W64) : immCount p w c < 32#8 := by
   simp only [immCount]

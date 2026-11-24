@@ -116,7 +116,13 @@ theorem read8_writeSized (m : Memory) (sz : MemWidth) (a v x : Word) :
   cases sz <;>
     simp only [Memory.writeSized, Memory.write16, Memory.write32, Memory.write64, read8_write8,
       MemWidth.bytes, h1, h2, h4, h8] <;>
-    generalize m.read8 x = b <;> bv_decide
+    generalize m.read8 x = b <;>
+    -- `x` as `a` plus its offset `d`, and each test of `x` a test of `d`
+    obtain ⟨d, rfl⟩ : ∃ d, x = a + d := ⟨x - a, by bv_omega⟩ <;>
+    (have e : a + d - a = d := by bv_omega) <;>
+    simp only [e, BitVec.add_right_inj, BitVec.add_right_eq_self, BitVec.add_zero] <;>
+    -- each choice: the tests contradict each other, or `d` is known
+    (repeat' split) <;> first | rfl | (exfalso; bv_omega) | (subst_vars; bv_auto)
 
 /-- A write clears the `lazyFree` mark of the bytes it covers. -/
 theorem isLazyFree_writeSized (m : Memory) (sz : MemWidth) (a v x : Word) :

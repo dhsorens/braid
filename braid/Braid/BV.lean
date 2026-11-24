@@ -177,6 +177,19 @@ theorem slt_zero_eq_msb {w : Nat} (x : BitVec w) : x.slt 0#w = x.msb := by
 /-- `slt_zero_eq_msb`, with the zero written as a numeral. -/
 theorem slt_zero_eq_msb' {w : Nat} (x : BitVec w) : x.slt 0 = x.msb := slt_zero_eq_msb x
 
+/-- A test of one bit with a mask is that bit. -/
+theorem and_pow2_bne_zero {w : Nat} (x : BitVec w) (i : Nat) (h : i < w) :
+    (x &&& BitVec.ofNat w (2 ^ i) != 0#w) = x.getLsbD i := by
+  have e : BitVec.ofNat w (2 ^ i) = BitVec.twoPow w i := by
+    apply BitVec.eq_of_toNat_eq; simp [BitVec.toNat_twoPow]
+  rw [e, BitVec.and_twoPow]
+  cases hx : x.getLsbD i
+  · simp
+  · simp only [↓reduceIte, bne_iff_ne, ne_eq]
+    intro h0
+    have h1 := congrArg (·.getLsbD i) h0
+    simp [h] at h1
+
 /-- A truth value as a word is not zero when it is true. -/
 theorem setWidth_ofBool_bne_zero {n : Nat} (b : Bool) (h : 0 < n) :
     (BitVec.setWidth n (BitVec.ofBool b) != 0#n) = b := by
@@ -321,6 +334,39 @@ partial def foreignAtoms (e : Expr) (acc : Array Expr) : MetaM (Array Expr) := d
   | .forallE _ d b _ | .lam _ d b _ => foreignAtoms b (← foreignAtoms d acc)
   | _ => pure acc
 
+/-- A number written by a definition, such as the width `Width.W8.bits` of an instruction after
+a case split on its width, made the numeral it computes, `8`, so that the procedures see it.
+Arithmetic (`8 + 8`) is left as it is. -/
+def numeralOf? (e : Expr) : MetaM (Option Expr) := do
+  if e.hasFVar || e.hasMVar || !e.isApp then return none
+  let some c := e.getAppFn.constName? | return none
+  if c == ``OfNat.ofNat || e.nat?.isSome || known c then return none
+  if [``HAdd.hAdd, ``HSub.hSub, ``HMul.hMul, ``HDiv.hDiv, ``HMod.hMod, ``HPow.hPow, ``Nat.add,
+      ``Nat.sub, ``Nat.mul, ``Nat.pow, ``Nat.succ, ``BitVec.toNat].contains c then return none
+  unless (← whnfR (← inferType e)).isConstOf ``Nat do return none
+  let r ← whnfD e
+  match r.rawNatLit? <|> r.nat? with
+  | some n => return some (toExpr n)
+  | none => return none
+
+elab "bv_widths" : tactic => do
+  let g ← getMainGoal
+  g.withContext do
+    let tr (t : Expr) : MetaM Expr := Meta.transform t (post := fun e => do
+      match ← numeralOf? e with
+      | some n => return .done n
+      | none => return .continue)
+    let mut g := g
+    let ty ← instantiateMVars (← g.getType)
+    let ty' ← tr ty
+    if ty' != ty then g ← g.replaceTargetDefEq ty'
+    for d in (← getLCtx) do
+      if d.isImplementationDetail then continue
+      let t ← instantiateMVars d.type
+      let t' ← tr t
+      if t' != t then g ← g.replaceLocalDeclDefEq d.fvarId t'
+    replaceMainGoal [g]
+
 /-- A definition that encodes a Boolean as a bit vector, such as `ofBool b`: past its
 arguments, its body chooses between two constant bit vectors. -/
 def isBoolCode (n : Name) : MetaM Bool := do
@@ -367,6 +413,10 @@ elab "bv_atoms" : tactic => do
     if !(← isProp ty) then continue
     let as ← foreignAtoms ty #[]
     if as.isEmpty then continue
+    -- only a hypothesis that is plain once its atoms are variables, which `bv_clear` keeps:
+    -- reverting a large one that it drops, such as a precondition, costs the kernel dearly
+    let probe := mkAppN (← instantiateMVars (← g.getType)) (atoms ++ as)
+    unless ← isPlain probe ty do continue
     hyps := hyps.push d.fvarId
     for a in as do
       if !atoms.contains a then atoms := atoms.push a
@@ -449,6 +499,9 @@ elab "bv_bool_decide" : tactic => do
         changed := true
         for a in as do
           if !atoms.contains a then atoms := atoms.push a
+  -- `decide` tries every value of every bit, here and again in the kernel: past a dozen bits
+  -- that is too many, and another procedure should do it
+  if atoms.size > 12 then throwError "bv_bool_decide: {atoms.size} bits are too many"
   let ordered := (← getLCtx).foldl (init := #[]) fun acc d =>
     if hyps.contains d.fvarId then acc.push d.fvarId else acc
   let (_, g) ← g.revert ordered
@@ -552,6 +605,21 @@ dsimproc reduceTestBit (Nat.testBit _ _) := fun e => do
   let some m := m.nat? | return .continue
   let some i := i.nat? | return .continue
   return .done (toExpr (m.testBit i))
+
+/-- `x &&& c != 0` for a mask `c` of one bit, such as `1` or `0x80000000`: that bit of `x`. -/
+simproc reduceBitTest (((_ : BitVec _) &&& _) != _) := fun e => do
+  let_expr bne _ _ lhs z := e | return .continue
+  let_expr HAnd.hAnd _ _ _ _ x c := lhs | return .continue
+  let some ⟨w, cv⟩ ← getBitVecValue? c | return .continue
+  let some ⟨_, zv⟩ ← getBitVecValue? z | return .continue
+  unless zv.toNat == 0 do return .continue
+  let v := cv.toNat
+  unless v != 0 && v &&& (v - 1) == 0 do return .continue
+  let i := Nat.log2 v
+  unless i < w do return .continue
+  let h ← mkDecideProof (← mkLt (toExpr i) (toExpr w))
+  let pf := mkApp4 (mkConst ``Braid.BV.and_pow2_bne_zero) (toExpr w) x (toExpr i) h
+  return .done { expr := ← mkAppM ``BitVec.getLsbD #[x, toExpr i], proof? := pf }
 
 /-- An append whose width a simplification has already computed (`x ++ y : BitVec 64` with
 `x : BitVec 56`, `y : BitVec 8`) stated again at its own width `56 + 8`, so that the lemmas
@@ -892,6 +960,104 @@ macro "bv_narrow_ac" : tactic => `(tactic| (
   all_goals (try simp only [Braid.BV.or_shifts_eq_rotateLeft, Nat.reduceAdd, Nat.reduceLT])
   all_goals bv_ac))
 
+public meta section
+
+open Lean in
+/-- The distinct subterms of `e` that satisfy `p`. -/
+partial def Braid.BV.collectSub (p : Expr → Bool) (e : Expr) (acc : Array Expr := #[]) :
+    Array Expr :=
+  let acc := if p e && !acc.contains e then acc.push e else acc
+  match e with
+  | .app f a => collectSub p a (collectSub p f acc)
+  | .lam _ d b _ | .forallE _ d b _ => collectSub p b (collectSub p d acc)
+  | .letE _ t v b _ => collectSub p b (collectSub p v (collectSub p t acc))
+  | .mdata _ b | .proj _ _ b => collectSub p b acc
+  | _ => acc
+
+open Lean Elab Tactic Meta in
+/-- `p` proved by `bv_omega` from the hypotheses, if it can be. -/
+def Braid.BV.proveByOmega (p : Expr) : TacticM (Option Expr) := do
+  let mv ← mkFreshExprMVar p
+  let s ← saveState
+  try
+    let gs ← Tactic.run mv.mvarId! (withoutRecover (evalTactic (← `(tactic| bv_omega))))
+    if gs.isEmpty then return some (← instantiateMVars mv)
+    s.restore; return none
+  catch _ => s.restore; return none
+
+open Lean Elab Tactic Meta in
+/-- After the bits of shifts by an amount `n` are read: each test on `n` that the bounds on it
+settle made `true` or `false`, and the positions of the bits of one vector that the bounds
+show equal (`8 - n` and `7 - (n - 1)`) written the same, all by `bv_omega`. -/
+elab "bv_index_norm" : tactic => do
+  let g ← getMainGoal
+  let facts ← g.withContext do
+    let t ← instantiateMVars (← g.getType)
+    let mut facts : Array Expr := #[]
+    -- the tests
+    let decs := Braid.BV.collectSub (fun e => e.isAppOfArity ``Decidable.decide 2 &&
+      !(e.getArg! 0).hasLooseBVars && !(e.getArg! 0).hasMVar) t
+    for d in decs do
+      let p := d.getArg! 0
+      if let some pf ← Braid.BV.proveByOmega p then
+        facts := facts.push (← mkAppM ``eq_true #[pf])
+      else if let some pf ← Braid.BV.proveByOmega (mkNot p) then
+        facts := facts.push (← mkAppM ``eq_false #[pf])
+    -- the positions
+    let bits := Braid.BV.collectSub
+      (fun e => e.isAppOfArity ``BitVec.getLsbD 3 && !e.hasLooseBVars) t
+    let mut seen : Array (Expr × Expr) := #[]
+    for b in bits do
+      let x := b.getArg! 1
+      let i := b.getArg! 2
+      if i.nat?.isSome then continue
+      match ← seen.findM? fun (y, j) => pure (y == x && j != i) with
+      | some (_, j) =>
+        if let some pf ← Braid.BV.proveByOmega (← mkEq i j) then
+          facts := facts.push pf
+        else seen := seen.push (x, i)
+      | none => seen := seen.push (x, i)
+    if facts.isEmpty then throwError "bv_index_norm: nothing to settle"
+    facts.mapM fun f => return (f, ← inferType f)
+  let mut g := g
+  let mut names : Array Ident := #[]
+  for (f, ty) in facts do
+    let n ← mkFreshUserName `h
+    let (_, g') ← (← g.assert n ty f).intro1P
+    g := g'
+    names := names.push (mkIdent n)
+  replaceMainGoal [g]
+  g.withContext do
+    let ns : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ← names.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $n:ident)
+    evalTactic (← `(tactic| simp only [$ns,*, decide_true, decide_false, Bool.true_and,
+      Bool.false_and, Bool.and_true, Bool.and_false, Bool.not_true, Bool.not_false]))
+
+end
+
+/-- Shifts and rotations by an amount that is not a number, as x86 code computes them with a
+count in a register: each amount as a number, the same on both sides when the bounds on it say
+so (`(32#64 - k.setWidth 64).toNat` and `(32#8 - k).toNat` both `32 - k.toNat` for `k < 32`),
+each change of width pushed in, and each test of one bit as that bit. -/
+macro "bv_varshift" : tactic => `(tactic| (
+  (try simp (disch := bv_guard bv_omega) only [BitVec.truncate_eq_setWidth,
+    BitVec.zeroExtend_eq_setWidth, BitVec.shiftLeft_eq', BitVec.ushiftRight_eq',
+    BitVec.sshiftRight_eq', BitVec.toNat_sub_of_le, BitVec.toNat_setWidth_of_le,
+    BitVec.toNat_ofNat, Nat.reduceMod, Nat.reducePow])
+  all_goals (try simp only [BitVec.setWidth_setWidth_of_le, BitVec.setWidth_shiftLeft_of_le,
+    ↓Braid.BV.setWidth_signExtend_self, ↓Braid.BV.setWidth_ushr_setWidth,
+    ↓Braid.BV.setWidth_sshr_sext, Nat.reduceSub, Nat.reduceLeDiff, Nat.reduceLT, Nat.le_refl,
+    BitVec.setWidth_or, BitVec.setWidth_xor, BitVec.setWidth_and, BitVec.setWidth_not,
+    BitVec.setWidth_eq])
+  all_goals (try simp only [Braid.BV.reduceBitTest, BitVec.msb_eq_getLsbD_last,
+    BitVec.getLsbD_setWidth, BitVec.getLsbD_xor, BitVec.getLsbD_or, BitVec.getLsbD_and,
+    BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_sshiftRight,
+    BitVec.getLsbD_signExtend, BitVec.sshiftRight_zero, BitVec.shiftLeft_zero,
+    BitVec.ushiftRight_zero, Nat.reduceSub, Nat.reduceAdd, Nat.reduceLT, Nat.reduceLeDiff,
+    Nat.lt_irrefl, Nat.zero_lt_succ, decide_true, decide_false, Bool.true_and,
+    Bool.not_false, Bool.not_true, Bool.false_and, Bool.and_true, ↓reduceIte])
+  all_goals (try bv_index_norm)
+  all_goals bv_ac))
+
 /-- An equation between two Booleans as an equivalence of the statements that they are
 true, each test of bit vectors (`==`, `!=`) as an equation, then by arithmetic. -/
 macro "bv_bool_eq" : tactic => `(tactic| (
@@ -966,6 +1132,8 @@ structure Shape where
   ites : Nat
   /-- An equation between Booleans. -/
   eqBool : Bool
+  /-- A shift by an amount that is not a number, or a test of one bit with a mask. -/
+  varShift : Bool
   /-- A test of a top bit (`msb`, `slt`, `sle`), or a value widened by one bit: the flags and
   the result of an addition with its carry, as `AddWithCarry` computes them. -/
   flags : Bool
@@ -977,6 +1145,17 @@ def isOneBitWider (e : Expr) : Bool :=
     match num (e.getArg! 0), num (e.getArg! 1) with
     | some w, some v => v == w + 1
     | _, _ => false
+
+/-- A shift by an amount that is not a number. -/
+def isVarShift (e : Expr) : Bool :=
+  (e.isAppOfArity ``HShiftLeft.hShiftLeft 6 || e.isAppOfArity ``HShiftRight.hShiftRight 6) &&
+    let y := e.getArg! 5
+    !(y.nat?.isSome || y.rawNatLit?.isSome || y.isAppOf ``BitVec.ofNat ||
+      y.isAppOf ``OfNat.ofNat)
+
+/-- A test of bits with a mask, `x &&& c != y`. -/
+def isBitTest (e : Expr) : Bool :=
+  e.isAppOfArity ``bne 4 && (e.getArg! 2).isAppOfArity ``HAnd.hAnd 6
 
 /-- The shape of `t`. -/
 def shapeOf (t : Expr) : MetaM Shape := do
@@ -997,6 +1176,7 @@ def shapeOf (t : Expr) : MetaM Shape := do
     eqBool := match t.cleanupAnnotations.eq? with
       | some (α, _, _) => α.isConstOf ``Bool
       | none => false
+    varShift := (t.find? fun e => isVarShift e || isBitTest e).isSome
     flags := has [``BitVec.msb, ``BitVec.slt, ``BitVec.sle] ||
       (t.find? isOneBitWider).isSome }
 
@@ -1031,6 +1211,7 @@ elab "bv_dispatch" : tactic => do
   let align ← `(tactic| bv_budget 30000 bv_align)
   let sext ← `(tactic| bv_budget 40000 bv_sext)
   let flags ← `(tactic| bv_budget 40000 bv_flags)
+  let varShift ← `(tactic| bv_budget 40000 bv_varshift)
   let contra ← `(tactic| bv_guard contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
@@ -1040,7 +1221,8 @@ elab "bv_dispatch" : tactic => do
         (try bv_norm at *) <;> bv_arith)
     | bv_budget 40000 bv_bits))
   let first : Array (TSyntax `tactic) :=
-    if sh.flags then #[flags]
+    if sh.varShift then #[varShift]
+    else if sh.flags then #[flags]
     else if 0 < sh.ites && sh.ites ≤ 4 then #[split]
     else if sh.eqBV && !sh.arith then #[bits, peel, ac, enum]
     else if sh.eqBV && !sh.bitwise then #[arith, ac, peel]
@@ -1048,7 +1230,7 @@ elab "bv_dispatch" : tactic => do
     else if sh.eqBool then #[boolEq, arith, boolSplit, bitDecide]
     else #[arith, boolSplit, bitDecide, boolCases]
   let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
-    boolSplit, orArith, boolEq, align, sext, flags, contra, contraBy]
+    boolSplit, orArith, boolEq, align, sext, flags, varShift, contra, contraBy]
   let mut tried : Array (TSyntax `tactic) := #[]
   for tac in first ++ rest do
     if tried.contains tac then continue
@@ -1070,8 +1252,11 @@ end
 /-- Close a goal about bit vectors, with a proof the kernel checks. -/
 macro "bv_auto" : tactic => `(tactic| (
   bv_no_holes
+  -- a `match` on a constructor, such as on the width of an instruction, made its choice
+  (try dsimp only)
   (try bv_atoms)
   bv_clear
+  (try bv_widths)
   (try subst_vars)
   (try bv_norm at *)
   first

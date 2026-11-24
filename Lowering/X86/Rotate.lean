@@ -8,7 +8,7 @@
 module
 
 public import Lowering.X86.Shift
-import Std.Tactic.BVDecide
+import Braid.BV
 
 @[expose] public section
 
@@ -64,7 +64,7 @@ macro "x86_rot_fin" h:ident hw:ident val:term : tactic => `(tactic|
      (try simp only [State.setFlag, Nat.reduceEqDiff, ↓reduceIte, ($h).df, ($h).pf, ($h).af,
         ($h).zf, ($h).sf, Env.set_apply, Env.set_same, BinOp.eval_and, BinOp.eval_or,
         BinOp.eval_xor, BinOp.eval_shl, BinOp.eval_lshr, UnOp.eval_zext,
-        Braid.ofBool_bne_zero, signBit_w32, signBit_w64]) <;> bv_decide))
+        Braid.ofBool_bne_zero, signBit_w32, signBit_w64]) <;> bv_auto))
 
 theorem rol_sound {w : Width} (dst : Dst w) (c : ConstExpr) :
     OpSound p (.rol dst (.imm8 c) : Operation w) := by
