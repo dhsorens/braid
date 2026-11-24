@@ -206,6 +206,22 @@ theorem cpop_parity {m n : Nat} (x : BitVec m) (h : m ≤ n) (h2 : 2 ≤ m) :
   simp only [BitVec.toNat_and, BitVec.toNat_umod, BitVec.toNat_cpop_setWidth_eq_of_le h,
     BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn, Nat.mod_eq_of_lt hm, Nat.zero_mod, Nat.and_one_is_mod]
 
+/-- Two appends of parts of the same widths are equal when their parts are. -/
+theorem append_eq_append_iff {v w : Nat} (a c : BitVec v) (b d : BitVec w) :
+    a ++ b = c ++ d ↔ a = c ∧ b = d := by
+  constructor
+  · intro h
+    have hb := congrArg (BitVec.extractLsb' 0 w) h
+    have ha := congrArg (BitVec.extractLsb' w v) h
+    simp only [BitVec.extractLsb'_append_eq_right, BitVec.extractLsb'_append_eq_left] at ha hb
+    exact ⟨ha, hb⟩
+  · rintro ⟨rfl, rfl⟩; rfl
+
+/-- The majority of three values (as SHA-256 computes it), written with `^^^` and with `|||`. -/
+theorem maj_eq {w : Nat} (a b c : BitVec w) :
+    (a &&& (b ^^^ c) ^^^ b &&& c) = (a &&& b ||| (a ||| b) &&& c) := by
+  ext i; simp; cases a[i] <;> cases b[i] <;> cases c[i] <;> rfl
+
 /-- A test of one bit with a mask is that bit. -/
 theorem and_pow2_bne_zero {w : Nat} (x : BitVec w) (i : Nat) (h : i < w) :
     (x &&& BitVec.ofNat w (2 ^ i) != 0#w) = x.getLsbD i := by
@@ -659,6 +675,25 @@ dsimproc restoreAppendWidth (@HAppend.hAppend _ _ _ _ _ _) := fun e => do
   if k.isAppOf ``HAdd.hAdd then return .continue
   return .done (← mkAppM ``HAppend.hAppend #[x, y])
 
+/-- A lane of a value read at a width written another way (`extractLsb' 64 32 x` with `x` of
+type `BitVec 128`, which is `BitVec (96 + 32)` as an append) stated again at the width of what
+it reads, so that the lemmas about the lanes of appends apply. -/
+dsimproc restoreExtractWidth (BitVec.extractLsb' _ _ _) := fun e => do
+  let_expr BitVec.extractLsb' n s l x := e | return .continue
+  let_expr BitVec m := (← inferType x) | return .continue
+  if n == m then return .continue
+  return .done (mkApp4 (mkConst ``BitVec.extractLsb') m s l x)
+
+/-- An equation between appends stated at a width written another way (`BitVec 128` for a
+`BitVec (96 + 32)`) stated again at the width of its sides, so that the lemma splitting it
+into lanes applies. -/
+dsimproc restoreEqWidth (@Eq (BitVec _) (_ ++ _) _) := fun e => do
+  let_expr Eq α l r := e | return .continue
+  unless l.isAppOf ``HAppend.hAppend do return .continue
+  let β ← inferType l
+  if α == β then return .continue
+  return .done (mkApp3 (mkConst ``Eq [Level.one]) β l r)
+
 /-- `i < c` for a variable `i` and a small literal `c`: one goal for each value of `i`. -/
 elab "bv_enum" : tactic => do
   let g ← getMainGoal
@@ -985,7 +1020,9 @@ macro "bv_narrow_ac" : tactic => `(tactic| (
     ↓Braid.BV.setWidth_sshr_sext, Nat.reduceSub,
     Nat.reduceLeDiff, Nat.reduceLT, Nat.le_refl, BitVec.setWidth_or, BitVec.setWidth_xor,
     BitVec.setWidth_and, BitVec.setWidth_not, BitVec.setWidth_add, BitVec.setWidth_mul]
-  -- the narrowing may have closed the goal already
+  -- the narrowing may have closed the goal already; a 32-bit rotation computed on a value
+  -- written twice side by side, and the majority of SHA-256 in one form
+  all_goals (try simp only [↓Braid.BV.ror32_or_dup, Braid.BV.maj_eq, Nat.reduceLT])
   all_goals (try bv_gen_casts)
   all_goals (try simp only [Braid.BV.or_shifts_eq_rotateLeft, Nat.reduceAdd, Nat.reduceLT])
   all_goals bv_ac))
@@ -1003,6 +1040,37 @@ partial def Braid.BV.collectSub (p : Expr → Bool) (e : Expr) (acc : Array Expr
   | .letE _ t v b _ => collectSub p b (collectSub p v (collectSub p t acc))
   | .mdata _ b | .proj _ _ b => collectSub p b acc
   | _ => acc
+
+open Lean Elab Tactic Meta in
+/-- Each variable `x : BitVec w` that a hypothesis `x >>> n = 0` bounds to `n` bits written as
+a value of `n` bits widened, `x'.setWidth w`, so that the procedures that narrow see it. -/
+elab "bv_narrow_vars" : tactic => do
+  let mut progress := false
+  repeat
+    let g ← getMainGoal
+    let found ← g.withContext do
+      for d in (← getLCtx) do
+        if d.isImplementationDetail then continue
+        let ty ← instantiateMVars d.type
+        let_expr Eq _ lhs z := ty | continue
+        let_expr HShiftRight.hShiftRight _ _ _ _ x k := lhs | continue
+        unless x.isFVar do continue
+        let some ⟨_, zv⟩ ← getBitVecValue? z | continue
+        unless zv.toNat == 0 do continue
+        let some n := (k.nat? <|> k.rawNatLit?) <|>
+          ((← getBitVecValue? k).map (·.2.toNat)) | continue
+        let some w := (← whnfR (← inferType x)).appArg!.nat? | continue
+        unless 0 < n && n < w do continue
+        return some (x, n, w)
+      return none
+    let some (x, n, w) := found | break
+    let xs ← Term.exprToSyntax x
+    let nl := Syntax.mkNumLit (toString n)
+    let wl := Syntax.mkNumLit (toString w)
+    evalTactic (← `(tactic| obtain ⟨_, rfl⟩ : ∃ y : BitVec $nl, $xs = BitVec.setWidth $wl y :=
+      ⟨BitVec.setWidth $nl $xs, by bv_omega⟩))
+    progress := true
+  unless progress do throwError "bv_narrow_vars: no variable to narrow"
 
 open Lean Elab Tactic Meta in
 /-- `p` proved by `bv_omega` from the hypotheses, if it can be. -/
@@ -1087,6 +1155,23 @@ macro "bv_varshift" : tactic => `(tactic| (
     Bool.not_false, Bool.not_true, Bool.false_and, Bool.and_true, ↓reduceIte])
   all_goals (try bv_index_norm)
   all_goals bv_ac))
+
+/-- Close a goal about bit vectors, with a proof the kernel checks. -/
+syntax "bv_auto" : tactic
+
+/-- Values made of lanes (a 128-bit vector of four 32-bit words): each lane read from an append
+taken from it, the equation of two appends split into one equation for each lane, and each
+lane proved on its own, with the variables bounded to a lane's width made narrow. -/
+macro "bv_lanes" : tactic => `(tactic| (
+  (try simp only [Braid.BV.restoreExtractWidth, Braid.BV.restoreAppendWidth,
+    Braid.BV.restoreEqWidth])
+  (try simp (disch := omega) only [BitVec.extractLsb'_append_eq_of_le,
+    BitVec.extractLsb'_append_eq_of_add_le])
+  simp only [Nat.reduceSub, Braid.BV.extractLsb'_zero_eq, BitVec.setWidth_eq,
+    Braid.BV.append_eq_append_iff, true_and, and_true]
+  (repeat' apply And.intro)
+  all_goals (try bv_narrow_vars)
+  all_goals bv_auto))
 
 /-- An equation between two Booleans as an equivalence of the statements that they are
 true, each test of bit vectors (`==`, `!=`) as an equation, then by arithmetic. -/
@@ -1298,8 +1383,7 @@ end Braid.BV
 
 end
 
-/-- Close a goal about bit vectors, with a proof the kernel checks. -/
-macro "bv_auto" : tactic => `(tactic| (
+macro_rules | `(tactic| bv_auto) => `(tactic| (
   bv_no_holes
   -- a `match` on a constructor, such as on the width of an instruction, made its choice
   (try dsimp only)
@@ -1335,6 +1419,13 @@ theorem ror32_dup (x : BitVec 32) (k : Nat) (hk : k ≤ 32) :
   · simp [h1, show k + i < 64 by omega]
     rw [show k + i - 32 = i - (32 - k) by omega, BitVec.getLsbD_of_ge x (k + i) (by omega)]
     simp [show ¬ i < 32 - k by omega, show i - (32 - k) < 64 by omega]
+
+/-- A rotation right of a 32-bit value as a shift right of the value written twice, side by
+side, with `|||`. -/
+theorem ror32_or_dup (x : BitVec 32) (k : Nat) (hk : k < 32) :
+    ((x.setWidth 64 ||| x.setWidth 64 <<< 32) >>> k).setWidth 32 = x.rotateRight k := by
+  rw [BitVec.or_comm, ← mul_dup32, ror32_dup _ _ (by omega), BitVec.rotateRight_def,
+    Nat.mod_eq_of_lt hk]
 
 end Braid.BV
 
