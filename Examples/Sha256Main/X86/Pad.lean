@@ -21,6 +21,7 @@
 module
 
 public import Examples.Sha256Main.X86.Program
+import Braid.BV
 
 @[expose] public section
 
@@ -62,9 +63,9 @@ local macro "ult_omega " h:ident : tactic =>
 branch back, either way. -/
 local macro "byte_done " w:ident ", " x9:ident ", " b:term ", " he:ident : tactic =>
   `(tactic| (refine Sha256.X86.tripleT_reg_val (r := 5) (BitVec.setWidth 64 ($w <<< 8 ||| $b))
-               (by braid_upd) (by bv_decide) ?_
+               (by braid_upd) (by bv_auto) ?_
              refine Sha256.X86.tripleT_reg_val (r := 9) ($x9 - 8#64) (by braid_upd)
-               (by bv_decide) ?_
+               (by bv_auto) ?_
              braid_forget 2
              braid_forget 10
              x86_forget_all_flags
@@ -72,7 +73,7 @@ local macro "byte_done " w:ident ", " x9:ident ", " b:term ", " he:ident : tacti
              all_goals
                obtain ⟨h1, h2⟩ := h
                subst h2
-               first | (exfalso; bv_decide) | braid_done))
+               first | (exfalso; bv_auto) | braid_done))
 
 def byteLeak (n k : Nat) (e : Word) : Trace :=
   (if k < n then [.jump 0x4024b0#64, .read (0x402d68#64 + BitVec.ofNat 64 k) 1]
@@ -185,7 +186,7 @@ theorem be32_bytes (msg : List (BitVec 8)) (b j : Nat) :
   generalize padByte msg (64 * b + 4 * j + 2) = c
   generalize padByte msg (64 * b + 4 * j + 1) = b'
   generalize padByte msg (64 * b + 4 * j) = a
-  bv_decide
+  bv_auto
 
 /-- What the four bytes of word `j` of block `b` reveal, the store of the word, and where
 the loop goes on, `e`. -/
@@ -232,8 +233,8 @@ theorem word_step (msg : List (BitVec 8)) (b j : Nat) (x0 x2 x3 x4 x5 x8 x9 x10 
   obtain rfl : q = 0x402c78#64 + (x4 * 4#64 + 80#64) := by rw [hq, h4]; bv_omega
   simp only [wordLeak]
   braid_sym_run_to 0x4024c7
-  refine Sha256.X86.tripleT_reg_val (r := 5) 0#64 (by braid_upd) (by bv_decide) ?_
-  refine Sha256.X86.tripleT_reg_val (r := 9) 0#64 (by braid_upd) (by bv_decide) ?_
+  refine Sha256.X86.tripleT_reg_val (r := 5) 0#64 (by braid_upd) (by bv_auto) ?_
+  refine Sha256.X86.tripleT_reg_val (r := 9) 0#64 (by braid_upd) (by bv_auto) ?_
   x86_name_all_flags
   braid_call byte_step msg (64 * b + 4 * j) 0#32 x2 x3 x0 0#64 x10 0x4024c7#64 _ _ _ _ _ _ _ hn
     (by omega) h0 (by rw [h3]; bv_omega) (.inr ⟨by decide, rfl⟩)
@@ -263,8 +264,8 @@ theorem word_step (msg : List (BitVec 8)) (b j : Nat) (x0 x2 x3 x4 x5 x8 x9 x10 
     braid_fold cellsAt_snoc 0x402cc8#64 (0x402c78#64 + (x4 * 4#64 + 80#64))
       ((blockWord msg b j).setWidth 64) done 4 true (by rw [hd, h4]; bv_omega)
     rw [show 0x402c78#64 + (x4 * 4#64 + 80#64) = 0x402cc8#64 + BitVec.ofNat 64 (4 * j) from hq]
-    refine Sha256.X86.tripleT_reg_val (r := 0) (x0 + 4#64) (by braid_upd) (by bv_decide) ?_
-    refine Sha256.X86.tripleT_reg_val (r := 3) (x3 - 32#64) (by braid_upd) (by bv_decide) ?_
+    refine Sha256.X86.tripleT_reg_val (r := 0) (x0 + 4#64) (by braid_upd) (by bv_auto) ?_
+    refine Sha256.X86.tripleT_reg_val (r := 3) (x3 - 32#64) (by braid_upd) (by bv_auto) ?_
     braid_forget 5
     braid_forget 8
     braid_forget 9
@@ -273,7 +274,7 @@ theorem word_step (msg : List (BitVec 8)) (b j : Nat) (x0 x2 x3 x4 x5 x8 x9 x10 
     all_goals
       obtain ⟨h1, h2⟩ := h
       subst h2
-      first | (exfalso; bv_decide) | braid_done
+      first | (exfalso; bv_auto) | braid_done
 
 /-! ## The sixteen words of a block -/
 
