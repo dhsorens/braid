@@ -266,6 +266,28 @@ theorem getLsbD_eq_msb {w : Nat} (x : BitVec w) (i : Nat) (h : i + 1 = w) :
     x.getLsbD i = x.msb := by
   rw [BitVec.msb_eq_getLsbD_last]; congr; omega
 
+/-- Truth values written as words `1` and `0` compare as the truth values do. -/
+theorem ite01_ule {w : Nat} (p q : Bool) (h : 0 < w) :
+    (if p = true then 1#w else 0#w).ule (if q = true then 1#w else 0#w) = (!p || q) := by
+  cases p <;> cases q <;> simp [BitVec.ule, BitVec.toNat_ofNat] <;> omega
+
+/-- A value widened, shifted to the top and shifted back arithmetically is sign-extended, as a
+JavaScript engine unpacks a small integer kept in the high half of a word. -/
+theorem sshiftRight_shiftLeft_setWidth {w k v : Nat} (a : BitVec w) (h : w + k = v) :
+    (a.setWidth v <<< k).sshiftRight k = a.signExtend v := by
+  subst h
+  ext i hi
+  simp only [BitVec.getElem_sshiftRight, BitVec.getElem_signExtend, BitVec.msb_shiftLeft]
+  grind [BitVec.msb_eq_getLsbD_last, BitVec.getLsbD_setWidth]
+
+/-- A value widened, shifted to the top and shifted back logically is the value widened. -/
+theorem ushiftRight_shiftLeft_setWidth {w k v : Nat} (a : BitVec w) (h : w + k ≤ v) :
+    (a.setWidth v <<< k) >>> k = a.setWidth v := by
+  ext i hi
+  simp only [BitVec.getElem_ushiftRight, BitVec.getElem_setWidth, BitVec.getLsbD_shiftLeft,
+    BitVec.getLsbD_setWidth]
+  grind
+
 /-- Truth values written as words `1` and `0` combine as the truth values do. -/
 theorem ite01_or {w : Nat} (p q : Bool) :
     ((if p = true then 1#w else 0#w) ||| (if q = true then 1#w else 0#w)) =
@@ -599,7 +621,8 @@ elab "bv_relevant" : tactic => do
 
 /-- The goal is a Boolean formula in bits of bit vectors: generalize each bit, together with
 the hypotheses about those bits (and about the bits those mention, and so on), and decide.
-A hypothesis whose bits meet none of the goal's cannot help, and is left out. -/
+A hypothesis whose bits meet none of the goal's cannot help, and is left out; when the goal
+has no bits, as `False`, every hypothesis about bits is taken. -/
 elab "bv_bool_decide" : tactic => do
   let g ← getMainGoal
   g.withContext do
@@ -613,6 +636,11 @@ elab "bv_bool_decide" : tactic => do
       let as := (← collectBits ty #[]).filter (fun a => !a.hasLooseBVars)
       if !as.isEmpty then cands := cands.push (d.fvarId, as)
   let mut hyps : Array FVarId := #[]
+  -- a goal with no bits, such as `False`: a contradiction between the hypotheses, all of them
+  if atoms.isEmpty then
+    for (_, as) in cands do
+      for a in as do
+        if !atoms.contains a then atoms := atoms.push a
   let mut changed := true
   while changed do
     changed := false
@@ -689,7 +717,7 @@ elab "bv_hyp_bits" : tactic => do
   replaceMainGoal [g]
 
 /-- `x &&& c` for a literal `c` one less than a power of two is `x % (c + 1)`. -/
-simproc reduceAndMask ((_ : Nat) &&& _) := fun e => do
+simproc_decl reduceAndMask ((_ : Nat) &&& _) := fun e => do
   let_expr HAnd.hAnd _ _ _ _ x c := e | return .continue
   let some n := c.nat? | return .continue
   if n == 0 || (n + 1) &&& n != 0 then return .continue
@@ -699,7 +727,7 @@ simproc reduceAndMask ((_ : Nat) &&& _) := fun e => do
   return .done { expr := ← mkAppM ``HMod.hMod #[x, mkNatLit (n + 1)], proof? := some pf }
 
 /-- `x * c` for a literal `c` that is a power of two is a shift. -/
-simproc reduceMulPow2 ((_ : BitVec _) * _) := fun e => do
+simproc_decl reduceMulPow2 ((_ : BitVec _) * _) := fun e => do
   let_expr HMul.hMul _ _ _ _ x c := e | return .continue
   let some ⟨w, cv⟩ ← getBitVecValue? c | return .continue
   let n := cv.toNat
@@ -711,7 +739,7 @@ simproc reduceMulPow2 ((_ : BitVec _) * _) := fun e => do
 
 /-- `x &&& c` for a literal `c` whose low `k` bits are clear and the rest set, as in aligning
 an address down: `x` less its low `k` bits. -/
-simproc reduceHighMask ((_ : BitVec _) &&& _) := fun e => do
+simproc_decl reduceHighMask ((_ : BitVec _) &&& _) := fun e => do
   let_expr HAnd.hAnd _ _ _ _ x c := e | return .continue
   let some ⟨w, cv⟩ ← getBitVecValue? c | return .continue
   let n := cv.toNat
@@ -755,14 +783,14 @@ simproc_decl narrowAnd ((_ : BitVec _) &&& _) := fun e => do
   return .visit { expr := rhs, proof? := some pf }
 
 /-- `Nat.testBit` of two literals. -/
-dsimproc reduceTestBit (Nat.testBit _ _) := fun e => do
+dsimproc_decl reduceTestBit (Nat.testBit _ _) := fun e => do
   let_expr Nat.testBit m i := e | return .continue
   let some m := m.nat? | return .continue
   let some i := i.nat? | return .continue
   return .done (toExpr (m.testBit i))
 
 /-- `x &&& c != 0` for a mask `c` of one bit, such as `1` or `0x80000000`: that bit of `x`. -/
-simproc reduceBitTest (((_ : BitVec _) &&& _) != _) := fun e => do
+simproc_decl reduceBitTest (((_ : BitVec _) &&& _) != _) := fun e => do
   let_expr bne _ _ lhs z := e | return .continue
   let_expr HAnd.hAnd _ _ _ _ x c := lhs | return .continue
   let some ⟨w, cv⟩ ← getBitVecValue? c | return .continue
@@ -779,7 +807,7 @@ simproc reduceBitTest (((_ : BitVec _) &&& _) != _) := fun e => do
 /-- An append whose width a simplification has already computed (`x ++ y : BitVec 64` with
 `x : BitVec 56`, `y : BitVec 8`) stated again at its own width `56 + 8`, so that the lemmas
 about appends, which are stated at that width, apply. -/
-dsimproc restoreAppendWidth (@HAppend.hAppend _ _ _ _ _ _) := fun e => do
+dsimproc_decl restoreAppendWidth (@HAppend.hAppend _ _ _ _ _ _) := fun e => do
   let_expr HAppend.hAppend _ _ γ _ x y := e | return .continue
   let_expr BitVec k := γ | return .continue
   if k.isAppOf ``HAdd.hAdd then return .continue
@@ -788,7 +816,7 @@ dsimproc restoreAppendWidth (@HAppend.hAppend _ _ _ _ _ _) := fun e => do
 /-- A lane of a value read at a width written another way (`extractLsb' 64 32 x` with `x` of
 type `BitVec 128`, which is `BitVec (96 + 32)` as an append) stated again at the width of what
 it reads, so that the lemmas about the lanes of appends apply. -/
-dsimproc restoreExtractWidth (BitVec.extractLsb' _ _ _) := fun e => do
+dsimproc_decl restoreExtractWidth (BitVec.extractLsb' _ _ _) := fun e => do
   let_expr BitVec.extractLsb' n s l x := e | return .continue
   let_expr BitVec m := (← inferType x) | return .continue
   if n == m then return .continue
@@ -797,7 +825,7 @@ dsimproc restoreExtractWidth (BitVec.extractLsb' _ _ _) := fun e => do
 /-- An equation between appends stated at a width written another way (`BitVec 128` for a
 `BitVec (96 + 32)`) stated again at the width of its sides, so that the lemma splitting it
 into lanes applies. -/
-dsimproc restoreEqWidth (@Eq (BitVec _) (_ ++ _) _) := fun e => do
+dsimproc_decl restoreEqWidth (@Eq (BitVec _) (_ ++ _) _) := fun e => do
   let_expr Eq α l r := e | return .continue
   unless l.isAppOf ``HAppend.hAppend do return .continue
   let β ← inferType l
@@ -1063,7 +1091,10 @@ macro_rules | `(tactic| bv_norm $[$loc]?) => `(tactic|
     Braid.BV.restoreAppendWidth,
     Braid.BV.setWidth_ofBool_or, Braid.BV.setWidth_ofBool_bne_zero, Nat.reduceLT,
     Braid.BV.cpop_parity, Braid.BV.reduceMulPow2, Braid.BV.ite01_or, Braid.BV.ite01_and,
-    Braid.BV.ite01_xor, Braid.BV.ite01_eq_zero, Braid.BV.reduceSextAnd] $[$loc]?)
+    Braid.BV.ite01_xor, Braid.BV.ite01_eq_zero, Braid.BV.reduceSextAnd, Braid.BV.ite01_ule,
+    Braid.BV.sshiftRight_shiftLeft_setWidth, Braid.BV.ushiftRight_shiftLeft_setWidth,
+    Nat.reduceAdd, ↓Braid.BV.setWidth_signExtend_self, BitVec.signExtend_eq, BitVec.mul_one]
+    $[$loc]?)
 
 /-- Comparisons, overflow, masks and bits as arithmetic on `toNat`, then `omega`. -/
 macro "bv_arith" : tactic => `(tactic| (
@@ -1208,6 +1239,38 @@ def Braid.BV.proveByOmega (p : Expr) : TacticM (Option Expr) := do
 
 /-- `set_option trace.bv_auto true` shows which procedures `bv_auto` tried on a goal. -/
 initialize Lean.registerTraceClass `bv_auto
+
+open Lean Elab Tactic Meta in
+/-- Run the step `tac` on the main goal and, when it splits the goal into branches, close each
+branch that `refute` shows cannot be taken (the hypotheses contradict, with the goal made
+`False`). A step that does not split adds no condition, so its goal is not tried again. -/
+elab "bv_prune " tac:tactic " refuting " refute:tactic : tactic => do
+  let g ← getMainGoal
+  let rest := (← getGoals).tail
+  setGoals [g]
+  evalTactic tac
+  let gs ← getGoals
+  if gs.length ≤ 1 then
+    setGoals (gs ++ rest)
+    return
+  let mut kept : Array MVarId := #[]
+  for h in gs do
+    setGoals [h]
+    let s ← saveState
+    try
+      evalTactic (← `(tactic| (exfalso; $refute; done)))
+    catch _ =>
+      s.restore
+      kept := kept.push h
+  setGoals (kept.toList ++ rest)
+
+open Lean Elab Tactic Meta in
+/-- Run `tac`, and with `trace.bv_auto` say how many thousand heartbeats it took. -/
+elab "bv_traced " tac:tactic : tactic => do
+  let h0 ← IO.getNumHeartbeats
+  try evalTactic tac
+  finally
+    trace[bv_auto] "{tac}: {((← IO.getNumHeartbeats) - h0) / 1000}"
 
 open Lean Elab Tactic Meta in
 /-- Each variable or hypothesis whose name cannot be written, such as an atom `x✝` made by
@@ -1535,11 +1598,22 @@ it from the top bits: the overflows by the top bits, each bit of a sum or differ
 in a wider register as that bit of the narrow one, a mask that clears the low bits as a test
 of the top bit, and then the bits decided. -/
 macro "bv_ovf" : tactic => `(tactic| (
+  -- a test of the sign of a value narrowed and sign-extended again, as a test of its top bit
+  (try simp only [Braid.BV.slt_zero_eq_msb, Braid.BV.slt_zero_eq_msb',
+    ↓Braid.BV.msb_signExtend_of_le, Braid.BV.setWidth_and_of_le, Braid.BV.setWidth_xor_of_le,
+    Braid.BV.setWidth_or_of_le, BitVec.setWidth_setWidth_of_le, Nat.reduceLeDiff, Nat.le_refl,
+    BitVec.setWidth_eq] at *)
+  -- a test of one bit stated as a proposition, `¬ x &&& c = 0`, as the Boolean test
+  (try simp only [← ne_eq, ← bne_iff_ne] at *)
+  -- in the goal, and in the hypotheses when the goal is a contradiction between them
   simp (disch := bv_guard (first | decide | omega)) only [BitVec.saddOverflow_eq,
     BitVec.ssubOverflow_eq, ← Braid.BV.and_not_eq_sub, BitVec.reduceNot,
     Braid.BV.reduceBitTest, BitVec.msb_eq_getLsbD_last, Nat.reduceSub,
     Braid.BV.getLsbD_add_setWidth, Braid.BV.getLsbD_sub_setWidth, ← BitVec.getLsbD_eq_getElem,
-    BitVec.getLsbD_and, BitVec.getLsbD_xor, BitVec.getLsbD_or, BitVec.getLsbD_not]
+    BitVec.getLsbD_and, BitVec.getLsbD_xor, BitVec.getLsbD_or, BitVec.getLsbD_not,
+    BitVec.getLsbD_setWidth, Nat.reduceLT, decide_true, Bool.true_and,
+    -- the sum the model states and the one the code computes, in one order
+    BitVec.add_comm] at *
   all_goals bv_bool_decide))
 
 /-- The decision procedures on their own, without splitting. -/
@@ -1678,7 +1752,7 @@ elab "bv_dispatch" : tactic => do
   let offsets ← `(tactic| bv_budget 180000 (bv_offsets <;>
     -- with each shift by a number, bit by bit first
     first | bv_budget 30000 bv_bits | bv_auto))
-  let contra ← `(tactic| bv_guard contradiction)
+  let contra ← `(tactic| bv_budget 1000 contradiction)
   -- the statement a hypothesis `¬ P` denies, proved: directly, or by its choices
   let contraBy ← `(tactic| bv_contra (first
     | bv_budget 20000 bv_arith
@@ -1706,8 +1780,12 @@ elab "bv_dispatch" : tactic => do
     else #[arith, boolSplit, bitDecide, boolCases]
   let rest := #[arith, ac, bits, addOr, bitDecide, split, enum, boolCases, peel, narrow,
     boolSplit, orArith, boolEq, align, sext, flags, varShift, ovf, offsets, contra, contraBy]
+  -- `False`, a contradiction between the hypotheses: the procedures that work on an equation in
+  -- the goal cannot help, and trying them is what makes a branch that is not ruled out slow
+  let tries := if t.isConstOf ``False then #[contra, ovf, arith, bitDecide]
+    else first ++ rest
   let mut tried : Array (TSyntax `tactic) := #[]
-  for tac in first ++ rest do
+  for tac in tries do
     if tried.contains tac then continue
     tried := tried.push tac
     let s ← saveState
@@ -1732,13 +1810,13 @@ end
 macro_rules | `(tactic| bv_auto) => `(tactic| (
   bv_no_holes
   -- a `match` on a constructor, such as on the width of an instruction, made its choice
-  (try dsimp only)
-  (try bv_atoms)
+  (try bv_traced dsimp only)
+  (try bv_traced bv_atoms)
   bv_names
-  bv_clear
-  (try bv_widths)
+  bv_traced bv_clear
+  (try bv_traced bv_widths)
   (try subst_vars)
-  (try bv_norm at *)
+  (try bv_traced bv_norm at *)
   first
   | done
   | bv_dispatch))

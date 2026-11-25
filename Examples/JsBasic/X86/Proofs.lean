@@ -16,6 +16,7 @@ module
 
 public import Examples.JsBasic.X86.Image
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -29,8 +30,8 @@ def smi (v : BitVec 32) : Word := v.zeroExtend 64 <<< 32#64
 
 /-- Step once, and close a branch the hypotheses rule out. -/
 local macro "js_step" : tactic =>
-  `(tactic| (braid_step <;>
-      first | (exfalso; (try simp only [smi, ofBool] at *); bv_decide; done) | skip))
+  `(tactic| bv_prune braid_step refuting
+    ((try simp only [smi, ofBool] at *); (try bv_norm at *); first | bv_ovf | bv_arith))
 
 /-- The prologue of `js_add3`: the code is not marked for deoptimisation, the frame is set
 up, and the stack has room. -/
@@ -83,7 +84,7 @@ theorem js_add3_body (a b d : BitVec 32) (f t0 t1 t2 t3 t4 : Word) (c pf af z sg
   refine Triple.done_eq ?_
   simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
   simp only [smi]
-  bv_decide
+  bv_auto
 
 /-- The epilogue of `js_add3`, up to its return: the frame is taken down. -/
 theorem js_add3_epilogue (f bp0 ts : Word) :

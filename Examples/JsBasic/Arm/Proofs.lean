@@ -15,6 +15,7 @@ module
 public import Examples.JsBasic.Arm.Image
 public import Examples.ArmMachine
 public import Examples.Spec
+import Braid.BV
 
 public section
 
@@ -28,7 +29,7 @@ def smi (v : BitVec 32) : Word := v.zeroExtend 64 <<< 32#64
 
 /-- Step once, and close a branch the hypotheses rule out. -/
 local macro "js_step" : tactic =>
-  `(tactic| (braid_step <;> first | (exfalso; (try simp only [smi, ofBool] at *); bv_decide; done) | skip))
+  `(tactic| bv_prune braid_step refuting ((try simp only [smi, ofBool] at *); bv_auto))
 
 /-- The prologue of `js_add3`: the code is not marked for deoptimisation, the frame is set
 up, and the stack has room. -/
@@ -89,7 +90,7 @@ theorem js_add3_body (a b c : BitVec 32) (s t0 t2 t3 t4 t5 : Word) (fn' fz fc fv
   refine Triple.done_eq ?_
   simp only [List.cons.injEq, Atom.reg.injEq, true_and, and_true]
   simp only [smi]
-  bv_decide
+  bv_auto
 
 /-- The epilogue of `js_add3`: the frame is taken down, and the four words of arguments and
 receiver are popped. -/
@@ -152,14 +153,14 @@ theorem js_add3_spec (a b c : BitVec 32) (fn code fl root lim sp0 fp0 cp0 v1 r :
   braid_name_flag 1
   braid_name_flag 2
   braid_name_flag 3
-  braid_call js_add3_body a b c (sp0 - 48#64) _ _ _ _ _ _ _ _ _ (by bv_decide) hov
+  braid_call js_add3_body a b c (sp0 - 48#64) _ _ _ _ _ _ _ _ _ (by bv_auto) hov
   braid_name_reg 3
   braid_name_reg 16
   braid_name_flag 0
   braid_name_flag 1
   braid_name_flag 2
   braid_name_flag 3
-  braid_call js_add3_epilogue (sp0 - 16#64) fp0 r _ _ _ _ _ _ _ _ (by bv_decide)
+  braid_call js_add3_epilogue (sp0 - 16#64) fp0 r _ _ _ _ _ _ _ _ (by bv_auto)
   apply Triple.done_split
   braid_split
 
